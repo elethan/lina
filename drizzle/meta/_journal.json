@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1771503999150,
+      "tag": "0000_romantic_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1771506431723,
+      "tag": "0001_fast_star_brand",
+      "breakpoints": true
+    }
+  ]
+}
