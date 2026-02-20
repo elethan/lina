@@ -2,9 +2,13 @@ import {
   HeadContent,
   Scripts,
   createRootRouteWithContext,
+  redirect,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { createServerFn } from '@tanstack/react-start'
+import { getRequest } from '@tanstack/react-start/server'
+import { auth } from '../lib/auth'
 
 import Header from '../components/Header'
 
@@ -20,7 +24,35 @@ interface MyRouterContext {
   queryClient: QueryClient
 }
 
+const fetchSession = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const request = getRequest()
+    if (!request) return null
+    try {
+      const session = await auth.api.getSession({ headers: request.headers })
+      return session
+    } catch (e) {
+      return null
+    }
+  })
+
 export const Route = createRootRouteWithContext<MyRouterContext>()({
+  beforeLoad: async ({ location }) => {
+    const isPublicRoute = location.pathname.startsWith('/login') || location.pathname.startsWith('/api')
+    if (isPublicRoute) {
+      return { user: null }
+    }
+
+    const session = await fetchSession()
+
+    if (!session || !session.user) {
+      throw redirect({
+        to: "/login" as any, // Cast to any because the route hasn't been created yet
+      })
+    }
+
+    return { user: session.user }
+  },
   head: () => ({
     meta: [
       {
