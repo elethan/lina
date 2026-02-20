@@ -11,7 +11,12 @@ export const auth = betterAuth({
         schema: schema,
     }),
 
-    // 2. Configure Microsoft Entra ID (Azure AD)
+    // 2. Email + Password (enabled for dev/testing)
+    emailAndPassword: {
+        enabled: true,
+    },
+
+    // 3. Configure Microsoft Entra ID (Azure AD) for SSO
     socialProviders: {
         microsoft: {
             clientId: process.env.MICROSOFT_CLIENT_ID as string,
