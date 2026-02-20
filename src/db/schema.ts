@@ -43,21 +43,28 @@ export const rolePermissions = sqliteTable('role_permissions', {
 export const session = sqliteTable('session', {
   id: text('id').primaryKey(),
   expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  token: text('token').notNull().unique(),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
-  userId: text('user_id').notNull().references(() => user.id),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const account = sqliteTable('account', {
   id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(), // Microsoft Entra ID will be stored here
-  providerId: text('provider_id').notNull(), // 'microsoft-entra-id'
-  userId: text('user_id').notNull().references(() => user.id),
+  accountId: text('account_id').notNull(),
+  providerId: text('provider_id').notNull(), // 'credential' or 'microsoft'
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   accessToken: text('access_token'),
   refreshToken: text('refresh_token'),
   idToken: text('id_token'),
-  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }),
+  refreshTokenExpiresAt: integer('refresh_token_expires_at', { mode: 'timestamp' }),
+  scope: text('scope'),
   password: text('password'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const verification = sqliteTable('verification', {

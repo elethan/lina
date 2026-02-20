@@ -8,8 +8,8 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
     const router = useRouter()
-    const [email, setEmail] = useState('admin@lina.local')
-    const [password, setPassword] = useState('password123')
+    const [email, setEmail] = useState('super@lina.com')
+    const [password, setPassword] = useState('genesiscare')
     const [name, setName] = useState('Admin')
     const [isSignUp, setIsSignUp] = useState(false)
     const [error, setError] = useState('')
