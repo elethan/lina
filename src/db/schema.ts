@@ -169,6 +169,7 @@ export const userRequests = sqliteTable('user_requests', {
   reportedBy: text('reported_by').notNull(), // Clinical staff name [cite: 25]
   commentText: text('comment_text').notNull(),
   status: text('status').notNull().default('Open'),
+  engineerId: integer('engineer_id').references(() => engineers.id), // Null implies "not assigned"
   ...commonCols,
 });
 

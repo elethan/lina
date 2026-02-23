@@ -6,9 +6,13 @@ CREATE TABLE `account` (
 	`access_token` text,
 	`refresh_token` text,
 	`id_token` text,
-	`expires_at` integer,
+	`access_token_expires_at` integer,
+	`refresh_token_expires_at` integer,
+	`scope` text,
 	`password` text,
-	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE no action
+	`created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	`updated_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE TABLE `asset_info` (
@@ -91,15 +95,26 @@ CREATE TABLE `pm_tasks` (
 	FOREIGN KEY (`system_id`) REFERENCES `systems`(`system_id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE TABLE `role_permissions` (
+	`role` text NOT NULL,
+	`resource` text NOT NULL,
+	`action` text NOT NULL,
+	PRIMARY KEY(`role`, `resource`, `action`)
+);
+--> statement-breakpoint
 CREATE TABLE `session` (
 	`id` text PRIMARY KEY NOT NULL,
 	`expires_at` integer NOT NULL,
+	`token` text NOT NULL,
 	`ip_address` text,
 	`user_agent` text,
 	`user_id` text NOT NULL,
-	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE no action
+	`created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	`updated_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `session_token_unique` ON `session` (`token`);--> statement-breakpoint
 CREATE TABLE `sites` (
 	`site_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`site_name` text NOT NULL,
@@ -129,7 +144,7 @@ CREATE TABLE `user` (
 	`image` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
-	`role` text DEFAULT 'radiographer'
+	`role` text DEFAULT 'user' NOT NULL
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `user_email_unique` ON `user` (`email`);--> statement-breakpoint
@@ -140,10 +155,12 @@ CREATE TABLE `user_requests` (
 	`reported_by` text NOT NULL,
 	`comment_text` text NOT NULL,
 	`status` text DEFAULT 'Open' NOT NULL,
+	`engineer_id` integer,
 	`updated_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`deleted_at` integer,
 	FOREIGN KEY (`asset_id`) REFERENCES `assets`(`asset_id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`system_id`) REFERENCES `systems`(`system_id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`system_id`) REFERENCES `systems`(`system_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`engineer_id`) REFERENCES `engineers`(`engineer_id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `verification` (
