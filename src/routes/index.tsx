@@ -2,124 +2,260 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   useReactTable,
   getCoreRowModel,
+  getFilteredRowModel,
   flexRender,
   createColumnHelper,
+  type FilterFn,
+  type ColumnDef,
 } from '@tanstack/react-table'
-import { useMemo } from 'react'
+import { rankItem } from '@tanstack/match-sorter-utils'
+import { useState, useMemo } from 'react'
+import { Search, Calendar, Eye, Merge, XCircle } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
+import { fetchRequests, type RequestRow } from '../data/requests.api'
 
-// Placeholder data — will be replaced with real DB queries later
-type Asset = {
-  id: number
-  serialNumber: string
-  modelName: string
-  site: string
-  status: string
+// ── Route ─────────────────────────────────────────────────────
+export const Route = createFileRoute('/')(
+  {
+    loader: () => fetchRequests(),
+    component: RequestsPage,
+  },
+)
+
+// ── Fuzzy filter ──────────────────────────────────────────────
+const fuzzyFilter: FilterFn<RequestRow> = (row, columnId, value, addMeta) => {
+  const itemRank = rankItem(row.getValue(columnId), value)
+  addMeta({ itemRank })
+  return itemRank.passed
 }
 
-const placeholderData: Asset[] = [
-  {
-    id: 1,
-    serialNumber: 'SN-001',
-    modelName: 'TrueBeam',
-    site: 'Main Campus',
-    status: 'Operational',
-  },
-  {
-    id: 2,
-    serialNumber: 'SN-002',
-    modelName: 'Halcyon',
-    site: 'North Wing',
-    status: 'Under Maintenance',
-  },
-  {
-    id: 3,
-    serialNumber: 'SN-003',
-    modelName: 'VitalBeam',
-    site: 'Satellite Clinic',
-    status: 'Operational',
-  },
-  {
-    id: 4,
-    serialNumber: 'SN-004',
-    modelName: 'Clinac iX',
-    site: 'Main Campus',
-    status: 'Decommissioned',
-  },
-  {
-    id: 5,
-    serialNumber: 'SN-005',
-    modelName: 'TrueBeam',
-    site: 'East Pavilion',
-    status: 'Operational',
-  },
-]
+// ── Columns ───────────────────────────────────────────────────
+const columnHelper = createColumnHelper<RequestRow>()
 
-const columnHelper = createColumnHelper<Asset>()
-
-const columns = [
+const columns: ColumnDef<RequestRow, any>[] = [
+  columnHelper.display({
+    id: 'select',
+    header: ({ table }) => (
+      <input
+        type="checkbox"
+        className="accent-primary rounded"
+        checked={table.getIsAllRowsSelected()}
+        onChange={table.getToggleAllRowsSelectedHandler()}
+      />
+    ),
+    cell: ({ row }) => (
+      <input
+        type="checkbox"
+        className="accent-primary rounded"
+        checked={row.getIsSelected()}
+        onChange={row.getToggleSelectedHandler()}
+      />
+    ),
+    size: 40,
+  }),
   columnHelper.accessor('id', {
     header: '#',
-    cell: (info) => info.getValue(),
+    cell: (info) => (
+      <span className="text-gray-400 font-mono text-xs">
+        {info.getValue()}
+      </span>
+    ),
+    size: 60,
   }),
   columnHelper.accessor('serialNumber', {
     header: 'Serial Number',
-    cell: (info) => info.getValue(),
+    cell: (info) => (
+      <span className="font-medium text-gray-900">
+        {info.getValue() ?? '—'}
+      </span>
+    ),
+    filterFn: fuzzyFilter,
   }),
-  columnHelper.accessor('modelName', {
-    header: 'Model',
-    cell: (info) => info.getValue(),
-  }),
-  columnHelper.accessor('site', {
+  columnHelper.accessor('siteName', {
     header: 'Site',
+    cell: (info) => info.getValue() ?? '—',
+    filterFn: fuzzyFilter,
+  }),
+  columnHelper.accessor('systemName', {
+    header: 'System',
+    cell: (info) => info.getValue() ?? '—',
+  }),
+  columnHelper.accessor('reportedBy', {
+    header: 'Reported By',
     cell: (info) => info.getValue(),
+  }),
+  columnHelper.accessor('commentText', {
+    header: 'Comment',
+    cell: (info) => {
+      const text = info.getValue()
+      return (
+        <span className="max-w-xs truncate block text-gray-500" title={text}>
+          {text}
+        </span>
+      )
+    },
   }),
   columnHelper.accessor('status', {
     header: 'Status',
     cell: (info) => {
       const status = info.getValue()
       const colors: Record<string, string> = {
-        Operational: 'bg-emerald-500/20 text-emerald-400',
-        'Under Maintenance': 'bg-amber-500/20 text-amber-400',
-        Decommissioned: 'bg-slate-500/20 text-slate-400',
+        Open: 'bg-primary/10 text-primary-darker border border-primary/20',
+        'In Progress': 'bg-amber-50 text-amber-700 border border-amber-200',
+        Closed: 'bg-gray-100 text-gray-500 border border-gray-200',
       }
       return (
         <span
-          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] ?? 'bg-slate-700 text-slate-300'}`}
+          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${colors[status] ?? 'bg-gray-100 text-gray-600'}`}
         >
           {status}
         </span>
       )
     },
   }),
+  columnHelper.accessor('engineerName', {
+    header: 'Engineer',
+    cell: (info) => {
+      const name = info.getValue()
+      return name ? (
+        <span className="text-gray-700">{name}</span>
+      ) : (
+        <span className="text-gray-400 italic text-xs">Unassigned</span>
+      )
+    },
+  }),
 ]
 
-export const Route = createFileRoute('/')({
-  component: DashboardPage,
-})
+// ── Page ──────────────────────────────────────────────────────
+function RequestsPage() {
+  const data = Route.useLoaderData()
 
-function DashboardPage() {
-  const data = useMemo(() => placeholderData, [])
+  const [globalFilter, setGlobalFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+
+  // Date-filtered data
+  const filteredData = useMemo(() => {
+    if (!dateFrom && !dateTo) return data
+    return data.filter((row) => {
+      if (!row.createdAt) return true
+      const d = new Date(row.createdAt)
+      if (dateFrom && d < new Date(dateFrom)) return false
+      if (dateTo) {
+        const to = new Date(dateTo)
+        to.setHours(23, 59, 59, 999)
+        if (d > to) return false
+      }
+      return true
+    })
+  }, [data, dateFrom, dateTo])
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
+    state: { globalFilter, rowSelection },
+    onGlobalFilterChange: setGlobalFilter,
+    onRowSelectionChange: setRowSelection,
+    globalFilterFn: (row, _columnId, filterValue) => {
+      const serial = rankItem(row.getValue('serialNumber') ?? '', filterValue)
+      const site = rankItem(row.getValue('siteName') ?? '', filterValue)
+      return serial.passed || site.passed
+    },
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: true,
   })
 
+  const selectedCount = Object.keys(rowSelection).length
+
   return (
-    <div className="flex h-screen bg-slate-950">
+    <div className="flex h-screen bg-gray-50">
       <Sidebar />
 
-      <main className="flex-1 overflow-auto">
-        {/* Top bar */}
-        <header className="sticky top-0 z-10 flex items-center justify-between px-8 h-14 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/50">
-          <h1 className="text-lg font-semibold text-white">Assets</h1>
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* ─── Top toolbar ─── */}
+        <header className="sticky top-0 z-10 flex items-center gap-4 px-6 h-14 bg-white/90 backdrop-blur-md border-b border-gray-200">
+          <h1 className="text-lg font-bold text-gray-900 mr-4">Requests</h1>
+
+          {/* Fuzzy search */}
+          <div className="relative flex-1 max-w-sm">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              id="system-search"
+              type="text"
+              placeholder="Search serial number or site…"
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+            />
+          </div>
+
+          {/* Date range */}
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar size={16} className="text-gray-400" />
+            <input
+              id="date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+            />
+            <span className="text-gray-400">to</span>
+            <input
+              id="date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+            />
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              id="btn-details"
+              disabled={selectedCount === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <Eye size={15} />
+              Details
+            </button>
+            <button
+              id="btn-merge"
+              disabled={selectedCount < 2}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <Merge size={15} />
+              Merge
+            </button>
+            <button
+              id="btn-close"
+              disabled={selectedCount === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <XCircle size={15} />
+              Close
+            </button>
+          </div>
         </header>
 
-        {/* Table */}
-        <div className="p-8">
-          <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl overflow-hidden">
+        {/* ─── Selection info bar ─── */}
+        {selectedCount > 0 && (
+          <div className="px-6 py-2 bg-primary/5 border-b border-primary/10 text-sm text-primary-darker flex items-center gap-2">
+            <span className="font-semibold">{selectedCount}</span> request{selectedCount !== 1 ? 's' : ''} selected
+          </div>
+        )}
+
+        {/* ─── Table ─── */}
+        <div className="flex-1 overflow-auto px-6 py-4">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <table className="w-full">
               <thead>
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -127,7 +263,13 @@ function DashboardPage() {
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
-                        className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-900/80 border-b border-slate-800/50"
+                        className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/80 border-b border-gray-200"
+                        style={{
+                          width:
+                            header.getSize() !== 150
+                              ? header.getSize()
+                              : undefined,
+                        }}
                       >
                         {header.isPlaceholder
                           ? null
@@ -140,27 +282,54 @@ function DashboardPage() {
                   </tr>
                 ))}
               </thead>
-              <tbody className="divide-y divide-slate-800/30">
-                {table.getRowModel().rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="hover:bg-slate-800/30 transition-colors"
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="px-6 py-4 text-sm text-slate-300"
-                      >
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </td>
-                    ))}
+              <tbody className="divide-y divide-gray-100">
+                {table.getRowModel().rows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="px-6 py-16 text-center text-gray-400"
+                    >
+                      No requests found.
+                    </td>
                   </tr>
-                ))}
+                ) : (
+                  table.getRowModel().rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={`transition-colors cursor-pointer ${row.getIsSelected()
+                        ? 'bg-primary/5 hover:bg-primary/8'
+                        : 'hover:bg-gray-50'
+                        }`}
+                      onClick={row.getToggleSelectedHandler()}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <td
+                          key={cell.id}
+                          className="px-4 py-3.5 text-sm text-gray-600"
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
+          </div>
+
+          {/* Footer stats */}
+          <div className="mt-3 flex items-center justify-between text-xs text-gray-400 px-1">
+            <span>
+              {table.getFilteredRowModel().rows.length} of{' '}
+              {data.length} requests
+            </span>
+            <span>
+              {selectedCount > 0 &&
+                `${selectedCount} selected`}
+            </span>
           </div>
         </div>
       </main>
