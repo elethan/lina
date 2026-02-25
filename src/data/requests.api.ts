@@ -11,6 +11,7 @@ export type RequestRow = {
     reportedBy: string
     commentText: string
     status: string
+    engineerId: number | null
     engineerName: string | null
     createdAt: string | null
 }
@@ -24,6 +25,7 @@ export const fetchRequests = createServerFn({ method: 'GET' }).handler(
                 siteName: sites.name,
                 systemName: systems.name,
                 systemId: userRequests.systemId,
+                engineerId: userRequests.engineerId,
                 reportedBy: userRequests.reportedBy,
                 commentText: userRequests.commentText,
                 status: userRequests.status,
@@ -45,12 +47,12 @@ export const fetchRequests = createServerFn({ method: 'GET' }).handler(
             reportedBy: r.reportedBy,
             commentText: r.commentText,
             status: r.status,
+            engineerId: r.engineerId ?? null,
             engineerName:
                 r.engineerFirstName && r.engineerLastName
                     ? `${r.engineerFirstName} ${r.engineerLastName}`
                     : null,
             createdAt: r.createdAt ?? null,
-
         }))
     },
 )

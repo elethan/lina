@@ -11,15 +11,22 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, Eye, Merge, XCircle, ClipboardPlus } from 'lucide-react'
+import { Search, Calendar, UserPlus, Merge, XCircle, ClipboardPlus, ChevronDown } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
 import { fetchRequests, type RequestRow } from '../data/requests.api'
 import { createWorkOrder } from '../data/workorders.api'
+import { fetchEngineers, assignRequestsToEngineer } from '../data/engineers.api'
 
 // ── Route ─────────────────────────────────────────────────────
 export const Route = createFileRoute('/')(
   {
-    loader: () => fetchRequests(),
+    loader: async () => {
+      const [requests, engineers] = await Promise.all([
+        fetchRequests(),
+        fetchEngineers(),
+      ])
+      return { requests, engineers }
+    },
     component: RequestsPage,
   },
 )
@@ -145,29 +152,43 @@ const columns: ColumnDef<RequestRow, any>[] = [
 
 // ── Page ──────────────────────────────────────────────────────
 function RequestsPage() {
-  const data = Route.useLoaderData()
+  const { requests: data, engineers: engineersList } = Route.useLoaderData()
   const router = useRouter()
 
   const [globalFilter, setGlobalFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+  const [selectedEngineerId, setSelectedEngineerId] = useState<number | null>(null)
 
-  // Date-filtered data
+  // Date-filtered + Engineer-filtered data
   const filteredData = useMemo(() => {
-    if (!dateFrom && !dateTo) return data
-    return data.filter((row) => {
-      if (!row.createdAt) return true
-      const d = new Date(row.createdAt)
-      if (dateFrom && d < new Date(dateFrom)) return false
-      if (dateTo) {
-        const to = new Date(dateTo)
-        to.setHours(23, 59, 59, 999)
-        if (d > to) return false
-      }
-      return true
-    })
-  }, [data, dateFrom, dateTo])
+    let result = data
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      result = result.filter((row) => {
+        if (!row.createdAt) return true
+        const d = new Date(row.createdAt)
+        if (dateFrom && d < new Date(dateFrom)) return false
+        if (dateTo) {
+          const to = new Date(dateTo)
+          to.setHours(23, 59, 59, 999)
+          if (d > to) return false
+        }
+        return true
+      })
+    }
+
+    // Engineer filter: show requests assigned to selected engineer + unassigned
+    if (selectedEngineerId !== null) {
+      result = result.filter(
+        (row) => row.engineerId === null || row.engineerId === selectedEngineerId
+      )
+    }
+
+    return result
+  }, [data, dateFrom, dateTo, selectedEngineerId])
 
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
 
@@ -190,6 +211,32 @@ function RequestsPage() {
   })
 
   const selectedCount = Object.keys(rowSelection).length
+
+  // Check if any selected rows are unassigned (needed for Assign button)
+  const selectedUnassignedIds = useMemo(() => {
+    return Object.keys(rowSelection)
+      .filter((key) => rowSelection[key])
+      .map((key) => filteredData[parseInt(key)])
+      .filter((row) => row && row.engineerId === null)
+      .map((row) => row.id)
+  }, [rowSelection, filteredData])
+
+  const canAssign = selectedEngineerId !== null && selectedUnassignedIds.length > 0
+
+  const handleAssign = async () => {
+    if (!canAssign || selectedEngineerId === null) return
+
+    try {
+      const result = await assignRequestsToEngineer({
+        data: { requestIds: selectedUnassignedIds, engineerId: selectedEngineerId },
+      })
+      alert(`Assigned ${result.assignedCount} request(s) successfully!`)
+      setRowSelection({})
+      router.invalidate()
+    } catch (err) {
+      alert(`Failed to assign: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
 
   const handleCreateWO = async () => {
     // Get actual request IDs from the selected row indices
@@ -220,7 +267,7 @@ function RequestsPage() {
           <h1 className="text-lg font-bold text-gray-900 mr-4">Requests</h1>
 
           {/* Fuzzy search */}
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 min-w-64 max-w-sm">
             <Search
               size={16}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -260,22 +307,48 @@ function RequestsPage() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
+            {/* Engineer selector */}
+            <div className="relative">
+              <select
+                id="engineer-filter"
+                value={selectedEngineerId ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setSelectedEngineerId(val ? Number(val) : null)
+                  setRowSelection({}) // clear selection on filter change
+                }}
+                className="appearance-none pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors cursor-pointer"
+              >
+                <option value="">All Engineers</option>
+                {engineersList.map((eng) => (
+                  <option key={eng.id} value={eng.id}>
+                    {eng.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+              />
+            </div>
+            <div className="w-px h-6 bg-gray-200" />
+            <button
+              id="btn-assign"
+              disabled={!canAssign}
+              onClick={handleAssign}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <UserPlus size={15} />
+              Assign{selectedUnassignedIds.length > 0 ? ` (${selectedUnassignedIds.length})` : ''}
+            </button>
             <button
               id="btn-create-wo"
               disabled={selectedCount === 0}
               onClick={handleCreateWO}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
               <ClipboardPlus size={15} />
               Create WO
-            </button>
-            <button
-              id="btn-details"
-              disabled={selectedCount === 0}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <Eye size={15} />
-              Details
             </button>
             <button
               id="btn-merge"
@@ -308,7 +381,7 @@ function RequestsPage() {
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
-                        className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/80 border-b border-gray-200 relative"
+                        className="px-4 py-3 text-left text-xs font-semibold text-primary-900 uppercase tracking-wider bg-primary-100 border-b border-primary-200/50 relative"
                         style={{ width: header.getSize() }}
                       >
                         {header.isPlaceholder
