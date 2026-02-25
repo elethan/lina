@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
   useReactTable,
   getCoreRowModel,
@@ -7,12 +7,14 @@ import {
   createColumnHelper,
   type FilterFn,
   type ColumnDef,
+  type ColumnResizeMode,
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, Eye, Merge, XCircle } from 'lucide-react'
+import { Search, Calendar, Eye, Merge, XCircle, ClipboardPlus } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
 import { fetchRequests, type RequestRow } from '../data/requests.api'
+import { createWorkOrder } from '../data/workorders.api'
 
 // ── Route ─────────────────────────────────────────────────────
 export const Route = createFileRoute('/')(
@@ -52,6 +54,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
       />
     ),
     size: 40,
+    enableResizing: false,
   }),
   columnHelper.accessor('id', {
     header: '#',
@@ -61,39 +64,39 @@ const columns: ColumnDef<RequestRow, any>[] = [
       </span>
     ),
     size: 60,
-  }),
-  columnHelper.accessor('serialNumber', {
-    header: 'Serial Number',
-    cell: (info) => (
-      <span className="font-medium text-gray-900">
-        {info.getValue() ?? '—'}
-      </span>
-    ),
-    filterFn: fuzzyFilter,
+    enableResizing: false,
   }),
   columnHelper.accessor('siteName', {
     header: 'Site',
     cell: (info) => info.getValue() ?? '—',
     filterFn: fuzzyFilter,
   }),
-  columnHelper.accessor('systemName', {
-    header: 'System',
-    cell: (info) => info.getValue() ?? '—',
-  }),
-  columnHelper.accessor('reportedBy', {
-    header: 'Reported By',
-    cell: (info) => info.getValue(),
-  }),
   columnHelper.accessor('commentText', {
     header: 'Comment',
     cell: (info) => {
       const text = info.getValue()
       return (
-        <span className="max-w-xs truncate block text-gray-500" title={text}>
+        <span className="text-gray-500 whitespace-pre-wrap break-words">
           {text}
         </span>
       )
     },
+  }),
+  columnHelper.accessor('createdAt', {
+    header: 'Date Created',
+    cell: (info) => {
+      const date = info.getValue()
+      if (!date) return '—'
+      return new Date(date).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    },
+  }),
+  columnHelper.accessor('reportedBy', {
+    header: 'Reported By',
+    cell: (info) => info.getValue(),
   }),
   columnHelper.accessor('status', {
     header: 'Status',
@@ -124,11 +127,26 @@ const columns: ColumnDef<RequestRow, any>[] = [
       )
     },
   }),
+
+  columnHelper.accessor('serialNumber', {
+    header: 'Serial Number',
+    cell: (info) => (
+      <span className="font-medium text-gray-900">
+        {info.getValue() ?? '—'}
+      </span>
+    ),
+    filterFn: fuzzyFilter,
+  }),
+  columnHelper.accessor('systemName', {
+    header: 'System',
+    cell: (info) => info.getValue() ?? '—',
+  }),
 ]
 
 // ── Page ──────────────────────────────────────────────────────
 function RequestsPage() {
   const data = Route.useLoaderData()
+  const router = useRouter()
 
   const [globalFilter, setGlobalFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -151,6 +169,8 @@ function RequestsPage() {
     })
   }, [data, dateFrom, dateTo])
 
+  const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
+
   const table = useReactTable({
     data: filteredData,
     columns,
@@ -165,9 +185,30 @@ function RequestsPage() {
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     enableRowSelection: true,
+    columnResizeMode,
+    enableColumnResizing: true,
   })
 
   const selectedCount = Object.keys(rowSelection).length
+
+  const handleCreateWO = async () => {
+    // Get actual request IDs from the selected row indices
+    const selectedRequestIds = Object.keys(rowSelection)
+      .filter((key) => rowSelection[key])
+      .map((key) => filteredData[parseInt(key)]?.id)
+      .filter((id): id is number => id !== undefined)
+
+    if (selectedRequestIds.length === 0) return
+
+    try {
+      const result = await createWorkOrder({ data: { requestIds: selectedRequestIds } })
+      alert(`Work Order #${result.woId} created successfully!`)
+      setRowSelection({})
+      router.invalidate()
+    } catch (err) {
+      alert(`Failed to create WO: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -220,9 +261,18 @@ function RequestsPage() {
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             <button
+              id="btn-create-wo"
+              disabled={selectedCount === 0}
+              onClick={handleCreateWO}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ClipboardPlus size={15} />
+              Create WO
+            </button>
+            <button
               id="btn-details"
               disabled={selectedCount === 0}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
               <Eye size={15} />
               Details
@@ -246,12 +296,7 @@ function RequestsPage() {
           </div>
         </header>
 
-        {/* ─── Selection info bar ─── */}
-        {selectedCount > 0 && (
-          <div className="px-6 py-2 bg-primary/5 border-b border-primary/10 text-sm text-primary-darker flex items-center gap-2">
-            <span className="font-semibold">{selectedCount}</span> request{selectedCount !== 1 ? 's' : ''} selected
-          </div>
-        )}
+
 
         {/* ─── Table ─── */}
         <div className="flex-1 overflow-auto px-6 py-4">
@@ -263,13 +308,8 @@ function RequestsPage() {
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
-                        className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/80 border-b border-gray-200"
-                        style={{
-                          width:
-                            header.getSize() !== 150
-                              ? header.getSize()
-                              : undefined,
-                        }}
+                        className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/80 border-b border-gray-200 relative"
+                        style={{ width: header.getSize() }}
                       >
                         {header.isPlaceholder
                           ? null
@@ -277,6 +317,13 @@ function RequestsPage() {
                             header.column.columnDef.header,
                             header.getContext(),
                           )}
+                        {header.column.getCanResize() && (
+                          <div
+                            onMouseDown={header.getResizeHandler()}
+                            onTouchStart={header.getResizeHandler()}
+                            className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-primary/40 transition-colors ${header.column.getIsResizing() ? 'bg-primary/60' : ''}`}
+                          />
+                        )}
                       </th>
                     ))}
                   </tr>
@@ -306,6 +353,7 @@ function RequestsPage() {
                         <td
                           key={cell.id}
                           className="px-4 py-3.5 text-sm text-gray-600"
+                          style={{ width: cell.column.getSize() }}
                         >
                           {flexRender(
                             cell.column.columnDef.cell,

@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { db } from '../db/client'
 import { userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 export type RequestRow = {
     id: number
@@ -12,7 +12,7 @@ export type RequestRow = {
     commentText: string
     status: string
     engineerName: string | null
-    createdAt: Date | null
+    createdAt: string | null
 }
 
 export const fetchRequests = createServerFn({ method: 'GET' }).handler(
@@ -29,7 +29,7 @@ export const fetchRequests = createServerFn({ method: 'GET' }).handler(
                 status: userRequests.status,
                 engineerFirstName: engineers.firstName,
                 engineerLastName: engineers.lastName,
-                createdAt: userRequests.updatedAt,
+                createdAt: sql<string>`${userRequests.createdAt}`,
             })
             .from(userRequests)
             .leftJoin(assets, eq(userRequests.assetId, assets.id))
@@ -50,6 +50,7 @@ export const fetchRequests = createServerFn({ method: 'GET' }).handler(
                     ? `${r.engineerFirstName} ${r.engineerLastName}`
                     : null,
             createdAt: r.createdAt ?? null,
+
         }))
     },
 )
