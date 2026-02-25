@@ -170,12 +170,14 @@ export const userRequests = sqliteTable('user_requests', {
   commentText: text('comment_text').notNull(),
   status: text('status').notNull().default('Open'),
   engineerId: integer('engineer_id').references(() => engineers.id), // Null implies "not assigned"
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
   ...commonCols,
 });
 
 export const workOrders = sqliteTable('work_orders', {
   id: integer('wo_id').primaryKey({ autoIncrement: true }),
   assetId: integer('asset_id').references(() => assets.id),
+  systemId: integer('system_id').references(() => systems.id),
   description: text('description_of_fault').notNull(), // [cite: 26]
   startAt: integer('start_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
   endAt: integer('end_at', { mode: 'timestamp' }),
@@ -189,4 +191,12 @@ export const workOrderRequests = sqliteTable('work_order_requests', {
   requestId: integer('request_id').references(() => userRequests.id),
 }, (t) => ({
   pk: primaryKey({ columns: [t.woId, t.requestId] }),
+}));
+
+// Many-to-Many: Work Orders <-> Engineers
+export const workOrderEngineers = sqliteTable('work_order_engineers', {
+  woId: integer('wo_id').references(() => workOrders.id),
+  engineerId: integer('engineer_id').references(() => engineers.id),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.woId, t.engineerId] }),
 }));

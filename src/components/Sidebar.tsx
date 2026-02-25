@@ -1,9 +1,10 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
-    Box,
-    Users,
-    Wrench,
+    MessageSquareText,
+    ClipboardList,
+    CalendarCheck,
+    Settings,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -11,9 +12,10 @@ import {
 import { authClient } from '../lib/auth-client'
 
 const navItems = [
-    { to: '/', label: 'Assets', icon: Box },
-    { to: '/users' as string, label: 'Users', icon: Users },
-    { to: '/parts' as string, label: 'Parts', icon: Wrench },
+    { to: '/', label: 'Requests', icon: MessageSquareText },
+    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList },
+    { to: '/pms' as string, label: 'PMs', icon: CalendarCheck },
+    { to: '/config' as string, label: 'Config', icon: Settings },
 ]
 
 export default function Sidebar() {
@@ -27,16 +29,16 @@ export default function Sidebar() {
 
     return (
         <aside
-            className={`flex flex-col h-screen bg-slate-900 border-r border-slate-700/50 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'
+            className={`flex flex-col h-screen bg-white border-r border-gray-200 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'
                 }`}
         >
             {/* Brand */}
-            <div className="flex items-center gap-3 px-4 h-14 border-b border-slate-700/50">
-                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 text-white font-black text-sm shrink-0">
+            <div className="flex items-center gap-3 px-4 h-14 border-b border-gray-200">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-darker text-white font-black text-sm shrink-0">
                     L
                 </div>
                 {!collapsed && (
-                    <span className="text-lg font-bold text-white tracking-tight">
+                    <span className="text-lg font-bold text-gray-900 tracking-tight">
                         Lina
                     </span>
                 )}
@@ -48,10 +50,10 @@ export default function Sidebar() {
                     <Link
                         key={item.label}
                         to={item.to}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors group"
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors group"
                         activeProps={{
                             className:
-                                'flex items-center gap-3 px-3 py-2.5 rounded-lg bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30 transition-colors',
+                                'flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary-darker font-semibold hover:bg-primary/15 transition-colors',
                         }}
                         activeOptions={{ exact: true }}
                     >
@@ -64,10 +66,10 @@ export default function Sidebar() {
             </nav>
 
             {/* Bottom actions */}
-            <div className="px-2 py-3 border-t border-slate-700/50 space-y-1">
+            <div className="px-2 py-3 border-t border-gray-200 space-y-1">
                 <button
                     onClick={handleSignOut}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors w-full"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors w-full"
                 >
                     <LogOut size={20} className="shrink-0" />
                     {!collapsed && (
@@ -77,7 +79,7 @@ export default function Sidebar() {
 
                 <button
                     onClick={() => setCollapsed(!collapsed)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors w-full"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors w-full"
                 >
                     {collapsed ? (
                         <ChevronRight size={20} className="shrink-0" />
