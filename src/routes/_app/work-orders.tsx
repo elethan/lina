@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import {
   useReactTable,
   getCoreRowModel,
@@ -15,8 +15,28 @@ import { Search, Calendar, CheckCircle2, Clock, AlertCircle } from 'lucide-react
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
 
+// ── Search params type ─────────────────────────────────────
+type WoSearchParams = {
+  search?: string
+  dateFrom?: string
+  dateTo?: string
+  status?: string
+}
+
 // ── Route ─────────────────────────────────────────────────────
 export const Route = createFileRoute('/_app/work-orders')({
+  validateSearch: (search: Record<string, unknown>): WoSearchParams => ({
+    search: typeof search.search === 'string' ? search.search : undefined,
+    dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
+    dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
+    status: typeof search.status === 'string' ? search.status : undefined,
+  }),
+  beforeLoad: ({ context }) => {
+    const user = (context as any).user
+    if (user?.role === 'user' || user?.role === 'scientist') {
+      throw redirect({ to: '/' })
+    }
+  },
   loader: async () => {
     const workOrders = await fetchWorkOrders()
     return { workOrders }
@@ -132,7 +152,7 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
       }
       return (
         <div className="flex flex-wrap gap-1">
-          {names.map((name, i) => (
+          {names.map((name: string, i: number) => (
             <span
               key={i}
               className="inline-flex px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-xs font-medium"
@@ -183,11 +203,18 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
 // ── Page ──────────────────────────────────────────────────────
 function WorkOrdersPage() {
   const { workOrders: data } = Route.useLoaderData()
+  const navigate = useNavigate({ from: '/work-orders' })
+  const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = '' } = Route.useSearch()
 
-  const [globalFilter, setGlobalFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  // URL param updaters
+  const setGlobalFilter = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, search: value || undefined }) })
+  const setDateFrom = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
+  const setDateTo = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateTo: value || undefined }) })
+  const setStatusFilter = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, status: value || undefined }) })
 
   // Filtered data
   const filteredData = useMemo(() => {
@@ -293,8 +320,8 @@ function WorkOrdersPage() {
           <button
             onClick={() => setStatusFilter('')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${statusFilter === ''
-                ? 'bg-gray-900 text-white shadow-sm'
-                : 'text-gray-500 hover:bg-gray-100'
+              ? 'bg-gray-900 text-white shadow-sm'
+              : 'text-gray-500 hover:bg-gray-100'
               }`}
           >
             All ({data.length})
@@ -312,8 +339,8 @@ function WorkOrdersPage() {
                   setStatusFilter(statusFilter === status ? '' : status)
                 }
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${statusFilter === status
-                    ? colorMap[status] ?? 'bg-gray-900 text-white'
-                    : 'text-gray-500 hover:bg-gray-100'
+                  ? colorMap[status] ?? 'bg-gray-900 text-white'
+                  : 'text-gray-500 hover:bg-gray-100'
                   } shadow-sm`}
               >
                 {status} ({count})

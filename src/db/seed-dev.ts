@@ -252,10 +252,49 @@ async function seedDomainData() {
     console.log('\n✅ Domain data seeded successfully!')
 }
 
+// ── 3. Test Radiographer (role: user) ─────────────────────────
+async function seedRadiographer() {
+    const email = 'radiographer@lina.com'
+    const password = 'linaradio1'
+    const name = 'Oxford Radiographer'
+
+    console.log(`\n🩻 Seeding test radiographer: ${email}...`)
+
+    try {
+        const existing = await auth.api.signInEmail({
+            body: { email, password },
+        })
+        if (existing) {
+            console.log('   Radiographer already exists.')
+            return
+        }
+    } catch {
+        // User doesn't exist — proceed to create
+    }
+
+    try {
+        await auth.api.signUpEmail({
+            body: { email, password, name },
+        })
+        console.log('   Radiographer created successfully!')
+        console.log(`   Email:    ${email}`)
+        console.log(`   Password: ${password}`)
+        console.log(`   Role:     user (radiographer)`)
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (message.includes('already exists') || message.includes('UNIQUE constraint')) {
+            console.log('   Radiographer already exists.')
+        } else {
+            console.error('   Failed to create radiographer:', message)
+        }
+    }
+}
+
 // ── Run ───────────────────────────────────────────────────────
 async function main() {
     try {
         await seedDevUser()
+        await seedRadiographer()
         await seedDomainData()
     } catch (err) {
         console.error('❌ Seed failed:', err)

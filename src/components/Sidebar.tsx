@@ -12,15 +12,23 @@ import {
 import { authClient } from '../lib/auth-client'
 
 const navItems = [
-    { to: '/', label: 'Requests', icon: MessageSquareText },
-    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList },
-    { to: '/pms' as string, label: 'PMs', icon: CalendarCheck },
-    { to: '/config' as string, label: 'Config', icon: Settings },
+    { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'user'] },
+    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer'] },
+    { to: '/pms' as string, label: 'PMs', icon: CalendarCheck, allowedRoles: ['admin', 'engineer'] },
+    { to: '/config' as string, label: 'Config', icon: Settings, allowedRoles: ['admin'] },
 ]
 
-export default function Sidebar() {
+type SidebarProps = {
+    userRole: string
+}
+
+export default function Sidebar({ userRole }: SidebarProps) {
     const [collapsed, setCollapsed] = useState(false)
     const router = useRouter()
+
+    const visibleNavItems = navItems.filter((item) =>
+        item.allowedRoles.includes(userRole)
+    )
 
     const handleSignOut = async () => {
         await authClient.signOut()
@@ -46,7 +54,7 @@ export default function Sidebar() {
 
             {/* Navigation */}
             <nav className="flex-1 px-2 py-4 space-y-1">
-                {navItems.map((item) => (
+                {visibleNavItems.map((item) => (
                     <Link
                         key={item.label}
                         to={item.to}

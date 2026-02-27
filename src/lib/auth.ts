@@ -11,7 +11,18 @@ export const auth = betterAuth({
         schema: schema,
     }),
 
-    // 2. Email + Password (enabled for dev/testing)
+    // 2. Expose custom user fields in the session
+    user: {
+        additionalFields: {
+            role: {
+                type: "string",
+                defaultValue: "user",
+                input: false, // not settable via sign-up
+            },
+        },
+    },
+
+    // 3. Email + Password (enabled for dev/testing)
     emailAndPassword: {
         enabled: true,
     },

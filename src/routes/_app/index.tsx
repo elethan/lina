@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter, useNavigate } from '@tanstack/react-router'
 import {
     useReactTable,
     getCoreRowModel,
@@ -17,8 +17,22 @@ import { fetchRequests, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
 import { fetchEngineers, assignRequestsToEngineer } from '../../data/engineers.api'
 
+// ── Search params type ─────────────────────────────────────
+type RequestSearchParams = {
+    search?: string
+    dateFrom?: string
+    dateTo?: string
+    engineerId?: number
+}
+
 // ── Route ─────────────────────────────────────────────────────
 export const Route = createFileRoute('/_app/')({
+    validateSearch: (search: Record<string, unknown>): RequestSearchParams => ({
+        search: typeof search.search === 'string' ? search.search : undefined,
+        dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
+        dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
+        engineerId: search.engineerId ? Number(search.engineerId) : undefined,
+    }),
     loader: async () => {
         const [requests, engineers] = await Promise.all([
             fetchRequests(),
@@ -152,12 +166,21 @@ const columns: ColumnDef<RequestRow, any>[] = [
 function RequestsPage() {
     const { requests: data, engineers: engineersList } = Route.useLoaderData()
     const router = useRouter()
+    const navigate = useNavigate({ from: '/' })
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', engineerId } = Route.useSearch()
+    const selectedEngineerId = engineerId ?? null
 
-    const [globalFilter, setGlobalFilter] = useState('')
-    const [dateFrom, setDateFrom] = useState('')
-    const [dateTo, setDateTo] = useState('')
+    // URL param updaters
+    const setGlobalFilter = (value: string) =>
+        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
+    const setDateFrom = (value: string) =>
+        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
+    const setDateTo = (value: string) =>
+        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateTo: value || undefined }) })
+    const setSelectedEngineerId = (value: number | null) =>
+        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, engineerId: value ?? undefined }) })
+
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
-    const [selectedEngineerId, setSelectedEngineerId] = useState<number | null>(null)
 
     // Date-filtered + Engineer-filtered data
     const filteredData = useMemo(() => {
