@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { db } from '../db/client'
 import { workOrders, workOrderRequests, workOrderEngineers, userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq, sql, inArray } from 'drizzle-orm'
+import { eq, sql, inArray, desc } from 'drizzle-orm'
 
 // ── Types ─────────────────────────────────────────────────────
 export type WorkOrderRow = {
@@ -36,6 +36,7 @@ export const fetchWorkOrders = createServerFn({ method: 'GET' }).handler(
             .leftJoin(assets, eq(workOrders.assetId, assets.id))
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(workOrders.systemId, systems.id))
+            .orderBy(desc(workOrders.startAt), desc(workOrders.id))
 
         // Fetch linked request counts
         const requestCounts = await db

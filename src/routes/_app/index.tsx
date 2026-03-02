@@ -3,6 +3,8 @@ import {
     useReactTable,
     getCoreRowModel,
     getFilteredRowModel,
+    getPaginationRowModel,
+    getSortedRowModel,
     flexRender,
     createColumnHelper,
     type FilterFn,
@@ -11,7 +13,7 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, UserPlus, Merge, XCircle, ClipboardPlus, ChevronDown } from 'lucide-react'
+import { Search, Calendar, UserPlus, Merge, XCircle, ClipboardPlus, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchRequests, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
@@ -217,6 +219,7 @@ function RequestsPage() {
         data: filteredData,
         columns,
         state: { globalFilter, rowSelection },
+        initialState: { pagination: { pageSize: 20 } },
         onGlobalFilterChange: setGlobalFilter,
         onRowSelectionChange: setRowSelection,
         globalFilterFn: (row, _columnId, filterValue) => {
@@ -226,6 +229,8 @@ function RequestsPage() {
         },
         getCoreRowModel: getCoreRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
+        getPaginationRowModel: getPaginationRowModel(),
+        getSortedRowModel: getSortedRowModel(),
         enableRowSelection: true,
         columnResizeMode,
         enableColumnResizing: true,
@@ -391,8 +396,8 @@ function RequestsPage() {
         <>
             {/* ─── Table ─── */}
             <div className="flex-1 overflow-auto px-6 py-4">
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                    <table className="w-full">
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+                    <table className="min-w-full" style={{ width: table.getTotalSize() }}>
                         <thead>
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <tr key={headerGroup.id}>
@@ -459,16 +464,48 @@ function RequestsPage() {
                     </table>
                 </div>
 
-                {/* Footer stats */}
-                <div className="mt-3 flex items-center justify-between text-xs text-gray-400 px-1">
+                {/* Footer — Pagination */}
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500 px-1">
                     <span>
                         {table.getFilteredRowModel().rows.length} of{' '}
                         {data.length} requests
+                        {selectedCount > 0 && ` · ${selectedCount} selected`}
                     </span>
-                    <span>
-                        {selectedCount > 0 &&
-                            `${selectedCount} selected`}
-                    </span>
+
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => table.firstPage()}
+                            disabled={!table.getCanPreviousPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronsLeft size={14} />
+                        </button>
+                        <button
+                            onClick={() => table.previousPage()}
+                            disabled={!table.getCanPreviousPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronLeft size={14} />
+                        </button>
+                        <span className="px-2 text-gray-600 font-medium">
+                            Page {table.getState().pagination.pageIndex + 1} of{' '}
+                            {table.getPageCount()}
+                        </span>
+                        <button
+                            onClick={() => table.nextPage()}
+                            disabled={!table.getCanNextPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronRight size={14} />
+                        </button>
+                        <button
+                            onClick={() => table.lastPage()}
+                            disabled={!table.getCanNextPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronsRight size={14} />
+                        </button>
+                    </div>
                 </div>
             </div>
         </>
