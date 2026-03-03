@@ -13,17 +13,19 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, UserPlus, Merge, XCircle, ClipboardPlus, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchRequests, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
-import { fetchEngineers, assignRequestsToEngineer } from '../../data/engineers.api'
+import { fetchEngineers } from '../../data/engineers.api'
 
-// ── Search params type ─────────────────────────────────────
 type RequestSearchParams = {
     search?: string
     dateFrom?: string
     dateTo?: string
+    status?: string
     engineerId?: number
 }
 
@@ -33,6 +35,7 @@ export const Route = createFileRoute('/_app/')({
         search: typeof search.search === 'string' ? search.search : undefined,
         dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
+        status: typeof search.status === 'string' ? search.status : 'Open',
         engineerId: search.engineerId ? Number(search.engineerId) : undefined,
     }),
     loader: async () => {
@@ -120,12 +123,24 @@ const columns: ColumnDef<RequestRow, any>[] = [
         cell: (info) => info.getValue(),
     }),
     columnHelper.accessor('status', {
-        header: 'Status',
+        header: ({ column }) => (
+            <div className="flex flex-col gap-1">
+                <span>Status</span>
+                <select
+                    value={(column.getFilterValue() ?? 'Open') as string}
+                    onChange={(e) => column.setFilterValue(e.target.value === 'All' ? undefined : e.target.value)}
+                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
+                >
+                    <option value="All">All</option>
+                    <option value="Open">Open</option>
+                    <option value="Closed">Closed</option>
+                </select>
+            </div>
+        ),
         cell: (info) => {
             const status = info.getValue()
             const colors: Record<string, string> = {
                 Open: 'bg-primary/10 text-primary-darker border border-primary/20',
-                'In Progress': 'bg-amber-50 text-amber-700 border border-amber-200',
                 Closed: 'bg-gray-100 text-gray-500 border border-gray-200',
             }
             return (
@@ -136,16 +151,44 @@ const columns: ColumnDef<RequestRow, any>[] = [
                 </span>
             )
         },
+        filterFn: (row, columnId, filterValue) => {
+            if (!filterValue || filterValue === 'All') return true
+            return row.getValue(columnId) === filterValue
+        },
     }),
-    columnHelper.accessor('engineerName', {
-        header: 'Engineer',
+    columnHelper.accessor('engineerId', {
+        header: ({ column, table }) => {
+            const engineers = (table.options.meta as any)?.engineersList ?? []
+            return (
+                <div className="flex flex-col gap-1">
+                    <span>Engineer</span>
+                    <select
+                        value={(column.getFilterValue() ?? '') as string}
+                        onChange={(e) => column.setFilterValue(e.target.value ? Number(e.target.value) : undefined)}
+                        className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
+                    >
+                        <option value="">All</option>
+                        {engineers.map((eng: { id: number; name: string }) => (
+                            <option key={eng.id} value={eng.id}>
+                                {eng.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )
+        },
         cell: (info) => {
-            const name = info.getValue()
-            return name ? (
+            const id = info.getValue()
+            const name = info.row.original.engineerName
+            return id ? (
                 <span className="text-gray-700">{name}</span>
             ) : (
                 <span className="text-gray-400 italic text-xs">Unassigned</span>
             )
+        },
+        filterFn: (row, columnId, filterValue) => {
+            if (filterValue === undefined || filterValue === null || filterValue === '') return true
+            return row.getValue(columnId) === filterValue || row.getValue(columnId) === null
         },
     }),
 
@@ -169,20 +212,35 @@ function RequestsPage() {
     const { requests: data, engineers: engineersList } = Route.useLoaderData()
     const router = useRouter()
     const navigate = useNavigate({ from: '/' })
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', engineerId } = Route.useSearch()
+    const { user } = useRouteContext({ from: '/_app/' })
+    const userRole = user?.role ?? 'user'
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId } = Route.useSearch()
     const selectedEngineerId = engineerId ?? null
 
-    // URL param updaters
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
     const setDateFrom = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
     const setDateTo = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateTo: value || undefined }) })
-    const setSelectedEngineerId = (value: number | null) =>
-        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, engineerId: value ?? undefined }) })
 
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+    const [columnFilters, setColumnFilters] = useState<any[]>([
+        ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
+        ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
+    ])
+
+    const { mutate: mutateCreateWO } = useMutation({
+        mutationFn: async (data: { requestIds: number[] }) => {
+            const result = await createWorkOrder({ data })
+            return result
+        },
+        onSuccess: () => {
+            router.invalidate()
+            setRowSelection({})
+            navigate({ to: '/work-orders' })
+        },
+    })
 
     // Date-filtered + Engineer-filtered data
     const filteredData = useMemo(() => {
@@ -203,25 +261,32 @@ function RequestsPage() {
             })
         }
 
-        // Engineer filter: show requests assigned to selected engineer + unassigned
-        if (selectedEngineerId !== null) {
-            result = result.filter(
-                (row) => row.engineerId === null || row.engineerId === selectedEngineerId
-            )
-        }
-
         return result
-    }, [data, dateFrom, dateTo, selectedEngineerId])
+    }, [data, dateFrom, dateTo])
 
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
 
     const table = useReactTable({
         data: filteredData,
         columns,
-        state: { globalFilter, rowSelection },
+        state: { globalFilter, rowSelection, columnFilters },
         initialState: { pagination: { pageSize: 20 } },
         onGlobalFilterChange: setGlobalFilter,
         onRowSelectionChange: setRowSelection,
+        onColumnFiltersChange: (updater) => {
+            setColumnFilters(updater)
+            const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
+            const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
+            const newEngineerId = newFilters.find((f: any) => f.id === 'engineerId')?.value as number | undefined
+
+            navigate({
+                search: (prev: RequestSearchParams) => ({
+                    ...prev,
+                    status: newStatus,
+                    engineerId: newEngineerId,
+                })
+            })
+        },
         globalFilterFn: (row, _columnId, filterValue) => {
             const serial = rankItem(row.getValue('serialNumber') ?? '', filterValue)
             const site = rankItem(row.getValue('siteName') ?? '', filterValue)
@@ -234,37 +299,12 @@ function RequestsPage() {
         enableRowSelection: true,
         columnResizeMode,
         enableColumnResizing: true,
+        meta: { engineersList },
     })
 
     const selectedCount = Object.keys(rowSelection).length
 
-    // Check if any selected rows are unassigned (needed for Assign button)
-    const selectedUnassignedIds = useMemo(() => {
-        return Object.keys(rowSelection)
-            .filter((key) => rowSelection[key])
-            .map((key) => filteredData[parseInt(key)])
-            .filter((row) => row && row.engineerId === null)
-            .map((row) => row.id)
-    }, [rowSelection, filteredData])
-
-    const canAssign = selectedEngineerId !== null && selectedUnassignedIds.length > 0
-
-    const handleAssign = async () => {
-        if (!canAssign || selectedEngineerId === null) return
-
-        try {
-            const result = await assignRequestsToEngineer({
-                data: { requestIds: selectedUnassignedIds, engineerId: selectedEngineerId },
-            })
-            alert(`Assigned ${result.assignedCount} request(s) successfully!`)
-            setRowSelection({})
-            router.invalidate()
-        } catch (err) {
-            alert(`Failed to assign: ${err instanceof Error ? err.message : 'Unknown error'}`)
-        }
-    }
-
-    const handleCreateWO = async () => {
+    const handleCreateWO = () => {
         // Get actual request IDs from the selected row indices
         const selectedRequestIds = Object.keys(rowSelection)
             .filter((key) => rowSelection[key])
@@ -273,14 +313,7 @@ function RequestsPage() {
 
         if (selectedRequestIds.length === 0) return
 
-        try {
-            const result = await createWorkOrder({ data: { requestIds: selectedRequestIds } })
-            alert(`Work Order #${result.woId} created successfully!`)
-            setRowSelection({})
-            router.invalidate()
-        } catch (err) {
-            alert(`Failed to create WO: ${err instanceof Error ? err.message : 'Unknown error'}`)
-        }
+        mutateCreateWO({ requestIds: selectedRequestIds })
     }
 
     // ── Set toolbar content (synchronous — SSR-safe) ─────────────
@@ -326,69 +359,46 @@ function RequestsPage() {
             </>
         ),
         rightContent: (
-            <>
-                {/* Engineer selector */}
-                <div className="relative">
-                    <select
-                        id="engineer-filter"
-                        value={selectedEngineerId ?? ''}
-                        onChange={(e) => {
-                            const val = e.target.value
-                            setSelectedEngineerId(val ? Number(val) : null)
-                            setRowSelection({}) // clear selection on filter change
-                        }}
-                        className="appearance-none pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors cursor-pointer"
-                    >
-                        <option value="">All Engineers</option>
-                        {engineersList.map((eng) => (
-                            <option key={eng.id} value={eng.id}>
-                                {eng.name}
-                            </option>
-                        ))}
-                    </select>
-                    <ChevronDown
-                        size={14}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                    />
-                </div>
+            <div className="flex items-center gap-2">
+                <button
+                    id="btn-new"
+                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-40"
+                    onClick={() => {
+                        alert('New Request form to be implemented')
+                    }}
+                >
+                    <PlusCircle size={16} />
+                    New
+                </button>
                 <div className="w-px h-6 bg-gray-200" />
                 <button
-                    id="btn-assign"
-                    disabled={!canAssign}
-                    onClick={handleAssign}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                    <UserPlus size={15} />
-                    Assign{selectedUnassignedIds.length > 0 ? ` (${selectedUnassignedIds.length})` : ''}
-                </button>
-                <button
                     id="btn-create-wo"
-                    disabled={selectedCount === 0}
+                    disabled={selectedCount === 0 || userRole === 'user'}
                     onClick={handleCreateWO}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                 >
-                    <ClipboardPlus size={15} />
+                    <ClipboardPlus size={16} />
                     Create WO
                 </button>
                 <button
                     id="btn-merge"
-                    disabled={selectedCount < 2}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    disabled={selectedCount < 2 || userRole === 'user'}
+                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                 >
-                    <Merge size={15} />
+                    <Merge size={16} />
                     Merge
                 </button>
                 <button
                     id="btn-close"
                     disabled={selectedCount === 0}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                 >
-                    <XCircle size={15} />
+                    <XCircle size={16} />
                     Close
                 </button>
-            </>
+            </div>
         ),
-    }), [globalFilter, dateFrom, dateTo, selectedCount, selectedEngineerId, selectedUnassignedIds, canAssign, engineersList])
+    }), [globalFilter, dateFrom, dateTo, selectedCount, handleCreateWO, userRole])
 
     useSetToolbar(toolbarConfig)
 

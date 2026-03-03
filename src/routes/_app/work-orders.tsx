@@ -13,7 +13,7 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, CheckCircle2, Clock, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, Play, XCircle, UserPlus } from 'lucide-react'
+import { Search, Calendar, CheckCircle2, Clock, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
 import { fetchEngineers } from '../../data/engineers.api'
@@ -74,17 +74,28 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
     enableResizing: false,
   }),
   columnHelper.accessor('status', {
-    header: 'Status',
+    header: ({ column }) => {
+      return (
+        <div className="flex flex-col gap-1">
+          <span>Status</span>
+          <select
+            value={(column.getFilterValue() ?? 'Open') as string}
+            onChange={(e) => column.setFilterValue(e.target.value === 'All' ? undefined : e.target.value)}
+            className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
+          >
+            <option value="All">All</option>
+            <option value="Open">Open</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
+      )
+    },
     cell: (info) => {
       const status = info.getValue()
       const config: Record<string, { colors: string; icon: typeof CheckCircle2 }> = {
         Open: {
           colors: 'bg-primary/10 text-primary-darker border border-primary/20',
           icon: AlertCircle,
-        },
-        'In Progress': {
-          colors: 'bg-amber-50 text-amber-700 border border-amber-200',
-          icon: Clock,
         },
         Closed: {
           colors: 'bg-gray-100 text-gray-500 border border-gray-200',
@@ -103,6 +114,10 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
           {status}
         </span>
       )
+    },
+    filterFn: (row, columnId, filterValue) => {
+      if (!filterValue || filterValue === 'All') return true
+      return row.getValue(columnId) === filterValue
     },
     size: 130,
   }),
@@ -145,7 +160,26 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
     enableResizing: false,
   }),
   columnHelper.accessor('engineerNames', {
-    header: 'Engineers',
+    header: ({ column, table }) => {
+      const engineers = (table.options.meta as any)?.engineersList ?? []
+      return (
+        <div className="flex flex-col gap-1">
+          <span>Engineers</span>
+          <select
+            value={(column.getFilterValue() ?? '') as string}
+            onChange={(e) => column.setFilterValue(e.target.value ? Number(e.target.value) : undefined)}
+            className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
+          >
+            <option value="">All</option>
+            {engineers.map((eng: { id: number; name: string }) => (
+              <option key={eng.id} value={eng.id}>
+                {eng.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )
+    },
     cell: (info) => {
       const names = info.getValue()
       if (!names || names.length === 0) {
@@ -163,6 +197,11 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
           ))}
         </div>
       )
+    },
+    filterFn: (_row, _columnId, filterValue) => {
+      if (filterValue === undefined || filterValue === null || filterValue === '') return true
+      // TODO: WO engineerNames is an array of strings; filtering by engineer ID requires a different approach.
+      return true
     },
   }),
   columnHelper.accessor('startAt', {
@@ -233,14 +272,15 @@ function WorkOrdersPage() {
     navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
   const setDateTo = (value: string) =>
     navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateTo: value || undefined }) })
-  const setStatusFilter = (value: string) =>
-    navigate({ search: (prev: WoSearchParams) => ({ ...prev, status: value === 'Open' ? undefined : value }) })
-
-  const setSelectedEngineerId = (value: number | null) =>
-    navigate({ search: (prev: WoSearchParams) => ({ ...prev, engineerId: value ?? undefined }) })
 
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
   const selectedCount = Object.keys(rowSelection).length
+
+  // Read initial columns filter state from URL search parameters
+  const [columnFilters, setColumnFilters] = useState<any[]>([
+    ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
+    ...(selectedEngineerId !== null ? [{ id: 'engineerNames', value: selectedEngineerId }] : []),
+  ])
 
   // Filtered data
   const filteredData = useMemo(() => {
@@ -261,30 +301,32 @@ function WorkOrdersPage() {
       })
     }
 
-    // Status filter
-    if (statusFilter && statusFilter !== 'All') {
-      result = result.filter((row) => row.status === statusFilter)
-    }
-
-    // Engineer filter
-    if (selectedEngineerId !== null) {
-      result = result.filter((row) =>
-        row.engineerNames?.some((_name: string, _i: number) => true) // keep all for now — WO engineers are names not IDs
-      )
-    }
-
     return result
-  }, [data, dateFrom, dateTo, statusFilter, selectedEngineerId])
+  }, [data, dateFrom, dateTo])
 
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
 
   const table = useReactTable({
     data: filteredData,
     columns,
-    state: { globalFilter, rowSelection },
+    state: { globalFilter, rowSelection, columnFilters },
     initialState: { pagination: { pageSize: 20 } },
     onGlobalFilterChange: setGlobalFilter,
     onRowSelectionChange: setRowSelection,
+    onColumnFiltersChange: (updater) => {
+      setColumnFilters(updater)
+      const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
+      const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
+      const newEngineerId = newFilters.find((f: any) => f.id === 'engineerNames')?.value as number | undefined
+
+      navigate({
+        search: (prev: WoSearchParams) => ({
+          ...prev,
+          status: newStatus,
+          engineerId: newEngineerId,
+        })
+      })
+    },
     globalFilterFn: (row, _columnId, filterValue) => {
       const woId = rankItem(String(row.getValue('id')), filterValue)
       const serial = rankItem(row.getValue('serialNumber') ?? '', filterValue)
@@ -299,6 +341,7 @@ function WorkOrdersPage() {
     enableRowSelection: true,
     columnResizeMode,
     enableColumnResizing: true,
+    meta: { engineersList },
   })
 
 
@@ -346,68 +389,34 @@ function WorkOrdersPage() {
       </>
     ),
     rightContent: (
-      <>
-        {/* Status dropdown */}
-        <div className="relative">
-          <select
-            id="wo-status-filter"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="appearance-none bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-8 py-2 text-sm text-gray-600 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors cursor-pointer"
-          >
-            <option value="All">All Statuses</option>
-            <option value="Open">Open</option>
-            <option value="Closed">Closed</option>
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-
-        {/* Engineer dropdown */}
-        <div className="relative">
-          <select
-            id="wo-engineer-filter"
-            value={selectedEngineerId ?? ''}
-            onChange={(e) => setSelectedEngineerId(e.target.value ? Number(e.target.value) : null)}
-            className="appearance-none bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-8 py-2 text-sm text-gray-600 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors cursor-pointer"
-          >
-            <option value="">All Engineers</option>
-            {engineersList.map((eng: { id: number; name: string }) => (
-              <option key={eng.id} value={eng.id}>
-                {eng.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-
-        {/* Action buttons */}
+      <div className="flex items-center gap-2">
         <button
           id="btn-start-wo"
           disabled={selectedCount === 0}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
         >
-          <Play size={15} />
+          <Play size={16} />
           Start
         </button>
         <button
           id="btn-assign-wo"
           disabled={selectedCount === 0}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
         >
-          <UserPlus size={15} />
+          <UserPlus size={16} />
           Assign
         </button>
         <button
           id="btn-close-wo"
           disabled={selectedCount === 0}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
         >
-          <XCircle size={15} />
+          <XCircle size={16} />
           Close
         </button>
-      </>
+      </div>
     ),
-  }), [globalFilter, dateFrom, dateTo, statusFilter, data.length, selectedEngineerId, engineersList, selectedCount])
+  }), [globalFilter, dateFrom, dateTo, selectedCount])
 
   useSetToolbar(toolbarConfig)
 

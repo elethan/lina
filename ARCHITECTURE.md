@@ -1,7 +1,7 @@
 # Lina — Architecture Overview
 
 > CMMS (Computerised Maintenance Management System) for medical equipment.
-> Last updated: 2026-02-27
+> Last updated: 2026-03-03
 
 ---
 
@@ -62,17 +62,25 @@ src/
 
 ### 1. SSR-Safe Toolbar (`useSetToolbar`)
 
-Each page sets its toolbar content (title, search, filters, action buttons) via `useSetToolbar()` which sets state **synchronously during render** — not inside `useEffect`. This prevents the toolbar from disappearing on hard refresh.
+Each page sets its toolbar content via `useSetToolbar()` which sets state **synchronously during render** — not inside `useEffect`. This prevents the toolbar from disappearing on hard refresh.
+
+**Layout (as of 2026-03-03):** The toolbar title `<h1>` has been removed. Active page context is communicated solely via the sidebar highlight. This keeps all data components anchored at the same left position on every page (no layout shift on navigation).
 
 ```tsx
 const toolbarConfig = useMemo(() => ({
-    title: 'Requests',
-    leftContent: (<>...</>),
-    rightContent: (<>...</>),
+    title: 'Requests',          // still stored in context (e.g. for document title), not rendered
+    leftContent: (<>...</>),    // search + date pickers — left-anchored, flex-1
+    rightContent: (<>...</>),   // action buttons — right-anchored, shrink-0
 }), [deps])
 
 useSetToolbar(toolbarConfig)
 ```
+
+**Toolbar flex structure** (`Toolbar.tsx`):
+
+- `leftContent` wrapper: `flex items-center gap-4 flex-1` — fills available space, stays left
+- `rightContent` wrapper: `flex items-center gap-2 shrink-0` — pinned to the far right
+- No balancing spacer or centering needed
 
 ### 2. URL Search Params (`validateSearch`)
 
@@ -124,9 +132,11 @@ Both pages follow the same pattern:
 - Table container has `overflow-x-auto`
 - Row selection: click to select, selected rows highlight green
 - Server-side sorting (newest first): Requests by `createdAt DESC`, Work Orders by `startAt DESC, id DESC`
+- Header-level column filtering: Instead of keeping dropdown filters inside `Toolbar.tsx`, both Requests and Work Orders use custom TanStack Table headers to display Status / Engineer select elements right inside the table head, mapping state into `@tanstack/react-table`'s `columnFilters` object, and syncing changes to the URL via TanStack Router `.navigate()`.
 
-**Requests toolbar** (rightContent): engineer dropdown, Create WO / Merge / Close buttons
-**Work Orders toolbar** (rightContent): status dropdown, engineer dropdown, Start / Assign / Close buttons
+**Requests toolbar** `rightContent`: New / Create WO / Merge / Close buttons — all `w-40`, equal-width.
+**Work Orders toolbar** `rightContent`: Start / Assign / Close buttons — same pattern. Both pages now use `rightContent` identically; no separate in-page action bar div exists.
+**Status filter options**: Both pages only expose `All / Open / Closed` ("In Progress" removed).
 
 ---
 
@@ -138,7 +148,7 @@ Both pages follow the same pattern:
 | `session`, `account`, `verification` | Better Auth internals |
 | `sites` | Physical locations (e.g. "GenesisCare Oxford") |
 | `systems` | Equipment types (e.g. "CT Scanner", "MRI") |
-| `engineers` | Field engineers (first/last name, email) |
+| `engineers` | Field engineers (first/last name). No UNIQUE constraint on name columns — deduplication handled in `fetchEngineers()` via `.groupBy(firstName, lastName)`. |
 | `assets` | Individual machines (serial number, linked to site + system) |
 | `user_requests` | Service requests from users (linked to asset, engineer) |
 | `work_orders` | Work orders grouping requests |

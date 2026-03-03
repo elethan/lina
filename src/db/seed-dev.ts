@@ -87,16 +87,22 @@ async function seedDomainData() {
         .returning()
     console.log(`   Systems: ${systemRows.length} inserted`)
 
-    // --- Engineers ---
-    const engineerRows = await db
-        .insert(engineers)
-        .values([
-            { firstName: 'Thanos', lastName: 'Papageorgiou' },
-            { firstName: 'James', lastName: 'Allington' },
-            { firstName: 'Abishek', lastName: 'Sharma' },
-        ])
-        .returning()
-    console.log(`   Engineers: ${engineerRows.length} inserted`)
+    // --- Engineers (guard against duplicates on repeated seed runs) ---
+    const existingEngineers = await db.select().from(engineers)
+    let engineerRows = existingEngineers
+    if (existingEngineers.length === 0) {
+        engineerRows = await db
+            .insert(engineers)
+            .values([
+                { firstName: 'Thanos', lastName: 'Papageorgiou' },
+                { firstName: 'James', lastName: 'Allington' },
+                { firstName: 'Abishek', lastName: 'Sharma' },
+            ])
+            .returning()
+        console.log(`   Engineers: ${engineerRows.length} inserted`)
+    } else {
+        console.log(`   Engineers: ${engineerRows.length} already exist, skipping`)
+    }
 
     const [thanos, allington, abishek] = engineerRows
 

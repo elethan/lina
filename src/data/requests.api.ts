@@ -38,6 +38,7 @@ export const fetchRequests = createServerFn({ method: 'GET' }).handler(
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(userRequests.systemId, systems.id))
             .leftJoin(engineers, eq(userRequests.engineerId, engineers.id))
+            .where(sql`${userRequests.createdAt} >= datetime('now', '-6 months')`)
             .orderBy(desc(userRequests.createdAt))
 
         return rows.map((r) => ({

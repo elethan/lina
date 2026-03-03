@@ -17,6 +17,7 @@ export const fetchEngineers = createServerFn({ method: 'GET' }).handler(
                 lastName: engineers.lastName,
             })
             .from(engineers)
+            .groupBy(engineers.firstName, engineers.lastName)
 
         return rows.map((r) => ({
             id: r.id,
