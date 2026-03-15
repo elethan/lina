@@ -87,16 +87,22 @@ async function seedDomainData() {
         .returning()
     console.log(`   Systems: ${systemRows.length} inserted`)
 
-    // --- Engineers ---
-    const engineerRows = await db
-        .insert(engineers)
-        .values([
-            { firstName: 'Thanos', lastName: 'Papageorgiou' },
-            { firstName: 'James', lastName: 'Allington' },
-            { firstName: 'Abishek', lastName: 'Sharma' },
-        ])
-        .returning()
-    console.log(`   Engineers: ${engineerRows.length} inserted`)
+    // --- Engineers (guard against duplicates on repeated seed runs) ---
+    const existingEngineers = await db.select().from(engineers)
+    let engineerRows = existingEngineers
+    if (existingEngineers.length === 0) {
+        engineerRows = await db
+            .insert(engineers)
+            .values([
+                { firstName: 'Thanos', lastName: 'Papageorgiou' },
+                { firstName: 'James', lastName: 'Allington' },
+                { firstName: 'Abishek', lastName: 'Sharma' },
+            ])
+            .returning()
+        console.log(`   Engineers: ${engineerRows.length} inserted`)
+    } else {
+        console.log(`   Engineers: ${engineerRows.length} already exist, skipping`)
+    }
 
     const [thanos, allington, abishek] = engineerRows
 
@@ -155,12 +161,24 @@ async function seedDomainData() {
     const pmTaskRows = await db
         .insert(pmTasks)
         .values([
-            { systemId: systemRows[0]?.id, instruction: 'Inspect magnetron output power and pulse stability', docSection: 'PM-MAG-01', intervalMonths: 6 },
-            { systemId: systemRows[1]?.id, instruction: 'Check thyratron pulse shape and timing', docSection: 'PM-THY-01', intervalMonths: 12 },
-            { systemId: systemRows[2]?.id, instruction: 'Clean cooling filters and verify flow rate', docSection: 'PM-COOL-01', intervalMonths: 3 },
-            { systemId: systemRows[3]?.id, instruction: 'Verify beam symmetry, flatness and output', docSection: 'PM-BT-01', intervalMonths: 6 },
+            // Interval: 1 Month
             { systemId: systemRows[5]?.id, instruction: 'MR imaging QA — check SNR, geometric distortion', docSection: 'PM-MRI-01', intervalMonths: 1 },
+            { systemId: systemRows[4]?.id, instruction: 'Verify patient positioning lasers and optical alignment', docSection: 'PM-PP-01', intervalMonths: 1 },
+
+            // Interval: 3 Months
+            { systemId: systemRows[2]?.id, instruction: 'Clean cooling filters and verify flow rate', docSection: 'PM-COOL-01', intervalMonths: 3 },
+            { systemId: systemRows[2]?.id, instruction: 'Test chiller water conductivity and top-up coolant', docSection: 'PM-COOL-02', intervalMonths: 3 },
+
+            // Interval: 6 Months
+            { systemId: systemRows[0]?.id, instruction: 'Inspect magnetron output power and pulse stability', docSection: 'PM-MAG-01', intervalMonths: 6 },
+            { systemId: systemRows[3]?.id, instruction: 'Verify beam symmetry, flatness and output', docSection: 'PM-BT-01', intervalMonths: 6 },
             { systemId: systemRows[6]?.id, instruction: 'RF system calibration and coil inspection', docSection: 'PM-RF-01', intervalMonths: 6 },
+
+            // Interval: 12 Months
+            { systemId: systemRows[1]?.id, instruction: 'Check thyratron pulse shape and timing', docSection: 'PM-THY-01', intervalMonths: 12 },
+            { systemId: systemRows[1]?.id, instruction: 'Replace thyratron grid 1 and 2 trigger thyristors', docSection: 'PM-THY-02', intervalMonths: 12 },
+            { systemId: systemRows[0]?.id, instruction: 'Complete waveguide inspection and vacuum test', docSection: 'PM-MAG-02', intervalMonths: 12 },
+            { systemId: systemRows[5]?.id, instruction: 'MR comprehensive shim verification and tuning', docSection: 'PM-MRI-02', intervalMonths: 12 },
         ])
         .returning()
     console.log(`   PM Tasks: ${pmTaskRows.length} inserted`)
@@ -252,10 +270,49 @@ async function seedDomainData() {
     console.log('\n✅ Domain data seeded successfully!')
 }
 
+// ── 3. Test Radiographer (role: user) ─────────────────────────
+async function seedRadiographer() {
+    const email = 'radiographer@lina.com'
+    const password = 'linaradio1'
+    const name = 'Oxford Radiographer'
+
+    console.log(`\n🩻 Seeding test radiographer: ${email}...`)
+
+    try {
+        const existing = await auth.api.signInEmail({
+            body: { email, password },
+        })
+        if (existing) {
+            console.log('   Radiographer already exists.')
+            return
+        }
+    } catch {
+        // User doesn't exist — proceed to create
+    }
+
+    try {
+        await auth.api.signUpEmail({
+            body: { email, password, name },
+        })
+        console.log('   Radiographer created successfully!')
+        console.log(`   Email:    ${email}`)
+        console.log(`   Password: ${password}`)
+        console.log(`   Role:     user (radiographer)`)
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (message.includes('already exists') || message.includes('UNIQUE constraint')) {
+            console.log('   Radiographer already exists.')
+        } else {
+            console.error('   Failed to create radiographer:', message)
+        }
+    }
+}
+
 // ── Run ───────────────────────────────────────────────────────
 async function main() {
     try {
         await seedDevUser()
+        await seedRadiographer()
         await seedDomainData()
     } catch (err) {
         console.error('❌ Seed failed:', err)

@@ -1,7 +1,7 @@
-import { createServerFn } from '@tanstack/react-start'
+import { authServerFn } from '../lib/server-utils'
 import { db } from '../db/client'
 import { userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, desc } from 'drizzle-orm'
 
 export type RequestRow = {
     id: number
@@ -16,7 +16,7 @@ export type RequestRow = {
     createdAt: string | null
 }
 
-export const fetchRequests = createServerFn({ method: 'GET' }).handler(
+export const fetchRequests = authServerFn({ method: 'GET' }).handler(
     async (): Promise<RequestRow[]> => {
         const rows = await db
             .select({
@@ -38,6 +38,8 @@ export const fetchRequests = createServerFn({ method: 'GET' }).handler(
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(userRequests.systemId, systems.id))
             .leftJoin(engineers, eq(userRequests.engineerId, engineers.id))
+            .where(sql`${userRequests.createdAt} >= datetime('now', '-6 months')`)
+            .orderBy(desc(userRequests.createdAt))
 
         return rows.map((r) => ({
             id: r.id,

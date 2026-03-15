@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { createServerFn } from '@tanstack/react-start'
+import { authServerFn } from '../lib/server-utils'
 import { getRequest } from '@tanstack/react-start/server'
 import { auth } from '../lib/auth'
 
@@ -22,7 +22,7 @@ interface MyRouterContext {
     queryClient: QueryClient
 }
 
-const fetchSession = createServerFn({ method: 'GET' }).handler(async () => {
+const fetchSession = authServerFn({ method: 'GET' }).handler(async () => {
     const request = getRequest()
     if (!request) return null
     try {
