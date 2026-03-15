@@ -13,11 +13,19 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from '../../components/ui/dialog'
 import { useMutation } from '@tanstack/react-query'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
-import { fetchRequests, type RequestRow } from '../../data/requests.api'
+import { fetchRequests, deleteRequests, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
 import { fetchEngineers } from '../../data/engineers.api'
 
@@ -35,7 +43,7 @@ export const Route = createFileRoute('/_app/')({
         search: typeof search.search === 'string' ? search.search : undefined,
         dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
-        status: typeof search.status === 'string' ? search.status : 'Open',
+        status: typeof search.status === 'string' ? search.status : 'OpenActive',
         engineerId: search.engineerId ? Number(search.engineerId) : undefined,
     }),
     loader: async () => {
@@ -127,12 +135,14 @@ const columns: ColumnDef<RequestRow, any>[] = [
             <div className="flex flex-col gap-1">
                 <span>Status</span>
                 <select
-                    value={(column.getFilterValue() ?? 'Open') as string}
+                    value={(column.getFilterValue() ?? 'OpenActive') as string}
                     onChange={(e) => column.setFilterValue(e.target.value === 'All' ? undefined : e.target.value)}
-                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-20 truncate"
+                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-32 truncate"
                 >
                     <option value="All">All</option>
+                    <option value="OpenActive">Open & Active</option>
                     <option value="Open">Open</option>
+                    <option value="Active">Active</option>
                     <option value="Closed">Closed</option>
                 </select>
             </div>
@@ -141,6 +151,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
             const status = info.getValue()
             const colors: Record<string, string> = {
                 Open: 'bg-primary/10 text-primary-darker border border-primary/20',
+                Active: 'bg-blue-100 text-blue-700 border border-blue-200',
                 Closed: 'bg-gray-100 text-gray-500 border border-gray-200',
             }
             return (
@@ -153,6 +164,10 @@ const columns: ColumnDef<RequestRow, any>[] = [
         },
         filterFn: (row, columnId, filterValue) => {
             if (!filterValue || filterValue === 'All') return true
+            if (filterValue === 'OpenActive') {
+                const val = row.getValue(columnId)
+                return val === 'Open' || val === 'Active'
+            }
             return row.getValue(columnId) === filterValue
         },
     }),
@@ -214,7 +229,7 @@ function RequestsPage() {
     const navigate = useNavigate({ from: '/' })
     const { user } = useRouteContext({ from: '/_app/' })
     const userRole = user?.role ?? 'user'
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId } = Route.useSearch()
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'OpenActive', engineerId } = Route.useSearch()
     const selectedEngineerId = engineerId ?? null
 
     const setGlobalFilter = (value: string) =>
@@ -225,6 +240,8 @@ function RequestsPage() {
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateTo: value || undefined }) })
 
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+    const [showCreateWODialog, setShowCreateWODialog] = useState(false)
+    const [showCloseDialog, setShowCloseDialog] = useState(false)
     const [columnFilters, setColumnFilters] = useState<any[]>([
         ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
         ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
@@ -235,10 +252,22 @@ function RequestsPage() {
             const result = await createWorkOrder({ data })
             return result
         },
+        onSuccess: (result) => {
+            router.invalidate()
+            setRowSelection({})
+            navigate({ to: '/work-orders', search: { newWoId: result.woId, status: 'All' } })
+        },
+    })
+
+    const { mutate: mutateDeleteRequests } = useMutation({
+        mutationFn: async (data: { requestIds: number[] }) => {
+            const result = await deleteRequests({ data })
+            return result
+        },
         onSuccess: () => {
             router.invalidate()
             setRowSelection({})
-            navigate({ to: '/work-orders' })
+            setShowCloseDialog(false)
         },
     })
 
@@ -304,15 +333,13 @@ function RequestsPage() {
 
     const selectedCount = Object.keys(rowSelection).length
 
-    const handleCreateWO = () => {
-        // Get actual request IDs from the selected row indices
+    const handleConfirmCreateWO = () => {
         const selectedRequestIds = Object.keys(rowSelection)
             .filter((key) => rowSelection[key])
             .map((key) => filteredData[parseInt(key)]?.id)
             .filter((id): id is number => id !== undefined)
 
-        if (selectedRequestIds.length === 0) return
-
+        setShowCreateWODialog(false)
         mutateCreateWO({ requestIds: selectedRequestIds })
     }
 
@@ -374,7 +401,7 @@ function RequestsPage() {
                 <button
                     id="btn-create-wo"
                     disabled={selectedCount === 0 || userRole === 'user'}
-                    onClick={handleCreateWO}
+                    onClick={() => setShowCreateWODialog(true)}
                     className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                 >
                     <ClipboardPlus size={16} />
@@ -391,6 +418,7 @@ function RequestsPage() {
                 <button
                     id="btn-close"
                     disabled={selectedCount === 0}
+                    onClick={() => setShowCloseDialog(true)}
                     className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                 >
                     <XCircle size={16} />
@@ -398,12 +426,145 @@ function RequestsPage() {
                 </button>
             </div>
         ),
-    }), [globalFilter, dateFrom, dateTo, selectedCount, handleCreateWO, userRole])
+    }), [globalFilter, dateFrom, dateTo, selectedCount, userRole])
 
     useSetToolbar(toolbarConfig)
 
+    // Check if selected requests span multiple assets
+    const selectedRequests = Object.keys(rowSelection)
+        .filter((key) => rowSelection[key])
+        .map((key) => filteredData[parseInt(key)])
+        .filter((req): req is typeof filteredData[0] => req !== undefined)
+
+    const uniqueAssetIds = new Set(selectedRequests.map((req) => req.assetId))
+    const isMultipleAssets = uniqueAssetIds.size > 1
+    const hasAttachedRequests = selectedRequests.some((req) => req.status !== 'Open')
+
     return (
         <>
+            {/* ─── Close Requests Dialog ─── */}
+            <Dialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${hasAttachedRequests ? 'bg-red-100' : 'bg-primary/10'}`}>
+                                <XCircle size={20} className={hasAttachedRequests ? 'text-red-600' : 'text-primary'} />
+                            </div>
+                            <DialogTitle className="text-base font-semibold text-gray-900">
+                                {hasAttachedRequests ? 'Cannot Delete Requests' : 'Delete Requests'}
+                            </DialogTitle>
+                        </div>
+                        <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
+                            {hasAttachedRequests ? (
+                                <>
+                                    One or more of the selected requests are currently <span className="font-semibold text-gray-700">Active</span> or <span className="font-semibold text-gray-700">Closed</span>.
+                                    <br /><br />
+                                    You cannot delete requests that are already attached to a Work Order.
+                                </>
+                            ) : (
+                                <>
+                                    Are you sure you want to permanently delete{' '}
+                                    <span className="font-semibold text-gray-700">
+                                        {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
+                                    </span>?
+                                    <br /><br />
+                                    This action cannot be undone.
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-2 flex gap-2 sm:gap-2">
+                        {hasAttachedRequests ? (
+                            <button
+                                onClick={() => setShowCloseDialog(false)}
+                                className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-800 transition-colors"
+                            >
+                                Got it
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    onClick={() => setShowCloseDialog(false)}
+                                    className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    autoFocus
+                                    onClick={() => {
+                                        const ids = selectedRequests.map((r) => r.id)
+                                        mutateDeleteRequests({ requestIds: ids })
+                                    }}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 text-white shadow-sm hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:ring-offset-1"
+                                >
+                                    <XCircle size={15} />
+                                    Delete
+                                </button>
+                            </>
+                        )}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ─── Create WO Confirmation / Error Dialog ─── */}
+            <Dialog open={showCreateWODialog} onOpenChange={setShowCreateWODialog}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${isMultipleAssets ? 'bg-red-100' : 'bg-primary/10'}`}>
+                                <AlertCircle size={20} className={isMultipleAssets ? 'text-red-600' : 'text-primary'} />
+                            </div>
+                            <DialogTitle className="text-base font-semibold text-gray-900">
+                                {isMultipleAssets ? 'Invalid Selection' : 'Create Work Order'}
+                            </DialogTitle>
+                        </div>
+                        <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
+                            {isMultipleAssets ? (
+                                <>
+                                    You have selected requests from <span className="font-semibold text-gray-700">multiple different assets/systems</span>.
+                                    <br /><br />
+                                    A single Work Order can only be created for requests belonging to the <span className="font-semibold text-gray-700">same asset</span>. Please adjust your selection and try again.
+                                </>
+                            ) : (
+                                <>
+                                    A new Work Order will be created and linked to{' '}
+                                    <span className="font-semibold text-gray-700">
+                                        {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
+                                    </span>
+                                    . This action will commit the Work Order to the database.
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-2 flex gap-2 sm:gap-2">
+                        {isMultipleAssets ? (
+                            <button
+                                onClick={() => setShowCreateWODialog(false)}
+                                className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-800 transition-colors"
+                            >
+                                Got it
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    onClick={() => setShowCreateWODialog(false)}
+                                    className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    autoFocus
+                                    onClick={handleConfirmCreateWO}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-1"
+                                >
+                                    <ClipboardPlus size={15} />
+                                    Continue
+                                </button>
+                            </>
+                        )}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
             {/* ─── Table ─── */}
             <div className="flex-1 overflow-auto px-6 py-4">
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">

@@ -40,26 +40,23 @@ export function useToolbar() {
 
 // ── Synchronous toolbar setter (SSR-safe) ─────────────────────
 /**
- * Sets toolbar content synchronously during render so it's available
- * on the very first frame — including SSR. Cleans up on unmount.
+ * Sets toolbar content during render so it's available on the very
+ * first frame — including SSR.  Accepts a *memoised* ToolbarState
+ * (callers should wrap their config in useMemo) and syncs it into
+ * the context only when the reference changes, preventing infinite
+ * re-render loops.
  */
 export function useSetToolbar(config: ToolbarState) {
     const { setToolbar } = useToolbar()
-    const prev = useRef<string | null>(null)
+    const configRef = useRef<ToolbarState>(config)
 
-    // Build a stable key from the serialisable parts of config
-    const key = config.title
+    // Keep the ref pointing at the latest config for the cleanup closure
+    configRef.current = config
 
-    // Set toolbar synchronously during render when config changes
-    if (prev.current !== key) {
-        prev.current = key
-        setToolbar(config)
-    }
-
-    // Always push latest config (covers reactive content like counts)
+    // Sync config into context whenever the memoised reference changes
     useEffect(() => {
         setToolbar(config)
-    })
+    }, [config, setToolbar])
 
     // Cleanup on unmount — reset toolbar to empty
     useEffect(() => {

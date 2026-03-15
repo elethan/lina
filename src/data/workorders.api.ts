@@ -1,6 +1,6 @@
 import { authServerFn } from '../lib/server-utils'
 import { db } from '../db/client'
-import { workOrders, workOrderRequests, workOrderEngineers, userRequests, assets, sites, systems, engineers } from '../db/schema'
+import { workOrders, workOrderRequests, workOrderEngineers, workOrderParts, userRequests, assets, sites, systems, engineers } from '../db/schema'
 import { eq, sql, inArray, desc } from 'drizzle-orm'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -11,6 +11,7 @@ export type WorkOrderRow = {
     systemName: string | null
     description: string
     status: string
+    createdAt: string | null
     startAt: string | null
     endAt: string | null
     requestCount: number
@@ -29,6 +30,7 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
                 systemName: systems.name,
                 description: workOrders.description,
                 status: workOrders.status,
+                createdAt: sql<string>`${workOrders.createdAt}`,
                 startAt: sql<string>`${workOrders.startAt}`,
                 endAt: sql<string>`${workOrders.endAt}`,
             })
@@ -75,6 +77,7 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
             systemName: r.systemName ?? null,
             description: r.description,
             status: r.status,
+            createdAt: r.createdAt ?? null,
             startAt: r.startAt ?? null,
             endAt: r.endAt ?? null,
             requestCount: countMap.get(r.id) ?? 0,
@@ -122,6 +125,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 systemId: firstRequest.systemId,
                 description,
                 status: 'Open',
+                createdAt: new Date(),
             })
             .returning({ id: workOrders.id })
 
@@ -133,5 +137,52 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             })),
         )
 
+        // Update the source requests to 'Active' since they are now part of a WO
+        await db
+            .update(userRequests)
+            .set({ status: 'Active' })
+            .where(inArray(userRequests.id, requestIds))
+
         return { woId: wo.id }
+    })
+
+export const deleteWorkOrders = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woIds: number[]; requestAction: 'delete' | 'keep' }) => {
+        if (!data.woIds || data.woIds.length === 0) {
+            throw new Error('At least one Work Order must be selected')
+        }
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { woIds, requestAction } = data
+
+        // 1. Find all associated requests
+        const linkedRequests = await db
+            .select({ requestId: workOrderRequests.requestId })
+            .from(workOrderRequests)
+            .where(inArray(workOrderRequests.woId, woIds))
+
+        const requestIds = linkedRequests.map((r) => r.requestId).filter((id): id is number => id !== null)
+
+        // 2. Handle the requests based on user choice
+        if (requestIds.length > 0) {
+            if (requestAction === 'delete') {
+                await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
+            } else if (requestAction === 'keep') {
+                await db
+                    .update(userRequests)
+                    .set({ status: 'Open' })
+                    .where(inArray(userRequests.id, requestIds))
+            }
+        }
+
+        // 3. Clean up associated junction tables
+        await db.delete(workOrderRequests).where(inArray(workOrderRequests.woId, woIds))
+        await db.delete(workOrderEngineers).where(inArray(workOrderEngineers.woId, woIds))
+        await db.delete(workOrderParts).where(inArray(workOrderParts.woId, woIds))
+
+        // 4. Finally, delete the work orders
+        await db.delete(workOrders).where(inArray(workOrders.id, woIds))
+
+        return { success: true }
     })

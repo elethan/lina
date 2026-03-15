@@ -2,6 +2,18 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-15
+
+- **Request Status Logic and Filtering (`requests.api.ts`, `workorders.api.ts`, `index.tsx`)**
+  - Introduced an `"Active"` status for User Requests that are currently tied to a Work Order.
+  - Updated the default Request page filter to display both `"Open"` and `"Active"` requests simultaneously on load (`status: 'OpenActive'`).
+  - Added safety validations to block deletion of Requests that are in an `"Active"` or `"Closed"` state directly from the Requests page.
+
+- **Work Order Deletion Flow (`workorders.api.ts`, `work-orders.tsx`)**
+  - Replaced the simple delete logic behind the "Close" Work Order button with a detailed Shadcn Dialog flow.
+  - Users are now prompted when deleting a Work Order to resolve tied User Requests: either delete everything permanently, or detach the Requests and revert their status back to `"Open"`.
+  - Added full cleanup of junction tables (`work_order_requests`, `work_order_engineers`, `work_order_parts`) during the Work Order deletion process to maintain referential integrity.
+
 ## 2026-03-06
 
 - **Structured JSON Logging & Auditing (`src/lib/logger.ts`, `auth.ts`)**

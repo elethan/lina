@@ -13,8 +13,11 @@ import {
     assets,
     userRequests,
     workOrders,
-    workOrderRequests,
+    assetSystems,
+    spareParts,
+    workOrderParts,
     pmTasks,
+    workOrderRequests,
 } from './schema'
 
 // ── 1. Auth User ──────────────────────────────────────────────
@@ -157,6 +160,23 @@ async function seedDomainData() {
         .returning()
     console.log(`   Assets: ${assetRows.length} inserted`)
 
+    // --- Link Assets to Systems ---
+    const linacSystemIds = [systemRows[0]?.id, systemRows[1]?.id, systemRows[2]?.id, systemRows[3]?.id, systemRows[4]?.id] // Magnetron, Thyratron, Cooling, Beam, Patient
+    const mriSystemIds = [systemRows[0]?.id, systemRows[2]?.id, systemRows[3]?.id, systemRows[4]?.id, systemRows[5]?.id, systemRows[6]?.id] // Magnetron, Cooling, Beam, Patient, MR, RF
+
+    const assetSystemLinks = assetRows.flatMap((asset) => {
+        const isMR = asset.modelName?.includes('MR-Linac')
+        const systemsToLink = isMR ? mriSystemIds : linacSystemIds
+        return systemsToLink
+            .filter((sysId): sysId is number => sysId !== undefined)
+            .map((sysId) => ({ assetId: asset.id, systemId: sysId }))
+    })
+
+    if (assetSystemLinks.length > 0) {
+        await db.insert(assetSystems).values(assetSystemLinks).onConflictDoNothing()
+        console.log(`   Asset-System Links: ${assetSystemLinks.length} inserted`)
+    }
+
     // --- PM Tasks ---
     const pmTaskRows = await db
         .insert(pmTasks)
@@ -192,6 +212,22 @@ async function seedDomainData() {
                 systemId: systemRows[0]?.id,
                 reportedBy: 'Dr. Sarah Mitchell',
                 commentText: 'Unusual noise during beam-on at 6MV. Please investigate.',
+                status: 'Open',
+                engineerId: thanos?.id,
+            },
+            {
+                assetId: assetRows[0]?.id,
+                systemId: systemRows[3]?.id,
+                reportedBy: 'RTT Lucy Chen',
+                commentText: 'Beam symmetry has drifted out of tolerance on daily QA — same Versa HD.',
+                status: 'Open',
+                engineerId: null,
+            },
+            {
+                assetId: assetRows[0]?.id,
+                systemId: systemRows[2]?.id,
+                reportedBy: 'Physicist David Tan',
+                commentText: 'Cooling flow alarm triggered intermittently on Versa HD during afternoon treatments.',
                 status: 'Open',
                 engineerId: thanos?.id,
             },
@@ -265,6 +301,29 @@ async function seedDomainData() {
     if (woRows[1] && requestRows[2]) {
         await db.insert(workOrderRequests).values({ woId: woRows[1].id, requestId: requestRows[2].id })
         console.log(`   Linked Request #${requestRows[2].id} → WO #${woRows[1].id}`)
+    }
+
+    // --- Spare Parts ---
+    const partRows = await db
+        .insert(spareParts)
+        .values([
+            { siteId: siteRows[0]?.id, description: '2.5MW Magnetron (e2v)', location: 'Cabinet A, Shelf 2', stockLevel: 1 },
+            { siteId: siteRows[0]?.id, description: 'Thyratron CX1140', location: 'Cabinet A, Shelf 3', stockLevel: 2 },
+            { siteId: siteRows[0]?.id, description: 'Cooling Water Filter Cartridge', location: 'Plant Room, Bin 1', stockLevel: 5 },
+            { siteId: siteRows[1]?.id, description: 'MR-Linac RF Coil', location: 'Storage Room B', stockLevel: 1 },
+            { siteId: siteRows[1]?.id, description: 'Water Chiller Pump', location: 'Plant Room, Bin 3', stockLevel: 1 },
+        ])
+        .returning()
+    console.log(`   Spare Parts: ${partRows.length} inserted`)
+
+    // Link parts to work orders
+    if (woRows[0] && partRows[0]) {
+        await db.insert(workOrderParts).values({ woId: woRows[0].id, partId: partRows[0].id, quantity: 1 })
+        console.log(`   Linked Part #${partRows[0].id} to WO #${woRows[0].id}`)
+    }
+    if (woRows[1] && partRows[4]) {
+        await db.insert(workOrderParts).values({ woId: woRows[1].id, partId: partRows[4].id, quantity: 1 })
+        console.log(`   Linked Part #${partRows[4].id} to WO #${woRows[1].id}`)
     }
 
     console.log('\n✅ Domain data seeded successfully!')

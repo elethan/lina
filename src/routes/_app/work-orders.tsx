@@ -1,4 +1,5 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate, useRouter } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,10 +14,12 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo } from 'react'
-import { Search, Calendar, CheckCircle2, Clock, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus } from 'lucide-react'
+import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
-import { fetchWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
+import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
 import { fetchEngineers } from '../../data/engineers.api'
+import { useMutation } from '@tanstack/react-query'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog'
 
 // ── Search params type ─────────────────────────────────────
 type WoSearchParams = {
@@ -25,6 +28,7 @@ type WoSearchParams = {
   dateTo?: string
   status?: string
   engineerId?: number
+  newWoId?: number
 }
 
 // ── Route ─────────────────────────────────────────────────────
@@ -35,6 +39,7 @@ export const Route = createFileRoute('/_app/work-orders')({
     dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
     status: typeof search.status === 'string' ? search.status : 'Open',
     engineerId: search.engineerId ? Number(search.engineerId) : undefined,
+    newWoId: search.newWoId ? Number(search.newWoId) : undefined,
   }),
   beforeLoad: ({ context }) => {
     const user = (context as any).user
@@ -208,7 +213,7 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
     header: 'Started',
     cell: (info) => {
       const date = info.getValue()
-      if (!date) return <span className="text-gray-300">—</span>
+      if (!date) return <span className="text-gray-300 italic text-xs">Not started</span>
       return (
         <span className="text-gray-600 text-xs">
           {new Date(date).toLocaleDateString('en-GB', {
@@ -219,7 +224,7 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
         </span>
       )
     },
-    size: 110,
+    size: 120,
   }),
   columnHelper.accessor('endAt', {
     header: 'Completed',
@@ -241,7 +246,6 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
   columnHelper.accessor('serialNumber', {
     header: 'Serial No.',
     cell: (info) => (
-      // <span className="font-medium text-gray-900"></span>
       <span className="font-medium font-mono text-md text-gray-900">
         {info.getValue() ?? '—'}
       </span>
@@ -256,13 +260,31 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
       </span>
     ),
   }),
+  columnHelper.accessor('createdAt', {
+    header: 'Created',
+    cell: (info) => {
+      const date = info.getValue()
+      if (!date) return <span className="text-gray-300">—</span>
+      return (
+        <span className="text-gray-400 text-xs">
+          {new Date(date).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          })}
+        </span>
+      )
+    },
+    size: 110,
+  }),
 ]
 
 // ── Page ──────────────────────────────────────────────────────
 function WorkOrdersPage() {
   const { workOrders: data, engineers: engineersList } = Route.useLoaderData()
   const navigate = useNavigate({ from: '/work-orders' })
-  const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId } = Route.useSearch()
+  const router = useRouter()
+  const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId, newWoId } = Route.useSearch()
   const selectedEngineerId = engineerId ?? null
 
   // URL param updaters
@@ -274,7 +296,36 @@ function WorkOrdersPage() {
     navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateTo: value || undefined }) })
 
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const selectedCount = Object.keys(rowSelection).length
+
+  // Delete Mutation
+  const { mutate: mutateDelete } = useMutation({
+    mutationFn: async ({ action }: { action: 'delete' | 'keep' }) => {
+      const woIds = Object.keys(rowSelection)
+        .filter((k) => rowSelection[k])
+        .map((k) => filteredData[parseInt(k)]?.id)
+        .filter((id): id is number => id !== undefined)
+
+      return await deleteWorkOrders({ data: { woIds, requestAction: action } })
+    },
+    onSuccess: () => {
+      router.invalidate()
+      setRowSelection({})
+      setShowDeleteDialog(false)
+    },
+  })
+
+  // Auto-select the newly created WO when navigated from the Requests page
+  useEffect(() => {
+    if (!newWoId) return
+    const rowIndex = filteredData.findIndex((wo) => wo.id === newWoId)
+    if (rowIndex !== -1) {
+      setRowSelection({ [rowIndex]: true })
+    }
+    // Clear newWoId from URL so a hard-refresh doesn't re-trigger the selection
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, newWoId: undefined }), replace: true })
+  }, [newWoId])
 
   // Read initial columns filter state from URL search parameters
   const [columnFilters, setColumnFilters] = useState<any[]>([
@@ -409,6 +460,7 @@ function WorkOrdersPage() {
         <button
           id="btn-close-wo"
           disabled={selectedCount === 0}
+          onClick={() => setShowDeleteDialog(true)}
           className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
         >
           <XCircle size={16} />
@@ -422,6 +474,45 @@ function WorkOrdersPage() {
 
   return (
     <>
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
+                <XCircle size={20} className="text-red-600" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-gray-900">
+                Close Work Order
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
+              You are about to delete <span className="font-semibold text-gray-700">{selectedCount} Work Order{selectedCount !== 1 ? 's' : ''}</span>.
+              <br /><br />
+              What would you like to do with the User Requests associated with {selectedCount === 1 ? 'this' : 'these'} Work Order{selectedCount !== 1 ? 's' : ''}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 mt-4 pl-[52px]">
+            <button
+              onClick={() => mutateDelete({ action: 'delete' })}
+              className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 text-white shadow-sm hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40"
+            >
+              Delete WO & Requests
+            </button>
+            <button
+              onClick={() => mutateDelete({ action: 'keep' })}
+              className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200"
+            >
+              Delete WO only (Keep Requests)
+            </button>
+            <button
+              onClick={() => setShowDeleteDialog(false)}
+              className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
+            >
+              Cancel
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {/* ─── Table ─── */}
       <div className="flex-1 overflow-auto px-6 py-4">
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">

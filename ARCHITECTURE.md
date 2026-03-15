@@ -136,7 +136,10 @@ Both pages follow the same pattern:
 
 **Requests toolbar** `rightContent`: New / Create WO / Merge / Close buttons — all `w-40`, equal-width.
 **Work Orders toolbar** `rightContent`: Start / Assign / Close buttons — same pattern. Both pages now use `rightContent` identically; no separate in-page action bar div exists.
-**Status filter options**: Both pages only expose `All / Open / Closed` ("In Progress" removed).
+**Status filter options**:
+
+- **Requests**: Defaults to a custom `OpenActive` composite filter. Exposes `All / Open & Active / Open / Active / Closed` options.
+- **Work Orders**: Exposes `All / Open / Closed`.
 
 ### 5. Server Error Handling (TanStack Start Middleware)
 

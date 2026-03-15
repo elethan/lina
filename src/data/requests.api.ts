@@ -1,10 +1,11 @@
 import { authServerFn } from '../lib/server-utils'
 import { db } from '../db/client'
 import { userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq, sql, desc } from 'drizzle-orm'
+import { eq, sql, desc, inArray } from 'drizzle-orm'
 
 export type RequestRow = {
     id: number
+    assetId: number | null
     serialNumber: string | null
     siteName: string | null
     systemName: string | null
@@ -21,6 +22,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
         const rows = await db
             .select({
                 id: userRequests.id,
+                assetId: userRequests.assetId,
                 serialNumber: assets.serialNumber,
                 siteName: sites.name,
                 systemName: systems.name,
@@ -43,6 +45,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
 
         return rows.map((r) => ({
             id: r.id,
+            assetId: r.assetId ?? null,
             serialNumber: r.serialNumber ?? null,
             siteName: r.siteName ?? null,
             systemName: r.systemName ?? null,
@@ -58,3 +61,18 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
         }))
     },
 )
+
+export const deleteRequests = authServerFn({ method: 'POST' })
+    .inputValidator((data: { requestIds: number[] }) => {
+        if (!data.requestIds || data.requestIds.length === 0) {
+            throw new Error('At least one request must be selected')
+        }
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { requestIds } = data
+
+        await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
+
+        return { success: true }
+    })
