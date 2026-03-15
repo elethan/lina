@@ -146,6 +146,9 @@ export const pmTasks = sqliteTable('pm_tasks', {
 export const assetPm = sqliteTable('asset_pm', {
   id: integer('pm_instance_id').primaryKey({ autoIncrement: true }),
   assetId: integer('asset_id').references(() => assets.id),
+  systemId: integer('system_id').references(() => systems.id),
+  intervalMonths: integer('interval_months'),
+  startAt: integer('start_at', { mode: 'timestamp' }),
   engineerId: integer('engineer_id').references(() => engineers.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
@@ -158,6 +161,7 @@ export const assetPmResults = sqliteTable('asset_pm_results', {
   taskId: integer('task_id').references(() => pmTasks.id),
   status: text('status').notNull(), // 'Pass', 'Fail', 'N/A' [cite: 24]
   findings: text('findings'),
+  engineer: text('engineer'),
   ...commonCols,
 });
 

@@ -129,7 +129,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
                 <select
                     value={(column.getFilterValue() ?? 'Open') as string}
                     onChange={(e) => column.setFilterValue(e.target.value === 'All' ? undefined : e.target.value)}
-                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
+                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-20 truncate"
                 >
                     <option value="All">All</option>
                     <option value="Open">Open</option>

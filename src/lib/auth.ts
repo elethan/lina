@@ -3,6 +3,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db/client";
 import * as schema from "../db/schema";
+import { logger } from "./logger";
 
 export const auth = betterAuth({
     // 1. Tell Better-Auth to use our SQLite database and schema
@@ -58,7 +59,18 @@ export const auth = betterAuth({
                         },
                     };
                 },
+                after: async (user) => {
+                    logger.info('USER_CREATED', { userId: user.id, email: user.email, role: user.role });
+                }
             },
         },
+        session: {
+            create: {
+                after: async (session) => {
+                    // Logs every time an authentication token is successfully generated (login)
+                    logger.info('USER_LOGIN', { userId: session.userId });
+                }
+            }
+        }
     },
 });

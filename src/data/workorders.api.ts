@@ -1,4 +1,4 @@
-import { createServerFn } from '@tanstack/react-start'
+import { authServerFn } from '../lib/server-utils'
 import { db } from '../db/client'
 import { workOrders, workOrderRequests, workOrderEngineers, userRequests, assets, sites, systems, engineers } from '../db/schema'
 import { eq, sql, inArray, desc } from 'drizzle-orm'
@@ -18,7 +18,7 @@ export type WorkOrderRow = {
 }
 
 // ── Fetch all work orders ─────────────────────────────────────
-export const fetchWorkOrders = createServerFn({ method: 'GET' }).handler(
+export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
     async (): Promise<WorkOrderRow[]> => {
         // Base WO data with joins
         const rows = await db
@@ -83,7 +83,7 @@ export const fetchWorkOrders = createServerFn({ method: 'GET' }).handler(
     },
 )
 
-export const createWorkOrder = createServerFn({ method: 'POST' })
+export const createWorkOrder = authServerFn({ method: 'POST' })
     .inputValidator((data: { requestIds: number[] }) => {
         if (!data.requestIds || data.requestIds.length === 0) {
             throw new Error('At least one request must be selected')

@@ -1,4 +1,4 @@
-import { createServerFn } from '@tanstack/react-start'
+import { authServerFn } from '../lib/server-utils'
 import { db } from '../db/client'
 import { engineers, userRequests } from '../db/schema'
 import { inArray } from 'drizzle-orm'
@@ -8,7 +8,7 @@ export type EngineerOption = {
     name: string
 }
 
-export const fetchEngineers = createServerFn({ method: 'GET' }).handler(
+export const fetchEngineers = authServerFn({ method: 'GET' }).handler(
     async (): Promise<EngineerOption[]> => {
         const rows = await db
             .select({
@@ -26,7 +26,7 @@ export const fetchEngineers = createServerFn({ method: 'GET' }).handler(
     },
 )
 
-export const assignRequestsToEngineer = createServerFn({ method: 'POST' })
+export const assignRequestsToEngineer = authServerFn({ method: 'POST' })
     .inputValidator((data: { requestIds: number[]; engineerId: number }) => {
         if (!data.requestIds || data.requestIds.length === 0) {
             throw new Error('At least one request must be selected')

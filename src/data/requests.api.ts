@@ -1,4 +1,4 @@
-import { createServerFn } from '@tanstack/react-start'
+import { authServerFn } from '../lib/server-utils'
 import { db } from '../db/client'
 import { userRequests, assets, sites, systems, engineers } from '../db/schema'
 import { eq, sql, desc } from 'drizzle-orm'
@@ -16,7 +16,7 @@ export type RequestRow = {
     createdAt: string | null
 }
 
-export const fetchRequests = createServerFn({ method: 'GET' }).handler(
+export const fetchRequests = authServerFn({ method: 'GET' }).handler(
     async (): Promise<RequestRow[]> => {
         const rows = await db
             .select({

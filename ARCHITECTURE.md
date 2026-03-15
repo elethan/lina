@@ -138,6 +138,28 @@ Both pages follow the same pattern:
 **Work Orders toolbar** `rightContent`: Start / Assign / Close buttons — same pattern. Both pages now use `rightContent` identically; no separate in-page action bar div exists.
 **Status filter options**: Both pages only expose `All / Open / Closed` ("In Progress" removed).
 
+### 5. Server Error Handling (TanStack Start Middleware)
+
+All TanStack Start server functions must be explicitly wrapped in the centralized error interception middleware to prevent backend failures from leaking database credentials or stack traces to the client.
+
+Instead of importing and using `createServerFn` directly, **always import and use `authServerFn` from `src/lib/server-utils.ts`**.
+
+**Incorrect:**
+
+```tsx
+import { createServerFn } from '@tanstack/react-start'
+export const myApi = createServerFn().handler(...) 
+```
+
+**Correct:**
+
+```tsx
+import { authServerFn } from '../lib/server-utils'
+export const myApi = authServerFn({ method: 'GET' }).handler(...)
+```
+
+The global middleware captures raw thrown errors locally (logging them securely to the Node console) and strictly throws a sanitized generic `Error` back across the network boundary to the frontend.
+
 ---
 
 ## Database Schema (Key Tables)

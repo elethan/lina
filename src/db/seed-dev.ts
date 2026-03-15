@@ -161,12 +161,24 @@ async function seedDomainData() {
     const pmTaskRows = await db
         .insert(pmTasks)
         .values([
-            { systemId: systemRows[0]?.id, instruction: 'Inspect magnetron output power and pulse stability', docSection: 'PM-MAG-01', intervalMonths: 6 },
-            { systemId: systemRows[1]?.id, instruction: 'Check thyratron pulse shape and timing', docSection: 'PM-THY-01', intervalMonths: 12 },
-            { systemId: systemRows[2]?.id, instruction: 'Clean cooling filters and verify flow rate', docSection: 'PM-COOL-01', intervalMonths: 3 },
-            { systemId: systemRows[3]?.id, instruction: 'Verify beam symmetry, flatness and output', docSection: 'PM-BT-01', intervalMonths: 6 },
+            // Interval: 1 Month
             { systemId: systemRows[5]?.id, instruction: 'MR imaging QA — check SNR, geometric distortion', docSection: 'PM-MRI-01', intervalMonths: 1 },
+            { systemId: systemRows[4]?.id, instruction: 'Verify patient positioning lasers and optical alignment', docSection: 'PM-PP-01', intervalMonths: 1 },
+
+            // Interval: 3 Months
+            { systemId: systemRows[2]?.id, instruction: 'Clean cooling filters and verify flow rate', docSection: 'PM-COOL-01', intervalMonths: 3 },
+            { systemId: systemRows[2]?.id, instruction: 'Test chiller water conductivity and top-up coolant', docSection: 'PM-COOL-02', intervalMonths: 3 },
+
+            // Interval: 6 Months
+            { systemId: systemRows[0]?.id, instruction: 'Inspect magnetron output power and pulse stability', docSection: 'PM-MAG-01', intervalMonths: 6 },
+            { systemId: systemRows[3]?.id, instruction: 'Verify beam symmetry, flatness and output', docSection: 'PM-BT-01', intervalMonths: 6 },
             { systemId: systemRows[6]?.id, instruction: 'RF system calibration and coil inspection', docSection: 'PM-RF-01', intervalMonths: 6 },
+
+            // Interval: 12 Months
+            { systemId: systemRows[1]?.id, instruction: 'Check thyratron pulse shape and timing', docSection: 'PM-THY-01', intervalMonths: 12 },
+            { systemId: systemRows[1]?.id, instruction: 'Replace thyratron grid 1 and 2 trigger thyristors', docSection: 'PM-THY-02', intervalMonths: 12 },
+            { systemId: systemRows[0]?.id, instruction: 'Complete waveguide inspection and vacuum test', docSection: 'PM-MAG-02', intervalMonths: 12 },
+            { systemId: systemRows[5]?.id, instruction: 'MR comprehensive shim verification and tuning', docSection: 'PM-MRI-02', intervalMonths: 12 },
         ])
         .returning()
     console.log(`   PM Tasks: ${pmTaskRows.length} inserted`)

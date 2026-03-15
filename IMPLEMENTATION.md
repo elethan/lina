@@ -2,6 +2,29 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-06
+
+- **Structured JSON Logging & Auditing (`src/lib/logger.ts`, `auth.ts`)**
+  - Introduced a zero-dependency structured logger that directs strict JSON strings to standard output/error, preparing the app for modern orchestrator log ingestion.
+  - Linked the logger into the `globalMiddleware` (from previous step) so that unhandled API exceptions automatically emit `API_UNHANDLED_EXCEPTION` JSON trails.
+  - Tapped into Better Auth's `databaseHooks` specifically listening for session creation (`login`) and user creation (`signup`) to emit `USER_LOGIN` and `USER_CREATED` audit lines.
+
+- **Centralized API Error Handling (`src/lib/server-utils.ts`)**
+  - Engineered a generic error-catching middleware for TanStack Start via `createMiddleware().server()`.
+  - Introduced standard `authServerFn` builder to replace naked `createServerFn` calls across the project.
+  - Intercepts uncaught rejections within API operations (e.g. database disconnects), logs the raw stack traces securely to the Node console, and throws sanitized generic Errors to the client to strictly prevent credential leakage.
+  - Refactored `requests.api.ts`, `workorders.api.ts`, `engineers.api.ts`, and root `fetchSession` to enforce the new global catching rule.
+
+- **Preventive Maintenance (PM) Schema Foundation (`schema.ts`)**
+  - Upgraded the PM tracking schema to support tracking individual maintenance sessions against explicit systems and intervals.
+  - Added `systemId`, `intervalMonths`, and `startAt` (no default timestamp) to the `asset_pm` table.
+  - Added an `engineer` text field to the `asset_pm_results` table to act as a granular audit trail for who specifically passed/failed individual tasks within a session.
+  - Local SQLite database constraint limitations required a clean wipe and regeneration (`npm run db:push`) to apply these structural changes.
+
+- **PM Test Data Expansion (`seed-dev.ts`)**
+  - Expanded the base `pmTasks` template seed data from 6 to 11 comprehensive tasks.
+  - Ensured tasks cover multiple systems (MRI, Cooling, Thyratron, Magnetron) across varying intervals (1, 3, 6, 12 months) to provide a robust testing environment for future UI development.
+
 ## 2026-03-03
 
 - **Work Orders Toolbar Unification (`_app/work-orders.tsx`)**
