@@ -190,6 +190,14 @@ export const workOrders = sqliteTable('work_orders', {
   ...commonCols,
 });
 
+export const workOrderNotes = sqliteTable('work_order_notes', {
+  id: integer('note_id').primaryKey({ autoIncrement: true }),
+  woId: integer('wo_id').references(() => workOrders.id).notNull(),
+  engineerId: integer('engineer_id').references(() => engineers.id),
+  noteText: text('note_text').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Link Requests to Work Orders [cite: 27]
 export const workOrderRequests = sqliteTable('work_order_requests', {
   woId: integer('wo_id').references(() => workOrders.id),

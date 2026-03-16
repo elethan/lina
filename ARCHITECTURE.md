@@ -33,7 +33,7 @@ src/
 │   └── ToolbarContext.tsx  # SSR-safe toolbar state via useSetToolbar()
 ├── data/                # Server functions (API layer)
 │   ├── requests.api.ts  # fetchRequests()
-│   ├── workorders.api.ts  # fetchWorkOrders(), createWorkOrder()
+│   ├── workorders.api.ts  # fetchWorkOrders(), startWorkOrder(), closeWorkOrder(), workOrderNotes
 │   └── engineers.api.ts # fetchEngineers(), assignRequestsToEngineer()
 ├── db/
 │   ├── schema.ts        # Drizzle schema (all tables)
@@ -140,6 +140,16 @@ Both pages follow the same pattern:
 
 - **Requests**: Defaults to a custom `OpenActive` composite filter. Exposes `All / Open & Active / Open / Active / Closed` options.
 - **Work Orders**: Exposes `All / Open / Closed`.
+|
+| ### 6. Work Order Execution & Inline Editing
+|
+| Work Orders are no longer just rows in a table; they feature a dedicated **Execution Dialog** (`WorkOrderExecutionDialog`) that serves as the central hub for field work:
+|
+| - **Auto-Start**: Opening a Work Order that hasn't been started automatically triggers `startWorkOrder()` to record the `startAt` timestamp.
+| - **Status Cascading**: Closing a Work Order via `closeWorkOrder()` automatically transitions all linked `user_requests` to `"Closed"`.
+| - **Historical Notes**: Uses a nested TanStack Table to show engineer commentary.
+| - **Inline Editing**: Implemented via a `EditableNoteCell` pattern — clicking text swaps the cell for a `textarea`, saving on blur or `Ctrl+Enter`. This reduces UI clutter compared to traditional "Edit" modals.
+| - **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
 
 ### 5. Server Error Handling (TanStack Start Middleware)
 
@@ -176,8 +186,9 @@ The global middleware captures raw thrown errors locally (logging them securely 
 | `engineers` | Field engineers (first/last name). No UNIQUE constraint on name columns — deduplication handled in `fetchEngineers()` via `.groupBy(firstName, lastName)`. |
 | `assets` | Individual machines (serial number, linked to site + system) |
 | `user_requests` | Service requests from users (linked to asset, engineer) |
-| `work_orders` | Work orders grouping requests |
-| `work_order_requests` | Junction: WO ↔ requests (many-to-many) |
+| `work_orders` | Work orders grouping requests (includes `startAt`, `endAt`) |
+| `work_order_notes` | Chronological engineer commentary per WO |
+| `work_order_requests` | Junction: WO ↔ requests (many-to-many, auto-closed on WO close) |
 | `work_order_engineers` | Junction: WO ↔ engineers (many-to-many) |
 | `role_permissions` | Role-based permission rules |
 

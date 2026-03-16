@@ -1,4 +1,6 @@
 import { createFileRoute, useRouter, useNavigate } from '@tanstack/react-router'
+import { useForm } from '@tanstack/react-form'
+import { z } from 'zod'
 import {
     useReactTable,
     getCoreRowModel,
@@ -25,9 +27,11 @@ import {
 import { useMutation } from '@tanstack/react-query'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
-import { fetchRequests, deleteRequests, type RequestRow } from '../../data/requests.api'
+import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
 import { fetchEngineers } from '../../data/engineers.api'
+import { fetchSiteEquipment } from '../../data/equipment.api'
+import { useQuery } from '@tanstack/react-query'
 
 type RequestSearchParams = {
     search?: string
@@ -35,6 +39,7 @@ type RequestSearchParams = {
     dateTo?: string
     status?: string
     engineerId?: number
+    siteId?: number
 }
 
 // ── Route ─────────────────────────────────────────────────────
@@ -45,6 +50,7 @@ export const Route = createFileRoute('/_app/')({
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
         status: typeof search.status === 'string' ? search.status : 'OpenActive',
         engineerId: search.engineerId ? Number(search.engineerId) : undefined,
+        siteId: search.siteId ? Number(search.siteId) : undefined,
     }),
     loader: async () => {
         const [requests, engineers] = await Promise.all([
@@ -229,7 +235,7 @@ function RequestsPage() {
     const navigate = useNavigate({ from: '/' })
     const { user } = useRouteContext({ from: '/_app/' })
     const userRole = user?.role ?? 'user'
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'OpenActive', engineerId } = Route.useSearch()
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'OpenActive', engineerId, siteId } = Route.useSearch()
     const selectedEngineerId = engineerId ?? null
 
     const setGlobalFilter = (value: string) =>
@@ -242,6 +248,7 @@ function RequestsPage() {
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
     const [showCreateWODialog, setShowCreateWODialog] = useState(false)
     const [showCloseDialog, setShowCloseDialog] = useState(false)
+    const [showNewRequestDialog, setShowNewRequestDialog] = useState(false)
     const [columnFilters, setColumnFilters] = useState<any[]>([
         ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
         ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
@@ -271,7 +278,7 @@ function RequestsPage() {
         },
     })
 
-    // Date-filtered + Engineer-filtered data
+    // Date-filtered + Site-filtered  data
     const filteredData = useMemo(() => {
         let result = data
 
@@ -290,8 +297,13 @@ function RequestsPage() {
             })
         }
 
+        // Site filter
+        if (siteId) {
+            result = result.filter((row) => row.siteId === siteId)
+        }
+
         return result
-    }, [data, dateFrom, dateTo])
+    }, [data, dateFrom, dateTo, siteId])
 
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
 
@@ -389,9 +401,14 @@ function RequestsPage() {
             <div className="flex items-center gap-2">
                 <button
                     id="btn-new"
-                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-40"
+                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-40 disabled:opacity-50"
+                    disabled={!siteId}
                     onClick={() => {
-                        alert('New Request form to be implemented')
+                        if (!siteId) {
+                            alert('Please filter by a Site in the URL (?siteId=X) to create a new request.')
+                            return
+                        }
+                        setShowNewRequestDialog(true)
                     }}
                 >
                     <PlusCircle size={16} />
@@ -679,6 +696,211 @@ function RequestsPage() {
                     </div>
                 </div>
             </div>
+
+            {siteId && (
+                <NewRequestDialog
+                    siteId={siteId}
+                    open={showNewRequestDialog}
+                    onOpenChange={setShowNewRequestDialog}
+                />
+            )}
         </>
     )
 }
+
+// ── New Request Dialog ──────────────────────────────────────────────
+
+function NewRequestDialog({ siteId, open, onOpenChange }: { siteId: number, open: boolean, onOpenChange: (open: boolean) => void }) {
+    const router = useRouter()
+
+    // Fetch equipment data for the selected site
+    const { data: equipment, isLoading } = useQuery({
+        queryKey: ['siteEquipment', siteId],
+        queryFn: async () => fetchSiteEquipment({ data: { siteId } }),
+        enabled: open && !!siteId,
+    })
+
+    const { mutateAsync: mutateCreateRequest } = useMutation({
+        mutationFn: async (data: { assetId?: number, systemId?: number, reportedBy: string, commentText: string }) => {
+            return await createRequest({ data })
+        },
+        onSuccess: () => {
+            router.invalidate()
+            onOpenChange(false)
+        }
+    })
+
+    const form = useForm({
+        defaultValues: {
+            systemId: 0,
+            assetId: 0,
+            reportedBy: '',
+            commentText: ''
+        },
+        onSubmit: async ({ value }) => {
+            // Validation step
+            const parsed = z.object({
+                systemId: z.number().min(1, 'System is required'),
+                assetId: z.number().min(1, 'Asset is required'),
+                reportedBy: z.string().min(1, 'Reported by is required'),
+                commentText: z.string().min(1, 'Comment is required')
+            }).safeParse(value)
+
+            if (!parsed.success) {
+                alert('Please fill out all required fields.')
+                return
+            }
+
+            await mutateCreateRequest({
+                systemId: parsed.data.systemId,
+                assetId: parsed.data.assetId,
+                reportedBy: parsed.data.reportedBy,
+                commentText: parsed.data.commentText,
+            })
+        }
+    })
+
+    // Derived asset logic moved inside Asset Field subscription
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                    <DialogTitle>New Request</DialogTitle>
+                    <DialogDescription>
+                        Create a new service request for site ID {siteId}.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {isLoading ? (
+                    <div className="py-8 text-center text-sm text-gray-500">Loading equipment...</div>
+                ) : (
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            form.handleSubmit()
+                        }}
+                        className="space-y-4 pt-4"
+                    >
+                        {/* System Dropdown */}
+                        <form.Field name="systemId">
+                            {(field) => (
+                                <div className="space-y-1.5">
+                                    <label htmlFor={field.name} className="text-sm font-medium text-gray-700">System</label>
+                                    <select
+                                        id={field.name}
+                                        value={field.state.value || ''}
+                                        onChange={(e) => {
+                                            field.handleChange(Number(e.target.value))
+                                            // Reset asset when system changes
+                                            form.setFieldValue('assetId', 0)
+                                        }}
+                                        className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                    >
+                                        <option value="">Select a System</option>
+                                        {equipment?.systems.map(s => (
+                                            <option key={s.systemId} value={s.systemId}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </form.Field>
+
+                        {/* Asset Dropdown */}
+                        <form.Subscribe selector={(state) => state.values.systemId}>
+                            {(selectedSystemId) => {
+                                const availableAssets = (() => {
+                                    if (!equipment) return []
+                                    if (!selectedSystemId) return []
+                                    const validAssetIds = equipment.assetSystemMap
+                                        .filter(m => m.systemId === selectedSystemId)
+                                        .map(m => m.assetId)
+                                    return equipment.assets.filter(a => validAssetIds.includes(a.assetId))
+                                })()
+
+                                return (
+                                    <form.Field name="assetId">
+                                        {(field) => (
+                                            <div className="space-y-1.5">
+                                                <label htmlFor={field.name} className="text-sm font-medium text-gray-700">Asset</label>
+                                                <select
+                                                    id={field.name}
+                                                    disabled={!selectedSystemId}
+                                                    value={field.state.value || ''}
+                                                    onChange={(e) => field.handleChange(Number(e.target.value))}
+                                                    className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
+                                                >
+                                                    <option value="">{selectedSystemId ? "Select an Asset" : "Select a System first"}</option>
+                                                    {availableAssets.map(a => (
+                                                        <option key={a.assetId} value={a.assetId}>{a.modelName || 'Unknown Model'} (SN: {a.serialNumber})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </form.Field>
+                                )
+                            }}
+                        </form.Subscribe>
+
+                        {/* Reported By Text Input */}
+                        <form.Field name="reportedBy">
+                            {(field) => (
+                                <div className="space-y-1.5">
+                                    <label htmlFor={field.name} className="text-sm font-medium text-gray-700">Reported By</label>
+                                    <input
+                                        id={field.name}
+                                        type="text"
+                                        placeholder="Clinical staff name"
+                                        value={field.state.value}
+                                        onChange={(e) => field.handleChange(e.target.value)}
+                                        className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                    />
+                                </div>
+                            )}
+                        </form.Field>
+
+                        {/* Comment Textarea */}
+                        <form.Field name="commentText">
+                            {(field) => (
+                                <div className="space-y-1.5">
+                                    <label htmlFor={field.name} className="text-sm font-medium text-gray-700">Description</label>
+                                    <textarea
+                                        id={field.name}
+                                        placeholder="Describe the issue..."
+                                        rows={3}
+                                        value={field.state.value}
+                                        onChange={(e) => field.handleChange(e.target.value)}
+                                        className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary resize-none"
+                                    />
+                                </div>
+                            )}
+                        </form.Field>
+
+                        <DialogFooter className="pt-2">
+                            <button
+                                type="button"
+                                onClick={() => onOpenChange(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                                {([canSubmit, isSubmitting]) => (
+                                    <button
+                                        type="submit"
+                                        disabled={!canSubmit || isSubmitting as boolean}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md shadow-sm disabled:opacity-50 transition-colors"
+                                    >
+                                        {isSubmitting ? 'Creating...' : 'Create Request'}
+                                    </button>
+                                )}
+                            </form.Subscribe>
+                        </DialogFooter>
+                    </form>
+                )}
+            </DialogContent>
+        </Dialog>
+    )
+}
+

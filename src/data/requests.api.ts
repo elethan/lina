@@ -7,6 +7,7 @@ export type RequestRow = {
     id: number
     assetId: number | null
     serialNumber: string | null
+    siteId: number | null
     siteName: string | null
     systemName: string | null
     reportedBy: string
@@ -24,6 +25,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
                 id: userRequests.id,
                 assetId: userRequests.assetId,
                 serialNumber: assets.serialNumber,
+                siteId: sites.id,
                 siteName: sites.name,
                 systemName: systems.name,
                 systemId: userRequests.systemId,
@@ -47,6 +49,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
             id: r.id,
             assetId: r.assetId ?? null,
             serialNumber: r.serialNumber ?? null,
+            siteId: r.siteId ?? null,
             siteName: r.siteName ?? null,
             systemName: r.systemName ?? null,
             reportedBy: r.reportedBy,
@@ -75,4 +78,26 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
 
         return { success: true }
+    })
+
+export const createRequest = authServerFn({ method: 'POST' })
+    .inputValidator((data: {
+        assetId?: number,
+        systemId?: number,
+        reportedBy: string,
+        commentText: string
+    }) => {
+        if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const result = await db.insert(userRequests).values({
+            assetId: data.assetId,
+            systemId: data.systemId,
+            reportedBy: data.reportedBy,
+            commentText: data.commentText,
+            status: 'Open',
+        }).returning({ id: userRequests.id })
+
+        return result[0]
     })
