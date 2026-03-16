@@ -5,13 +5,32 @@
 ## 2026-03-16
 
 - **Optional Microsoft Entra ID SSO (`src/lib/auth.ts`, `src/routes/login.tsx`, `.env.example`)**
-  - Fixed a startup crash (`Missing required environment variable: MICROSOFT_GROUP_ADMIN_IDS`) that occurred because `better-auth` validates social-provider env vars at module load time, blocking all users — even email/password login — when the MS vars were absent.
-  - `auth.ts`: `socialProviders.microsoft` is now conditionally spread into the `betterAuth` config using a runtime env-var guard. When any of `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, or `MICROSOFT_TENANT_ID` are unset, the social provider key is simply omitted so `better-auth` never initialises the Microsoft provider.
+  - Fixed a startup crash (`Missing required environment variable: MICROSOFT_GROUP_ADMIN_IDS`) that occurred because `better-auth` evaluates social-provider env vars at module load time, blocking all users — even email/password login — when the MS vars were absent.
+  - `auth.ts`: All env var reads (`MICROSOFT_GROUP_*`, `BOOTSTRAP_*`) are now lazy (read inside functions at call time). `socialProviders.microsoft` is conditionally spread — omitted entirely when the three MS client vars are absent so `better-auth` never initialises the provider.
   - `login.tsx`: The "Sign in with Microsoft" button and its `or` divider are gated on the `VITE_ENABLE_MICROSOFT_SSO` Vite env var. Without it the login page renders the email/password form only.
+  - `databaseHooks.user.create.before`: When `BOOTSTRAP_ADMIN_EMAILS` / `BOOTSTRAP_USER_EMAILS` are not set (dev), falls back gracefully to the user's default role instead of throwing. When they are set (production), the strict deny behaviour is preserved.
   - **Dev default**: no `.env` file required — the app starts cleanly and the hardwired admin (`super@lina.com` / `genesiscare`) can log in via email/password immediately.
   - **Production / SSO**: set `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, and `VITE_ENABLE_MICROSOFT_SSO=true` (see `.env.example`).
   - Added `.env.example` documenting all environment variables; MS SSO block commented out by default.
 
+- **Phase 1 Scope Hardening (Routes + RBAC + Auth Mapping)**
+  - Removed dead sidebar entries for non-shipped routes (`PMs`, `Config`) from `Sidebar.tsx` to eliminate broken navigation.
+  - Added server-side role enforcement helper (`requireRole`) in `server-utils.ts` and applied it to restricted mutation APIs:
+    - `workorders.api.ts`: create/delete/start/close work order and note edit/create mutations now require `admin` or `engineer`.
+    - `engineers.api.ts`: request assignment now requires `admin` or `engineer`.
+    - `requests.api.ts`: request deletion now requires `admin` / `engineer` / `scientist`.
+  - Implemented Entra group-based role mapping in `auth.ts` via Microsoft provider profile mapping:
+    - `MICROSOFT_GROUP_ADMIN_IDS`
+    - `MICROSOFT_GROUP_ENGINEER_IDS`
+    - `MICROSOFT_GROUP_SCIENTIST_IDS`
+    - `MICROSOFT_GROUP_USER_IDS`
+  - Added build verification pass (`npm run build`) confirming production compile succeeds after hardening changes.
+
+- **Auth Provisioning Tightening (MICROSOFT_GROUP_USER_IDS + Bootstrap Emails)**
+  - Added required `MICROSOFT_GROUP_USER_IDS` mapping for standard users so Entra sign-ins must match an authorized user group instead of falling back implicitly.
+  - Group env config uses `MICROSOFT_GROUP_ADMIN_IDS`, `MICROSOFT_GROUP_ENGINEER_IDS`, `MICROSOFT_GROUP_SCIENTIST_IDS`, and `MICROSOFT_GROUP_USER_IDS`.
+  - `BOOTSTRAP_ADMIN_EMAILS` and `BOOTSTRAP_USER_EMAILS` enforce explicit provisioning in `databaseHooks.user.create.before` when set; when absent (dev), the hook falls back to a default role gracefully.
+  - Added explicit deny behavior for unprovisioned users in production (`User is not in an authorized Entra group` / `User is not provisioned for Lina access`).
 ## 2026-03-06
 
 - **Structured JSON Logging & Auditing (`src/lib/logger.ts`, `auth.ts`)**

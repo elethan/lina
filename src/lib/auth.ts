@@ -5,6 +5,51 @@ import { db } from "../db/client";
 import * as schema from "../db/schema";
 import { logger } from "./logger";
 
+type AppRole = "admin" | "engineer" | "scientist" | "user";
+
+const parseCsvSet = (value?: string) => {
+    return new Set(
+        (value ?? "")
+            .split(",")
+            .map((token) => token.trim())
+            .filter(Boolean),
+    );
+};
+
+const normalizeGroups = (groups: unknown): string[] => {
+    if (Array.isArray(groups)) {
+        return groups.filter((entry): entry is string => typeof entry === "string");
+    }
+
+    if (typeof groups === "string") {
+        return groups
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+    }
+
+    return [];
+};
+
+const resolveRoleFromEntraProfile = (profile: Record<string, unknown>): AppRole => {
+    const groups = normalizeGroups(profile.groups);
+
+    // Group maps are read lazily (inside the function) to avoid startup crash when env vars absent
+    const groupRoleMap: Record<Exclude<AppRole, "user">, Set<string>> = {
+        admin: parseCsvSet(process.env.MICROSOFT_GROUP_ADMIN_IDS),
+        engineer: parseCsvSet(process.env.MICROSOFT_GROUP_ENGINEER_IDS),
+        scientist: parseCsvSet(process.env.MICROSOFT_GROUP_SCIENTIST_IDS),
+    };
+    const microsoftUserGroup = parseCsvSet(process.env.MICROSOFT_GROUP_USER_IDS);
+
+    if (groups.some((groupId) => groupRoleMap.admin.has(groupId))) return "admin";
+    if (groups.some((groupId) => groupRoleMap.engineer.has(groupId))) return "engineer";
+    if (groups.some((groupId) => groupRoleMap.scientist.has(groupId))) return "scientist";
+    if (groups.some((groupId) => microsoftUserGroup.has(groupId))) return "user";
+
+    throw new Error("User is not in an authorized Entra group");
+};
+
 export const auth = betterAuth({
     // 1. Tell Better-Auth to use our SQLite database and schema
     database: drizzleAdapter(db, {
@@ -28,7 +73,8 @@ export const auth = betterAuth({
         enabled: true,
     },
 
-    // 3. Configure Microsoft Entra ID (Azure AD) for SSO — only enabled when env vars are present
+    // 4. Microsoft Entra ID SSO — only enabled when all three env vars are present.
+    //    Without them the app starts normally and falls back to email/password login.
     ...(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && process.env.MICROSOFT_TENANT_ID
         ? {
               socialProviders: {
@@ -36,25 +82,41 @@ export const auth = betterAuth({
                       clientId: process.env.MICROSOFT_CLIENT_ID,
                       clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
                       tenantId: process.env.MICROSOFT_TENANT_ID,
+                      mapProfileToUser: async (profile) => {
+                          const role = resolveRoleFromEntraProfile(profile as Record<string, unknown>);
+                          return { role };
+                      },
                   },
               },
           }
         : {}),
 
-    // 3. The Mapping Hook
+    // 5. Database hooks for provisioning and auditing
     databaseHooks: {
         user: {
             create: {
                 before: async (user) => {
-                    // By default, everyone is a basic user.
-                    let assignedRole = "user";
+                    let assignedRole = user.role as AppRole | undefined;
 
-                    // (Optional) Hardcode your first admin
-                    if (user.email === "your.email@company.com") {
+                    // Bootstrap email lists are read lazily to avoid startup crash when not set
+                    const bootstrapAdminEmails = parseCsvSet(process.env.BOOTSTRAP_ADMIN_EMAILS);
+                    const bootstrapUserEmails = parseCsvSet(process.env.BOOTSTRAP_USER_EMAILS);
+
+                    if (user.email && bootstrapAdminEmails.has(user.email)) {
                         assignedRole = "admin";
+                    } else if (user.email && bootstrapUserEmails.has(user.email)) {
+                        assignedRole = "user";
                     }
 
-                    // *If using Entra ID Groups, you would check the incoming profile data here*
+                    // In production (bootstrap emails configured): deny unprovisioned users.
+                    // In dev (no bootstrap emails set): fall back to the user's default role.
+                    if (!assignedRole) {
+                        if (bootstrapAdminEmails.size === 0 && bootstrapUserEmails.size === 0) {
+                            assignedRole = (user.role as AppRole) ?? "user";
+                        } else {
+                            throw new Error("User is not provisioned for Lina access");
+                        }
+                    }
 
                     return {
                         data: {
