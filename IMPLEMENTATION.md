@@ -2,6 +2,16 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-16
+
+- **Optional Microsoft Entra ID SSO (`src/lib/auth.ts`, `src/routes/login.tsx`, `.env.example`)**
+  - Fixed a startup crash (`Missing required environment variable: MICROSOFT_GROUP_ADMIN_IDS`) that occurred because `better-auth` validates social-provider env vars at module load time, blocking all users — even email/password login — when the MS vars were absent.
+  - `auth.ts`: `socialProviders.microsoft` is now conditionally spread into the `betterAuth` config using a runtime env-var guard. When any of `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, or `MICROSOFT_TENANT_ID` are unset, the social provider key is simply omitted so `better-auth` never initialises the Microsoft provider.
+  - `login.tsx`: The "Sign in with Microsoft" button and its `or` divider are gated on the `VITE_ENABLE_MICROSOFT_SSO` Vite env var. Without it the login page renders the email/password form only.
+  - **Dev default**: no `.env` file required — the app starts cleanly and the hardwired admin (`super@lina.com` / `genesiscare`) can log in via email/password immediately.
+  - **Production / SSO**: set `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, and `VITE_ENABLE_MICROSOFT_SSO=true` (see `.env.example`).
+  - Added `.env.example` documenting all environment variables; MS SSO block commented out by default.
+
 ## 2026-03-06
 
 - **Structured JSON Logging & Auditing (`src/lib/logger.ts`, `auth.ts`)**
