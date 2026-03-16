@@ -6,6 +6,8 @@ export const Route = createFileRoute('/login')({
     component: LoginPage,
 })
 
+const microsoftSsoEnabled = !!import.meta.env.VITE_ENABLE_MICROSOFT_SSO
+
 function LoginPage() {
     const router = useRouter()
     const [email, setEmail] = useState('super@lina.com')
@@ -71,28 +73,32 @@ function LoginPage() {
 
                 {/* Card */}
                 <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6 space-y-5">
-                    {/* Microsoft SSO */}
-                    <button
-                        onClick={handleMicrosoftSignIn}
-                        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#2F2F2F] hover:bg-[#3b3b3b] text-white rounded-xl font-medium transition-colors border border-slate-600/30"
-                    >
-                        <svg viewBox="0 0 21 21" width="20" height="20">
-                            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-                            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-                            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-                            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-                        </svg>
-                        Sign in with Microsoft
-                    </button>
+                    {/* Microsoft SSO — only shown when VITE_ENABLE_MICROSOFT_SSO is set */}
+                    {microsoftSsoEnabled && (
+                        <>
+                            <button
+                                onClick={handleMicrosoftSignIn}
+                                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#2F2F2F] hover:bg-[#3b3b3b] text-white rounded-xl font-medium transition-colors border border-slate-600/30"
+                            >
+                                <svg viewBox="0 0 21 21" width="20" height="20">
+                                    <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                                    <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                                    <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                                </svg>
+                                Sign in with Microsoft
+                            </button>
 
-                    {/* Divider */}
-                    <div className="flex items-center gap-3">
-                        <div className="flex-1 h-px bg-slate-700/50" />
-                        <span className="text-xs text-slate-500 uppercase tracking-wider">
-                            or
-                        </span>
-                        <div className="flex-1 h-px bg-slate-700/50" />
-                    </div>
+                            {/* Divider */}
+                            <div className="flex items-center gap-3">
+                                <div className="flex-1 h-px bg-slate-700/50" />
+                                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                                    or
+                                </span>
+                                <div className="flex-1 h-px bg-slate-700/50" />
+                            </div>
+                        </>
+                    )}
 
                     {/* Email/Password Form */}
                     <form onSubmit={handleEmailAuth} className="space-y-4">
