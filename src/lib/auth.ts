@@ -16,24 +16,6 @@ const parseCsvSet = (value?: string) => {
     );
 };
 
-const getRequiredEnv = (name: string): string => {
-    const value = process.env[name];
-    if (value && value.trim()) return value;
-
-    throw new Error(`Missing required environment variable: ${name}`);
-};
-
-const envGroupRoleMap: Record<Exclude<AppRole, "user">, Set<string>> = {
-    admin: parseCsvSet(getRequiredEnv("MICROSOFT_GROUP_ADMIN_IDS")),
-    engineer: parseCsvSet(getRequiredEnv("MICROSOFT_GROUP_ENGINEER_IDS")),
-    scientist: parseCsvSet(getRequiredEnv("MICROSOFT_GROUP_SCIENTIST_IDS")),
-};
-
-const microsoftUserGroup = parseCsvSet(getRequiredEnv("MICROSOFT_GROUP_USER_IDS"));
-
-const bootstrapAdminEmails = parseCsvSet(getRequiredEnv("BOOTSTRAP_ADMIN_EMAILS"));
-const bootstrapUserEmails = parseCsvSet(getRequiredEnv("BOOTSTRAP_USER_EMAILS"));
-
 const normalizeGroups = (groups: unknown): string[] => {
     if (Array.isArray(groups)) {
         return groups.filter((entry): entry is string => typeof entry === "string");
@@ -52,9 +34,17 @@ const normalizeGroups = (groups: unknown): string[] => {
 const resolveRoleFromEntraProfile = (profile: Record<string, unknown>): AppRole => {
     const groups = normalizeGroups(profile.groups);
 
-    if (groups.some((groupId) => envGroupRoleMap.admin.has(groupId))) return "admin";
-    if (groups.some((groupId) => envGroupRoleMap.engineer.has(groupId))) return "engineer";
-    if (groups.some((groupId) => envGroupRoleMap.scientist.has(groupId))) return "scientist";
+    // Group maps are read lazily (inside the function) to avoid startup crash when env vars absent
+    const groupRoleMap: Record<Exclude<AppRole, "user">, Set<string>> = {
+        admin: parseCsvSet(process.env.MICROSOFT_GROUP_ADMIN_IDS),
+        engineer: parseCsvSet(process.env.MICROSOFT_GROUP_ENGINEER_IDS),
+        scientist: parseCsvSet(process.env.MICROSOFT_GROUP_SCIENTIST_IDS),
+    };
+    const microsoftUserGroup = parseCsvSet(process.env.MICROSOFT_GROUP_USER_IDS);
+
+    if (groups.some((groupId) => groupRoleMap.admin.has(groupId))) return "admin";
+    if (groups.some((groupId) => groupRoleMap.engineer.has(groupId))) return "engineer";
+    if (groups.some((groupId) => groupRoleMap.scientist.has(groupId))) return "scientist";
     if (groups.some((groupId) => microsoftUserGroup.has(groupId))) return "user";
 
     throw new Error("User is not in an authorized Entra group");
@@ -83,28 +73,34 @@ export const auth = betterAuth({
         enabled: true,
     },
 
-    // 3. Configure Microsoft Entra ID (Azure AD) for SSO
-    socialProviders: {
-        microsoft: {
-            clientId: process.env.MICROSOFT_CLIENT_ID as string,
-            clientSecret: process.env.MICROSOFT_CLIENT_SECRET as string,
-            tenantId: process.env.MICROSOFT_TENANT_ID as string, // Your company's Entra ID tenant
-            mapProfileToUser: async (profile) => {
-                const role = resolveRoleFromEntraProfile(profile as Record<string, unknown>);
+    // 4. Microsoft Entra ID SSO — only enabled when all three env vars are present.
+    //    Without them the app starts normally and falls back to email/password login.
+    ...(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && process.env.MICROSOFT_TENANT_ID
+        ? {
+              socialProviders: {
+                  microsoft: {
+                      clientId: process.env.MICROSOFT_CLIENT_ID,
+                      clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+                      tenantId: process.env.MICROSOFT_TENANT_ID,
+                      mapProfileToUser: async (profile) => {
+                          const role = resolveRoleFromEntraProfile(profile as Record<string, unknown>);
+                          return { role };
+                      },
+                  },
+              },
+          }
+        : {}),
 
-                return {
-                    role,
-                };
-            },
-        },
-    },
-
-    // 3. The Mapping Hook
+    // 5. Database hooks for provisioning and auditing
     databaseHooks: {
         user: {
             create: {
                 before: async (user) => {
                     let assignedRole = user.role as AppRole | undefined;
+
+                    // Bootstrap email lists are read lazily to avoid startup crash when not set
+                    const bootstrapAdminEmails = parseCsvSet(process.env.BOOTSTRAP_ADMIN_EMAILS);
+                    const bootstrapUserEmails = parseCsvSet(process.env.BOOTSTRAP_USER_EMAILS);
 
                     if (user.email && bootstrapAdminEmails.has(user.email)) {
                         assignedRole = "admin";
@@ -112,8 +108,14 @@ export const auth = betterAuth({
                         assignedRole = "user";
                     }
 
+                    // In production (bootstrap emails configured): deny unprovisioned users.
+                    // In dev (no bootstrap emails set): fall back to the user's default role.
                     if (!assignedRole) {
-                        throw new Error("User is not provisioned for Lina access");
+                        if (bootstrapAdminEmails.size === 0 && bootstrapUserEmails.size === 0) {
+                            assignedRole = (user.role as AppRole) ?? "user";
+                        } else {
+                            throw new Error("User is not provisioned for Lina access");
+                        }
                     }
 
                     return {

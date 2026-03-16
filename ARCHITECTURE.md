@@ -15,7 +15,7 @@
 | **UI Components** | [shadcn/ui](https://ui.shadcn.com) (New York style, neutral base) |
 | **Styling** | Tailwind CSS v4 + CSS variables (`src/styles.css`) |
 | **Icons** | Lucide React |
-| **Auth** | Better Auth (email/password + MS Entra ID SSO) |
+| **Auth** | Better Auth (email/password; optional MS Entra ID SSO) |
 | **Database** | SQLite via `better-sqlite3` |
 | **ORM** | Drizzle ORM |
 | **Validation** | Zod |
@@ -41,8 +41,10 @@ src/
 │   ├── migrate.ts       # Migration runner
 │   └── seed-dev.ts      # Dev seed data (users, sites, assets, requests, WOs)
 ├── lib/
-│   ├── auth.ts          # Better Auth server config (roles, Entra ID)
+│   ├── auth.ts          # Better Auth server config (roles, optional Entra ID SSO)
 │   ├── auth-client.ts   # Better Auth client
+│   ├── server-utils.ts  # authServerFn builder + global error middleware
+│   ├── logger.ts        # Structured JSON logger (stdout/stderr)
 │   └── utils.ts         # cn() helper (clsx + tailwind-merge)
 ├── routes/
 │   ├── __root.tsx       # Root layout — fetches session, redirects unauthenticated
@@ -50,10 +52,11 @@ src/
 │   ├── _app/
 │   │   ├── index.tsx    # Requests page (TanStack Table + toolbar filters)
 │   │   └── work-orders.tsx  # Work Orders page (TanStack Table + toolbar filters)
-│   ├── login.tsx        # Login page
+│   ├── login.tsx        # Login page (email/password; MS SSO button when enabled)
 │   └── api/
 │       └── auth.$.ts    # Better Auth API catch-all
-└── styles.css           # Tailwind v4 + shadcn CSS variables + brand colors
+├── styles.css           # Tailwind v4 + shadcn CSS variables + brand colors
+.env.example             # Template for all environment variables (MS SSO vars commented out)
 ```
 
 ---
@@ -159,18 +162,18 @@ Both pages follow the same pattern:
 
 - **Requests**: Defaults to a custom `OpenActive` composite filter. Exposes `All / Open & Active / Open / Active / Closed` options.
 - **Work Orders**: Exposes `All / Open / Closed`.
-|
-| ### 6. Work Order Execution & Inline Editing
-|
-| Work Orders are no longer just rows in a table; they feature a dedicated **Execution Dialog** (`WorkOrderExecutionDialog`) that serves as the central hub for field work:
-|
-| - **Auto-Start**: Opening a Work Order that hasn't been started automatically triggers `startWorkOrder()` to record the `startAt` timestamp.
-| - **Status Cascading**: Closing a Work Order via `closeWorkOrder()` automatically transitions all linked `user_requests` to `"Closed"`.
-| - **Historical Notes**: Uses a nested TanStack Table to show engineer commentary.
-| - **Inline Editing**: Implemented via a `EditableNoteCell` pattern — clicking text swaps the cell for a `textarea`, saving on blur or `Ctrl+Enter`. This reduces UI clutter compared to traditional "Edit" modals.
-| - **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
 
-### 6. Server Error Handling (TanStack Start Middleware)
+### 6. Work Order Execution & Inline Editing
+
+Work Orders are no longer just rows in a table; they feature a dedicated **Execution Dialog** (`WorkOrderExecutionDialog`) that serves as the central hub for field work:
+
+- **Auto-Start**: Opening a Work Order that hasn't been started automatically triggers `startWorkOrder()` to record the `startAt` timestamp.
+- **Status Cascading**: Closing a Work Order via `closeWorkOrder()` automatically transitions all linked `user_requests` to `"Closed"`.
+- **Historical Notes**: Uses a nested TanStack Table to show engineer commentary.
+- **Inline Editing**: Implemented via a `EditableNoteCell` pattern — clicking text swaps the cell for a `textarea`, saving on blur or `Ctrl+Enter`. This reduces UI clutter compared to traditional "Edit" modals.
+- **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
+
+### 7. Server Error Handling (TanStack Start Middleware)
 
 All TanStack Start server functions must be explicitly wrapped in the centralized error interception middleware to prevent backend failures from leaking database credentials or stack traces to the client.
 
@@ -191,6 +194,61 @@ export const myApi = authServerFn({ method: 'GET' }).handler(...)
 ```
 
 The global middleware captures raw thrown errors locally (logging them securely to the Node console) and strictly throws a sanitized generic `Error` back across the network boundary to the frontend.
+
+---
+
+### 8. Optional Microsoft Entra ID SSO
+
+Microsoft Entra ID (Azure AD) SSO is **opt-in**: the app starts and runs normally with email/password authentication alone, which is the default for local development. SSO is activated only when the required environment variables are present.
+
+**Server (`src/lib/auth.ts`)**
+
+`socialProviders.microsoft` is conditionally spread into the `betterAuth` config using a runtime env-var check. When any of the three MS vars are absent the key is simply omitted, so `better-auth` never tries to initialise the provider and no startup crash occurs:
+
+```ts
+...(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && process.env.MICROSOFT_TENANT_ID
+    ? {
+          socialProviders: {
+              microsoft: {
+                  clientId: process.env.MICROSOFT_CLIENT_ID,
+                  clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+                  tenantId: process.env.MICROSOFT_TENANT_ID,
+              },
+          },
+      }
+    : {})
+```
+
+**Client (`src/routes/login.tsx`)**
+
+The "Sign in with Microsoft" button and its `or` divider are gated on the `VITE_ENABLE_MICROSOFT_SSO` Vite env var. Without it the login page renders the email/password form only:
+
+```tsx
+const microsoftSsoEnabled = !!import.meta.env.VITE_ENABLE_MICROSOFT_SSO
+
+// In JSX:
+{microsoftSsoEnabled && (
+    <>
+        <button onClick={handleMicrosoftSignIn}>Sign in with Microsoft</button>
+        <div>{/* divider */}</div>
+    </>
+)}
+```
+
+**To enable SSO (production)**
+
+Set all four vars in `.env` (copy from `.env.example`):
+
+```
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+MICROSOFT_TENANT_ID=...
+VITE_ENABLE_MICROSOFT_SSO=true
+```
+
+**Dev default (no `.env` file needed)**
+
+The app starts, and the hardwired admin (`super@lina.com` / `genesiscare`) can log in with email/password.
 
 ---
 
@@ -244,4 +302,5 @@ npx drizzle-kit push       # Push schema changes to DB
 npx drizzle-kit generate   # Generate migration files
 npx drizzle-kit studio     # Open Drizzle Studio (DB browser)
 npx shadcn@latest add <component>  # Add a shadcn/ui component
+cp .env.example .env       # Bootstrap local environment config (edit as needed)
 ```
