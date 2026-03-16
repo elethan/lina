@@ -1,7 +1,7 @@
 # Lina — Architecture Overview
 
 > CMMS (Computerised Maintenance Management System) for medical equipment.
-> Last updated: 2026-03-03
+> Last updated: 2026-03-16
 
 ---
 
@@ -107,12 +107,14 @@ const setSearch = (value: string) =>
 
 **Roles** (defined in `schema.ts`): `admin`, `engineer`, `scientist`, `user`
 
-| Role | Requests | Work Orders | PMs | Config |
-|------|----------|-------------|-----|--------|
-| `admin` | ✅ | ✅ | ✅ | ✅ |
-| `engineer` | ✅ | ✅ | ✅ | ❌ |
-| `scientist` | ✅ | ❌ | ❌ | ❌ |
-| `user` (radiographer) | ✅ | ❌ | ❌ | ❌ |
+| Role | Requests | Work Orders |
+|------|----------|-------------|
+| `admin` | ✅ | ✅ |
+| `engineer` | ✅ | ✅ |
+| `scientist` | ✅ | ❌ |
+| `user` (radiographer) | ✅ | ❌ |
+
+Planned (not shipped yet): PMs, Config, and Spare Parts workflows.
 
 **How it works:**
 
@@ -120,8 +122,25 @@ const setSearch = (value: string) =>
 - `_app.tsx` passes user to child routes via `beforeLoad` + to `<Sidebar userRole={...} />`
 - Restricted routes have `beforeLoad` guards that `throw redirect({ to: '/' })`
 - `Sidebar.tsx` filters nav items by `allowedRoles` array
+- Server mutations enforce role checks in the API layer (`requireRole(...)`) so direct server-function calls cannot bypass UI route guards
 
-### 4. Table Pattern (TanStack Table)
+### 4. Entra Group Role Mapping
+
+Entra users are mapped to app roles using group IDs from environment variables during Microsoft sign-in:
+
+- `MICROSOFT_GROUP_ADMIN_IDS`
+- `MICROSOFT_GROUP_ENGINEER_IDS`
+- `MICROSOFT_GROUP_SCIENTIST_IDS`
+- `MICROSOFT_GROUP_USER_IDS`
+
+All values are comma-separated Entra Group Object IDs. Role precedence is: `admin` > `engineer` > `scientist` > `user`.
+
+Mandatory bootstrap email lists:
+
+- `BOOTSTRAP_ADMIN_EMAILS` (comma-separated)
+- `BOOTSTRAP_USER_EMAILS` (comma-separated)
+
+### 5. Table Pattern (TanStack Table)
 
 Both pages follow the same pattern:
 
@@ -151,7 +170,7 @@ Both pages follow the same pattern:
 | - **Inline Editing**: Implemented via a `EditableNoteCell` pattern — clicking text swaps the cell for a `textarea`, saving on blur or `Ctrl+Enter`. This reduces UI clutter compared to traditional "Edit" modals.
 | - **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
 
-### 5. Server Error Handling (TanStack Start Middleware)
+### 6. Server Error Handling (TanStack Start Middleware)
 
 All TanStack Start server functions must be explicitly wrapped in the centralized error interception middleware to prevent backend failures from leaking database credentials or stack traces to the client.
 

@@ -2,6 +2,27 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-16
+
+- **Phase 1 Scope Hardening (Routes + RBAC + Auth Mapping)**
+  - Removed dead sidebar entries for non-shipped routes (`PMs`, `Config`) from `Sidebar.tsx` to eliminate broken navigation.
+  - Added server-side role enforcement helper (`requireRole`) in `server-utils.ts` and applied it to restricted mutation APIs:
+    - `workorders.api.ts`: create/delete/start/close work order and note edit/create mutations now require `admin` or `engineer`.
+    - `engineers.api.ts`: request assignment now requires `admin` or `engineer`.
+    - `requests.api.ts`: request deletion now requires `admin` / `engineer` / `scientist`.
+  - Implemented Entra group-based role mapping in `auth.ts` via Microsoft provider profile mapping:
+    - `MICROSOFT_GROUP_ADMIN_IDS`
+    - `MICROSOFT_GROUP_ENGINEER_IDS`
+    - `MICROSOFT_GROUP_SCIENTIST_IDS`
+    - optional bootstrap path: `BOOTSTRAP_ADMIN_EMAILS`
+  - Added build verification pass (`npm run build`) confirming production compile succeeds after hardening changes.
+
+- **Auth Provisioning Tightening (MICROSOFT_GROUP_USER_IDS + Mandatory Bootstraps)**
+  - Added required `MICROSOFT_GROUP_USER_IDS` mapping for standard users so Entra sign-ins must match an authorized user group instead of falling back implicitly.
+  - Group env config uses `MICROSOFT_GROUP_ADMIN_IDS`, `MICROSOFT_GROUP_ENGINEER_IDS`, `MICROSOFT_GROUP_SCIENTIST_IDS`, and `MICROSOFT_GROUP_USER_IDS`.
+  - Made both `BOOTSTRAP_ADMIN_EMAILS` and `BOOTSTRAP_USER_EMAILS` mandatory and enforced explicit provisioning in `databaseHooks.user.create.before`.
+  - Added explicit deny behavior for unprovisioned users (`User is not in an authorized Entra group` / `User is not provisioned for Lina access`).
+
 ## 2026-03-15
 
 - **Work Order Execution Hub & Engineer Notes (`work-orders.tsx`, `workorders.api.ts`)**

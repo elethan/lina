@@ -1,4 +1,4 @@
-import { authServerFn } from '../lib/server-utils'
+import { authServerFn, requireRole } from '../lib/server-utils'
 import { db } from '../db/client'
 import { userRequests, assets, sites, systems, engineers } from '../db/schema'
 import { eq, sql, desc, inArray } from 'drizzle-orm'
@@ -72,7 +72,8 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer', 'scientist')
         const { requestIds } = data
 
         await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
@@ -90,7 +91,8 @@ export const createRequest = authServerFn({ method: 'POST' })
         if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer', 'scientist', 'user')
         const result = await db.insert(userRequests).values({
             assetId: data.assetId,
             systemId: data.systemId,

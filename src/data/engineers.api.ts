@@ -1,4 +1,4 @@
-import { authServerFn } from '../lib/server-utils'
+import { authServerFn, requireRole } from '../lib/server-utils'
 import { db } from '../db/client'
 import { engineers, userRequests } from '../db/schema'
 import { inArray } from 'drizzle-orm'
@@ -36,7 +36,8 @@ export const assignRequestsToEngineer = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         const { requestIds, engineerId } = data
 
         await db

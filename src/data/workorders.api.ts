@@ -1,4 +1,4 @@
-import { authServerFn } from '../lib/server-utils'
+import { authServerFn, requireRole } from '../lib/server-utils'
 import { db } from '../db/client'
 import { workOrders, workOrderRequests, workOrderEngineers, workOrderParts, workOrderNotes, userRequests, assets, sites, systems, engineers } from '../db/schema'
 import { eq, sql, inArray, desc } from 'drizzle-orm'
@@ -93,7 +93,8 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         const { requestIds } = data
 
         // Fetch the selected requests to get asset/system info
@@ -153,7 +154,8 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         const { woIds, requestAction } = data
 
         // 1. Find all associated requests
@@ -216,7 +218,8 @@ export const addWorkOrderNote = authServerFn({ method: 'POST' })
         if (!data.woId || !data.noteText) throw new Error('Missing required fields for note')
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         const result = await db.insert(workOrderNotes).values({
             woId: data.woId,
             engineerId: data.engineerId,
@@ -231,7 +234,8 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
         if (!data.woId) throw new Error('Work Order ID is required')
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         await db.update(workOrders)
             .set({ startAt: sql`CURRENT_TIMESTAMP` })
             .where(eq(workOrders.id, data.woId))
@@ -244,7 +248,8 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         if (!data.woId) throw new Error('Work Order ID is required')
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         // 1. Update WO status and end date
         await db.update(workOrders)
             .set({
@@ -275,7 +280,8 @@ export const updateWorkOrderNote = authServerFn({ method: 'POST' })
         if (!data.noteId || !data.noteText) throw new Error('Note ID and text are required')
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         await db.update(workOrderNotes)
             .set({ noteText: data.noteText })
             .where(eq(workOrderNotes.id, data.noteId))
