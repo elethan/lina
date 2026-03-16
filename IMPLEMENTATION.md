@@ -2,6 +2,56 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-16
+
+- **Phase 1 Scope Hardening (Routes + RBAC + Auth Mapping)**
+  - Removed dead sidebar entries for non-shipped routes (`PMs`, `Config`) from `Sidebar.tsx` to eliminate broken navigation.
+  - Added server-side role enforcement helper (`requireRole`) in `server-utils.ts` and applied it to restricted mutation APIs:
+    - `workorders.api.ts`: create/delete/start/close work order and note edit/create mutations now require `admin` or `engineer`.
+    - `engineers.api.ts`: request assignment now requires `admin` or `engineer`.
+    - `requests.api.ts`: request deletion now requires `admin` / `engineer` / `scientist`.
+  - Implemented Entra group-based role mapping in `auth.ts` via Microsoft provider profile mapping:
+    - `MICROSOFT_GROUP_ADMIN_IDS`
+    - `MICROSOFT_GROUP_ENGINEER_IDS`
+    - `MICROSOFT_GROUP_SCIENTIST_IDS`
+    - optional bootstrap path: `BOOTSTRAP_ADMIN_EMAILS`
+  - Added build verification pass (`npm run build`) confirming production compile succeeds after hardening changes.
+
+- **Auth Provisioning Tightening (MICROSOFT_GROUP_USER_IDS + Mandatory Bootstraps)**
+  - Added required `MICROSOFT_GROUP_USER_IDS` mapping for standard users so Entra sign-ins must match an authorized user group instead of falling back implicitly.
+  - Group env config uses `MICROSOFT_GROUP_ADMIN_IDS`, `MICROSOFT_GROUP_ENGINEER_IDS`, `MICROSOFT_GROUP_SCIENTIST_IDS`, and `MICROSOFT_GROUP_USER_IDS`.
+  - Made both `BOOTSTRAP_ADMIN_EMAILS` and `BOOTSTRAP_USER_EMAILS` mandatory and enforced explicit provisioning in `databaseHooks.user.create.before`.
+  - Added explicit deny behavior for unprovisioned users (`User is not in an authorized Entra group` / `User is not provisioned for Lina access`).
+
+## 2026-03-15
+
+- **Work Order Execution Hub & Engineer Notes (`work-orders.tsx`, `workorders.api.ts`)**
+  - Developed a comprehensive "Execution Dialog" for Work Orders, acting as a real-time field hub.
+  - **Inline Editable History**: Integrated a nested TanStack Table for historical notes with a custom `EditableNoteCell` component. Engineers can click any note to swap it for a `textarea`, with `Ctrl+Enter` or Blur saving changes via the new `updateWorkOrderNote` API.
+  - **Automated Lifecycle Events**:
+    - **Auto-Start**: Opening an unstarted Work Order now automatically records the `startAt` timestamp in the database via the `startWorkOrder` API.
+    - **Cascading Resolution**: Closing a Work Order now automatically transitions all linked User Requests to a `"Closed"` status in a single transaction.
+  - **Reliable Date Handling**: Replaced manual "Just now..." UI labels with local state (`displayStartAt`, `displayEndAt`) that updates immediately from API responses, ensuring the engineer sees the recorded finish time before closing the dialog.
+  - **Dynamic Controls**: The main Work Orders toolbar "Start" button now dynamically labels itself as "Continue" for active jobs.
+  - **Schema Expansion**: Added the `work_order_notes` table to track commentary chronologically.
+  - **Database Recovery Tools**: Created `src/db/wipe.ts` to forcefully clear SQLite indexes and tables, resolving persistent Drizzle/SQLite `unique constraint` conflicts during schema pushes.
+
+- **Request Status Logic and Filtering (`requests.api.ts`, `workorders.api.ts`, `index.tsx`)**
+  - Introduced an `"Active"` status for User Requests that are currently tied to a Work Order.
+  - Updated the default Request page filter to display both `"Open"` and `"Active"` requests simultaneously on load (`status: 'OpenActive'`).
+  - Added safety validations to block deletion of Requests that are in an `"Active"` or `"Closed"` state directly from the Requests page.
+
+- **Work Order Deletion Flow (`workorders.api.ts`, `work-orders.tsx`)**
+  - Replaced the simple delete logic behind the "Close" Work Order button with a detailed Shadcn Dialog flow.
+  - Users are now prompted when deleting a Work Order to resolve tied User Requests: either delete everything permanently, or detach the Requests and revert their status back to `"Open"`.
+  - Added full cleanup of junction tables (`work_order_requests`, `work_order_engineers`, `work_order_parts`) during the Work Order deletion process to maintain referential integrity.
+
+- **New Request Dialog (`_app/index.tsx`, `requests.api.ts`, `equipment.api.ts`)**
+  - Built a modal dialog for raising new requests, utilizing TanStack Form natively with Zod schema parsing directly in the `onSubmit` block.
+  - Omitted the `@tanstack/zod-form-adapter` dependency due to peer dependency conflicts (`zod@^3.x` vs `zod@^4.x`).
+  - Added a responsive `siteId` filter derived from URL parameters, auto-filtering the Systems/Assets dropdown to equipment explicitly at that location.
+  - **Important Database Lesson:** Removed `createdAt: new Date()` from the backend insert. Passing Javascript dates into `better-sqlite3` via Drizzle outputs Unix epoch numbers, which breaks standard SQLite `datetime('now')` string queries (hiding records from lists). It is critical to omit explicit javascript dates and exclusively let the SQLite schema `.default(sql\`CURRENT_TIMESTAMP\`)` handle native date formatting.
+
 ## 2026-03-06
 
 - **Structured JSON Logging & Auditing (`src/lib/logger.ts`, `auth.ts`)**

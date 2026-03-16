@@ -1,11 +1,13 @@
-import { authServerFn } from '../lib/server-utils'
+import { authServerFn, requireRole } from '../lib/server-utils'
 import { db } from '../db/client'
 import { userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq, sql, desc } from 'drizzle-orm'
+import { eq, sql, desc, inArray } from 'drizzle-orm'
 
 export type RequestRow = {
     id: number
+    assetId: number | null
     serialNumber: string | null
+    siteId: number | null
     siteName: string | null
     systemName: string | null
     reportedBy: string
@@ -21,7 +23,9 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
         const rows = await db
             .select({
                 id: userRequests.id,
+                assetId: userRequests.assetId,
                 serialNumber: assets.serialNumber,
+                siteId: sites.id,
                 siteName: sites.name,
                 systemName: systems.name,
                 systemId: userRequests.systemId,
@@ -43,7 +47,9 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
 
         return rows.map((r) => ({
             id: r.id,
+            assetId: r.assetId ?? null,
             serialNumber: r.serialNumber ?? null,
+            siteId: r.siteId ?? null,
             siteName: r.siteName ?? null,
             systemName: r.systemName ?? null,
             reportedBy: r.reportedBy,
@@ -58,3 +64,42 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
         }))
     },
 )
+
+export const deleteRequests = authServerFn({ method: 'POST' })
+    .inputValidator((data: { requestIds: number[] }) => {
+        if (!data.requestIds || data.requestIds.length === 0) {
+            throw new Error('At least one request must be selected')
+        }
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer', 'scientist')
+        const { requestIds } = data
+
+        await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
+
+        return { success: true }
+    })
+
+export const createRequest = authServerFn({ method: 'POST' })
+    .inputValidator((data: {
+        assetId?: number,
+        systemId?: number,
+        reportedBy: string,
+        commentText: string
+    }) => {
+        if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer', 'scientist', 'user')
+        const result = await db.insert(userRequests).values({
+            assetId: data.assetId,
+            systemId: data.systemId,
+            reportedBy: data.reportedBy,
+            commentText: data.commentText,
+            status: 'Open',
+        }).returning({ id: userRequests.id })
+
+        return result[0]
+    })

@@ -1,7 +1,7 @@
 # Lina — Architecture Overview
 
 > CMMS (Computerised Maintenance Management System) for medical equipment.
-> Last updated: 2026-03-03
+> Last updated: 2026-03-16
 
 ---
 
@@ -33,7 +33,7 @@ src/
 │   └── ToolbarContext.tsx  # SSR-safe toolbar state via useSetToolbar()
 ├── data/                # Server functions (API layer)
 │   ├── requests.api.ts  # fetchRequests()
-│   ├── workorders.api.ts  # fetchWorkOrders(), createWorkOrder()
+│   ├── workorders.api.ts  # fetchWorkOrders(), startWorkOrder(), closeWorkOrder(), workOrderNotes
 │   └── engineers.api.ts # fetchEngineers(), assignRequestsToEngineer()
 ├── db/
 │   ├── schema.ts        # Drizzle schema (all tables)
@@ -107,12 +107,14 @@ const setSearch = (value: string) =>
 
 **Roles** (defined in `schema.ts`): `admin`, `engineer`, `scientist`, `user`
 
-| Role | Requests | Work Orders | PMs | Config |
-|------|----------|-------------|-----|--------|
-| `admin` | ✅ | ✅ | ✅ | ✅ |
-| `engineer` | ✅ | ✅ | ✅ | ❌ |
-| `scientist` | ✅ | ❌ | ❌ | ❌ |
-| `user` (radiographer) | ✅ | ❌ | ❌ | ❌ |
+| Role | Requests | Work Orders |
+|------|----------|-------------|
+| `admin` | ✅ | ✅ |
+| `engineer` | ✅ | ✅ |
+| `scientist` | ✅ | ❌ |
+| `user` (radiographer) | ✅ | ❌ |
+
+Planned (not shipped yet): PMs, Config, and Spare Parts workflows.
 
 **How it works:**
 
@@ -120,8 +122,25 @@ const setSearch = (value: string) =>
 - `_app.tsx` passes user to child routes via `beforeLoad` + to `<Sidebar userRole={...} />`
 - Restricted routes have `beforeLoad` guards that `throw redirect({ to: '/' })`
 - `Sidebar.tsx` filters nav items by `allowedRoles` array
+- Server mutations enforce role checks in the API layer (`requireRole(...)`) so direct server-function calls cannot bypass UI route guards
 
-### 4. Table Pattern (TanStack Table)
+### 4. Entra Group Role Mapping
+
+Entra users are mapped to app roles using group IDs from environment variables during Microsoft sign-in:
+
+- `MICROSOFT_GROUP_ADMIN_IDS`
+- `MICROSOFT_GROUP_ENGINEER_IDS`
+- `MICROSOFT_GROUP_SCIENTIST_IDS`
+- `MICROSOFT_GROUP_USER_IDS`
+
+All values are comma-separated Entra Group Object IDs. Role precedence is: `admin` > `engineer` > `scientist` > `user`.
+
+Mandatory bootstrap email lists:
+
+- `BOOTSTRAP_ADMIN_EMAILS` (comma-separated)
+- `BOOTSTRAP_USER_EMAILS` (comma-separated)
+
+### 5. Table Pattern (TanStack Table)
 
 Both pages follow the same pattern:
 
@@ -136,9 +155,22 @@ Both pages follow the same pattern:
 
 **Requests toolbar** `rightContent`: New / Create WO / Merge / Close buttons — all `w-40`, equal-width.
 **Work Orders toolbar** `rightContent`: Start / Assign / Close buttons — same pattern. Both pages now use `rightContent` identically; no separate in-page action bar div exists.
-**Status filter options**: Both pages only expose `All / Open / Closed` ("In Progress" removed).
+**Status filter options**:
 
-### 5. Server Error Handling (TanStack Start Middleware)
+- **Requests**: Defaults to a custom `OpenActive` composite filter. Exposes `All / Open & Active / Open / Active / Closed` options.
+- **Work Orders**: Exposes `All / Open / Closed`.
+|
+| ### 6. Work Order Execution & Inline Editing
+|
+| Work Orders are no longer just rows in a table; they feature a dedicated **Execution Dialog** (`WorkOrderExecutionDialog`) that serves as the central hub for field work:
+|
+| - **Auto-Start**: Opening a Work Order that hasn't been started automatically triggers `startWorkOrder()` to record the `startAt` timestamp.
+| - **Status Cascading**: Closing a Work Order via `closeWorkOrder()` automatically transitions all linked `user_requests` to `"Closed"`.
+| - **Historical Notes**: Uses a nested TanStack Table to show engineer commentary.
+| - **Inline Editing**: Implemented via a `EditableNoteCell` pattern — clicking text swaps the cell for a `textarea`, saving on blur or `Ctrl+Enter`. This reduces UI clutter compared to traditional "Edit" modals.
+| - **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
+
+### 6. Server Error Handling (TanStack Start Middleware)
 
 All TanStack Start server functions must be explicitly wrapped in the centralized error interception middleware to prevent backend failures from leaking database credentials or stack traces to the client.
 
@@ -173,8 +205,9 @@ The global middleware captures raw thrown errors locally (logging them securely 
 | `engineers` | Field engineers (first/last name). No UNIQUE constraint on name columns — deduplication handled in `fetchEngineers()` via `.groupBy(firstName, lastName)`. |
 | `assets` | Individual machines (serial number, linked to site + system) |
 | `user_requests` | Service requests from users (linked to asset, engineer) |
-| `work_orders` | Work orders grouping requests |
-| `work_order_requests` | Junction: WO ↔ requests (many-to-many) |
+| `work_orders` | Work orders grouping requests (includes `startAt`, `endAt`) |
+| `work_order_notes` | Chronological engineer commentary per WO |
+| `work_order_requests` | Junction: WO ↔ requests (many-to-many, auto-closed on WO close) |
 | `work_order_engineers` | Junction: WO ↔ engineers (many-to-many) |
 | `role_permissions` | Role-based permission rules |
 

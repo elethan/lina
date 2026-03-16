@@ -28,12 +28,16 @@ CREATE TABLE `asset_info` (
 CREATE TABLE `asset_pm` (
 	`pm_instance_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`asset_id` integer,
+	`system_id` integer,
+	`interval_months` integer,
+	`start_at` integer,
 	`engineer_id` integer,
 	`created_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`completed_at` integer,
 	`updated_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`deleted_at` integer,
 	FOREIGN KEY (`asset_id`) REFERENCES `assets`(`asset_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`system_id`) REFERENCES `systems`(`system_id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`engineer_id`) REFERENCES `engineers`(`engineer_id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
@@ -43,6 +47,7 @@ CREATE TABLE `asset_pm_results` (
 	`task_id` integer,
 	`status` text NOT NULL,
 	`findings` text,
+	`engineer` text,
 	`updated_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`deleted_at` integer,
 	FOREIGN KEY (`pm_instance_id`) REFERENCES `asset_pm`(`pm_instance_id`) ON UPDATE no action ON DELETE no action,
@@ -123,6 +128,17 @@ CREATE TABLE `sites` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `sites_site_name_unique` ON `sites` (`site_name`);--> statement-breakpoint
+CREATE TABLE `spare_parts` (
+	`part_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`site_id` integer NOT NULL,
+	`description` text NOT NULL,
+	`location` text,
+	`stock_level` integer DEFAULT 0,
+	`updated_at` integer DEFAULT CURRENT_TIMESTAMP,
+	`deleted_at` integer,
+	FOREIGN KEY (`site_id`) REFERENCES `sites`(`site_id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
 CREATE TABLE `sync_state` (
 	`table_name` text PRIMARY KEY NOT NULL,
 	`last_modified` integer NOT NULL
@@ -156,6 +172,7 @@ CREATE TABLE `user_requests` (
 	`comment_text` text NOT NULL,
 	`status` text DEFAULT 'Open' NOT NULL,
 	`engineer_id` integer,
+	`created_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`updated_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`deleted_at` integer,
 	FOREIGN KEY (`asset_id`) REFERENCES `assets`(`asset_id`) ON UPDATE no action ON DELETE no action,
@@ -170,6 +187,33 @@ CREATE TABLE `verification` (
 	`expires_at` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `work_order_engineers` (
+	`wo_id` integer,
+	`engineer_id` integer,
+	PRIMARY KEY(`wo_id`, `engineer_id`),
+	FOREIGN KEY (`wo_id`) REFERENCES `work_orders`(`wo_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`engineer_id`) REFERENCES `engineers`(`engineer_id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE TABLE `work_order_notes` (
+	`note_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`wo_id` integer NOT NULL,
+	`engineer_id` integer,
+	`note_text` text NOT NULL,
+	`created_at` integer DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (`wo_id`) REFERENCES `work_orders`(`wo_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`engineer_id`) REFERENCES `engineers`(`engineer_id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE TABLE `work_order_parts` (
+	`wo_id` integer NOT NULL,
+	`part_id` integer NOT NULL,
+	`quantity` integer DEFAULT 1 NOT NULL,
+	PRIMARY KEY(`wo_id`, `part_id`),
+	FOREIGN KEY (`wo_id`) REFERENCES `work_orders`(`wo_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`part_id`) REFERENCES `spare_parts`(`part_id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
 CREATE TABLE `work_order_requests` (
 	`wo_id` integer,
 	`request_id` integer,
@@ -181,11 +225,14 @@ CREATE TABLE `work_order_requests` (
 CREATE TABLE `work_orders` (
 	`wo_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`asset_id` integer,
+	`system_id` integer,
 	`description_of_fault` text NOT NULL,
-	`start_at` integer DEFAULT CURRENT_TIMESTAMP,
+	`created_at` integer,
+	`start_at` integer,
 	`end_at` integer,
 	`status` text DEFAULT 'Open' NOT NULL,
 	`updated_at` integer DEFAULT CURRENT_TIMESTAMP,
 	`deleted_at` integer,
-	FOREIGN KEY (`asset_id`) REFERENCES `assets`(`asset_id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`asset_id`) REFERENCES `assets`(`asset_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`system_id`) REFERENCES `systems`(`system_id`) ON UPDATE no action ON DELETE no action
 );

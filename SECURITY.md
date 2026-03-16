@@ -6,9 +6,11 @@ This document provides a high-level overview of the security architecture for th
 
 Lina relies entirely on the company's existing identity provider rather than managing its own credentials for end users.
 
-- **SSO Integration:** Authentication is handled exclusively via Microsoft Entra ID (formerly Azure AD) using the `better-auth` library.
-- **No Local Passwords:** Users do not create or store passwords within Lina.
+- **SSO Integration:** Authentication supports Microsoft Entra ID (formerly Azure AD) using the `better-auth` library.
+- **Local Credentials:** Email/password is currently enabled for development and controlled internal use. For production, enforce Entra SSO policy and disable local credentials if required by IT.
 - **Session Management:** Sessions are established via secure, HttpOnly cookies generated after successful Entra ID verification.
+- **Role Provisioning:** Entra users are role-mapped from group claims to app roles (`admin`, `engineer`, `scientist`, `user`) via configured environment group IDs, including a required `MICROSOFT_GROUP_USER_IDS` value for standard request-only users.
+- **Bootstrap Allowlists:** `BOOTSTRAP_ADMIN_EMAILS` and `BOOTSTRAP_USER_EMAILS` are mandatory and used as explicit fallback allowlists for controlled account provisioning.
 
 ## 2. Authorization & Access Control (RBAC)
 
@@ -16,7 +18,7 @@ Access to the application is strictly regulated by Role-Based Access Control (RB
 
 - **Roles:** Users are assigned one of four database-enforced roles (`admin`, `engineer`, `scientist`, `user`).
 - **Route Protection:** Unauthenticated users are hard-redirected away from all application routes. Server-level checks prevent unauthorized roles from loading restricted pages (e.g., a `user` physically cannot load the Work Orders page).
-- **API Protection:** Backend server functions (`createServerFn`) must validate the active session and the user's role before executing any database mutations.
+- **API Protection:** Backend server functions (`createServerFn`) validate the active session and the user's role before executing restricted database mutations (defense in depth beyond page guards).
 
 ## 3. Database Architecture & Security
 

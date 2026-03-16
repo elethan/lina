@@ -183,10 +183,19 @@ export const workOrders = sqliteTable('work_orders', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
   description: text('description_of_fault').notNull(), // [cite: 26]
-  startAt: integer('start_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+  createdAt: integer('created_at', { mode: 'timestamp' }),
+  startAt: integer('start_at', { mode: 'timestamp' }),
   endAt: integer('end_at', { mode: 'timestamp' }),
   status: text('status').notNull().default('Open'),
   ...commonCols,
+});
+
+export const workOrderNotes = sqliteTable('work_order_notes', {
+  id: integer('note_id').primaryKey({ autoIncrement: true }),
+  woId: integer('wo_id').references(() => workOrders.id).notNull(),
+  engineerId: integer('engineer_id').references(() => engineers.id),
+  noteText: text('note_text').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Link Requests to Work Orders [cite: 27]
@@ -203,4 +212,22 @@ export const workOrderEngineers = sqliteTable('work_order_engineers', {
   engineerId: integer('engineer_id').references(() => engineers.id),
 }, (t) => ({
   pk: primaryKey({ columns: [t.woId, t.engineerId] }),
+}));
+
+// --- H. SPARE PARTS ---
+export const spareParts = sqliteTable('spare_parts', {
+  id: integer('part_id').primaryKey({ autoIncrement: true }),
+  siteId: integer('site_id').references(() => sites.id).notNull(),
+  description: text('description').notNull(),
+  location: text('location'),
+  stockLevel: integer('stock_level').default(0),
+  ...commonCols,
+});
+
+export const workOrderParts = sqliteTable('work_order_parts', {
+  woId: integer('wo_id').references(() => workOrders.id).notNull(),
+  partId: integer('part_id').references(() => spareParts.id).notNull(),
+  quantity: integer('quantity').notNull().default(1),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.woId, t.partId] }),
 }));

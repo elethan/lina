@@ -39,6 +39,20 @@ When deploying a new version to the VM, you will transfer:
 2. The `package.json` file.
 3. _Note: Ensure the production SQLite database file (e.g., `lina_prod.db`) is stored in a resilient, backed-up directory on the server and is not overwritten during deployments._
 
+### Required Environment Variables
+
+Set these on the VM/container runtime:
+
+- `MICROSOFT_CLIENT_ID`
+- `MICROSOFT_CLIENT_SECRET`
+- `MICROSOFT_TENANT_ID`
+- `MICROSOFT_GROUP_ADMIN_IDS` (comma-separated Entra Group Object IDs)
+- `MICROSOFT_GROUP_ENGINEER_IDS` (comma-separated Entra Group Object IDs)
+- `MICROSOFT_GROUP_SCIENTIST_IDS` (comma-separated Entra Group Object IDs)
+- `MICROSOFT_GROUP_USER_IDS` (comma-separated Entra Group Object IDs)
+- `BOOTSTRAP_ADMIN_EMAILS` (comma-separated)
+- `BOOTSTRAP_USER_EMAILS` (comma-separated)
+
 ---
 
 ## 4. User Access Flow

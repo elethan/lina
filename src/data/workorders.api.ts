@@ -1,6 +1,6 @@
-import { authServerFn } from '../lib/server-utils'
+import { authServerFn, requireRole } from '../lib/server-utils'
 import { db } from '../db/client'
-import { workOrders, workOrderRequests, workOrderEngineers, userRequests, assets, sites, systems, engineers } from '../db/schema'
+import { workOrders, workOrderRequests, workOrderEngineers, workOrderParts, workOrderNotes, userRequests, assets, sites, systems, engineers } from '../db/schema'
 import { eq, sql, inArray, desc } from 'drizzle-orm'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -11,6 +11,7 @@ export type WorkOrderRow = {
     systemName: string | null
     description: string
     status: string
+    createdAt: string | null
     startAt: string | null
     endAt: string | null
     requestCount: number
@@ -29,6 +30,7 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
                 systemName: systems.name,
                 description: workOrders.description,
                 status: workOrders.status,
+                createdAt: sql<string>`${workOrders.createdAt}`,
                 startAt: sql<string>`${workOrders.startAt}`,
                 endAt: sql<string>`${workOrders.endAt}`,
             })
@@ -75,6 +77,7 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
             systemName: r.systemName ?? null,
             description: r.description,
             status: r.status,
+            createdAt: r.createdAt ?? null,
             startAt: r.startAt ?? null,
             endAt: r.endAt ?? null,
             requestCount: countMap.get(r.id) ?? 0,
@@ -90,7 +93,8 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data }) => {
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
         const { requestIds } = data
 
         // Fetch the selected requests to get asset/system info
@@ -122,6 +126,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 systemId: firstRequest.systemId,
                 description,
                 status: 'Open',
+                createdAt: new Date(),
             })
             .returning({ id: workOrders.id })
 
@@ -133,5 +138,153 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             })),
         )
 
+        // Update the source requests to 'Active' since they are now part of a WO
+        await db
+            .update(userRequests)
+            .set({ status: 'Active' })
+            .where(inArray(userRequests.id, requestIds))
+
         return { woId: wo.id }
+    })
+
+export const deleteWorkOrders = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woIds: number[]; requestAction: 'delete' | 'keep' }) => {
+        if (!data.woIds || data.woIds.length === 0) {
+            throw new Error('At least one Work Order must be selected')
+        }
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
+        const { woIds, requestAction } = data
+
+        // 1. Find all associated requests
+        const linkedRequests = await db
+            .select({ requestId: workOrderRequests.requestId })
+            .from(workOrderRequests)
+            .where(inArray(workOrderRequests.woId, woIds))
+
+        const requestIds = linkedRequests.map((r) => r.requestId).filter((id): id is number => id !== null)
+
+        // 2. Handle the requests based on user choice
+        if (requestIds.length > 0) {
+            if (requestAction === 'delete') {
+                await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
+            } else if (requestAction === 'keep') {
+                await db
+                    .update(userRequests)
+                    .set({ status: 'Open' })
+                    .where(inArray(userRequests.id, requestIds))
+            }
+        }
+
+        // 3. Clean up associated junction tables and notes
+        await db.delete(workOrderRequests).where(inArray(workOrderRequests.woId, woIds))
+        await db.delete(workOrderEngineers).where(inArray(workOrderEngineers.woId, woIds))
+        await db.delete(workOrderParts).where(inArray(workOrderParts.woId, woIds))
+        await db.delete(workOrderNotes).where(inArray(workOrderNotes.woId, woIds))
+
+        // 4. Finally, delete the work orders
+        await db.delete(workOrders).where(inArray(workOrders.id, woIds))
+
+        return { success: true }
+    })
+
+// ── Work Order Notes ──────────────────────────────────────────
+
+export const fetchWorkOrderNotes = authServerFn({ method: 'GET' })
+    .inputValidator((data: { woId: number }) => {
+        if (!data.woId) throw new Error('Work Order ID is required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        return await db
+            .select({
+                id: workOrderNotes.id,
+                woId: workOrderNotes.woId,
+                engineerId: workOrderNotes.engineerId,
+                engineerName: sql<string>`${engineers.firstName} || ' ' || ${engineers.lastName}`,
+                noteText: workOrderNotes.noteText,
+                createdAt: sql<string>`${workOrderNotes.createdAt}`,
+            })
+            .from(workOrderNotes)
+            .leftJoin(engineers, eq(workOrderNotes.engineerId, engineers.id))
+            .where(eq(workOrderNotes.woId, data.woId))
+            .orderBy(desc(workOrderNotes.id))
+    })
+
+export const addWorkOrderNote = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woId: number; engineerId?: number; noteText: string }) => {
+        if (!data.woId || !data.noteText) throw new Error('Missing required fields for note')
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
+        const result = await db.insert(workOrderNotes).values({
+            woId: data.woId,
+            engineerId: data.engineerId,
+            noteText: data.noteText,
+        }).returning({ id: workOrderNotes.id })
+
+        return result[0]
+    })
+
+export const startWorkOrder = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woId: number }) => {
+        if (!data.woId) throw new Error('Work Order ID is required')
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
+        await db.update(workOrders)
+            .set({ startAt: sql`CURRENT_TIMESTAMP` })
+            .where(eq(workOrders.id, data.woId))
+
+        return { startAt: new Date().toISOString() }
+    })
+
+export const closeWorkOrder = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woId: number }) => {
+        if (!data.woId) throw new Error('Work Order ID is required')
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
+        // 1. Update WO status and end date
+        await db.update(workOrders)
+            .set({
+                status: 'Closed',
+                endAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(workOrders.id, data.woId))
+
+        // 2. Cascade "Closed" status to linked User Requests
+        const linked = await db
+            .select({ requestId: workOrderRequests.requestId })
+            .from(workOrderRequests)
+            .where(eq(workOrderRequests.woId, data.woId))
+
+        const requestIds = linked.map(l => l.requestId).filter(Boolean) as number[]
+        if (requestIds.length > 0) {
+            await db
+                .update(userRequests)
+                .set({ status: 'Closed' })
+                .where(inArray(userRequests.id, requestIds))
+        }
+
+        return { success: true, endAt: new Date().toISOString() }
+    })
+
+export const updateWorkOrderNote = authServerFn({ method: 'POST' })
+    .inputValidator((data: { noteId: number; noteText: string }) => {
+        if (!data.noteId || !data.noteText) throw new Error('Note ID and text are required')
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        await requireRole(context, 'admin', 'engineer')
+        await db.update(workOrderNotes)
+            .set({ noteText: data.noteText })
+            .where(eq(workOrderNotes.id, data.noteId))
+
+        return { success: true }
     })
