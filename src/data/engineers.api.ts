@@ -1,7 +1,18 @@
-import { authServerFn, requireRole } from '../lib/server-utils'
-import { db } from '../db/client'
-import { engineers, userRequests } from '../db/schema'
-import { inArray } from 'drizzle-orm'
+import { authServerFn } from '../lib/server-utils'
+
+async function getEngineerDbDeps() {
+    const [dbMod, schemaMod, ormMod] = await Promise.all([
+        import('../db/client'),
+        import('../db/schema'),
+        import('drizzle-orm'),
+    ])
+
+    const { db } = dbMod
+    const { engineers, userRequests } = schemaMod
+    const { inArray } = ormMod
+
+    return { db, engineers, userRequests, inArray }
+}
 
 export type EngineerOption = {
     id: number
@@ -10,6 +21,8 @@ export type EngineerOption = {
 
 export const fetchEngineers = authServerFn({ method: 'GET' }).handler(
     async (): Promise<EngineerOption[]> => {
+        const { db, engineers } = await getEngineerDbDeps()
+
         const rows = await db
             .select({
                 id: engineers.id,
@@ -37,6 +50,9 @@ export const assignRequestsToEngineer = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const { db, userRequests, inArray } = await getEngineerDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         const { requestIds, engineerId } = data
 

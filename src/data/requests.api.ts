@@ -1,7 +1,29 @@
-import { authServerFn, requireRole } from '../lib/server-utils'
-import { db } from '../db/client'
-import { userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq, sql, desc, inArray } from 'drizzle-orm'
+import { authServerFn } from '../lib/server-utils'
+
+async function getRequestDbDeps() {
+    const [dbMod, schemaMod, ormMod] = await Promise.all([
+        import('../db/client'),
+        import('../db/schema'),
+        import('drizzle-orm'),
+    ])
+
+    const { db } = dbMod
+    const { userRequests, assets, sites, systems, engineers } = schemaMod
+    const { eq, sql, desc, inArray } = ormMod
+
+    return {
+        db,
+        userRequests,
+        assets,
+        sites,
+        systems,
+        engineers,
+        eq,
+        sql,
+        desc,
+        inArray,
+    }
+}
 
 export type RequestRow = {
     id: number
@@ -20,6 +42,8 @@ export type RequestRow = {
 
 export const fetchRequests = authServerFn({ method: 'GET' }).handler(
     async (): Promise<RequestRow[]> => {
+        const { db, userRequests, assets, sites, systems, engineers, eq, sql, desc } = await getRequestDbDeps()
+
         const rows = await db
             .select({
                 id: userRequests.id,
@@ -73,6 +97,9 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const { db, userRequests, inArray } = await getRequestDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer', 'scientist')
         const { requestIds } = data
 
@@ -92,6 +119,9 @@ export const createRequest = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const { db, userRequests } = await getRequestDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer', 'scientist', 'user')
         const result = await db.insert(userRequests).values({
             assetId: data.assetId,

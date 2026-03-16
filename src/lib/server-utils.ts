@@ -1,26 +1,8 @@
 import { createMiddleware, createServerFn } from '@tanstack/react-start'
-import { auth } from './auth'
 import { logger } from './logger'
 
-export type AppRole = 'admin' | 'engineer' | 'scientist' | 'user'
-
-type SessionUser = {
-    id: string
-    email?: string | null
-    role?: string | null
-}
-
-function resolveHeaders(context: any): Headers {
-    if (context?.request?.headers instanceof Headers) {
-        return context.request.headers
-    }
-
-    if (context?.headers instanceof Headers) {
-        return context.headers
-    }
-
-    return new Headers()
-}
+const AUTH_WARN_DEDUPE_WINDOW_MS = 5000
+let lastAuthWarnAt = 0
 
 export const globalMiddleware = createMiddleware().server(
     async ({ next }) => {
@@ -29,9 +11,22 @@ export const globalMiddleware = createMiddleware().server(
             const result = await next();
             return result;
         } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            const isExpectedAuthError =
+                message === 'Unauthorized' || message === 'Forbidden'
+
+            if (isExpectedAuthError) {
+                const now = Date.now()
+                if (now - lastAuthWarnAt > AUTH_WARN_DEDUPE_WINDOW_MS) {
+                    logger.warn('API_AUTH_REJECTED', { message })
+                    lastAuthWarnAt = now
+                }
+                throw new Error(message)
+            }
+
             // Centralized Error Catcher (Structured Logging)
             logger.error('API_UNHANDLED_EXCEPTION', {
-                message: error instanceof Error ? error.message : String(error),
+                message,
                 stack: error instanceof Error ? error.stack : undefined
             });
 
@@ -45,27 +40,6 @@ export const globalMiddleware = createMiddleware().server(
         }
     }
 );
-
-export async function requireSessionUser(context: any): Promise<SessionUser> {
-    const headers = resolveHeaders(context)
-    const session = await auth.api.getSession({ headers })
-    if (!session?.user) {
-        throw new Error('Unauthorized')
-    }
-
-    return session.user as SessionUser
-}
-
-export async function requireRole(context: any, ...allowedRoles: AppRole[]) {
-    const user = await requireSessionUser(context)
-    const currentRole = (user.role ?? 'user') as AppRole
-
-    if (!allowedRoles.includes(currentRole)) {
-        throw new Error('Forbidden')
-    }
-
-    return user
-}
 
 /**
  * A standardized server function builder that automatically includes  

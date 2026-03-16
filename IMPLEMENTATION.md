@@ -4,6 +4,18 @@
 
 ## 2026-03-16
 
+- **Bundle Optimization Second Pass (Server-Only Boundaries + Chunking)**
+  - Moved devtools to a lazily loaded DEV-only component (`src/components/AppDevtools.tsx`) so production client bundles do not include devtools code by default.
+  - Updated Vite config to apply chunk grouping (`table`, `icons`, `ui-radix`, `vendor`) and run the TanStack devtools Vite plugin only in dev mode.
+  - Removed server-only auth/session coupling from shared imports by introducing `src/lib/auth-guards.server.ts` and `src/lib/session.server.ts`.
+  - Refactored API modules (`requests.api.ts`, `workorders.api.ts`, `engineers.api.ts`, `equipment.api.ts`) to dynamically load DB/schema/ORM dependencies inside server handlers.
+  - Validation outcome: build warning for oversized chunks cleared; client build graph reduced significantly and no longer emits better-sqlite3 browser externalization warnings.
+
+- **Auth Error Log Noise Reduction (`src/lib/server-utils.ts`)**
+  - Reclassified expected auth failures (`Unauthorized`, `Forbidden`) from `API_UNHANDLED_EXCEPTION` to `API_AUTH_REJECTED` warnings.
+  - Added short-window dedupe for repeated auth warnings to prevent terminal spam during repeated unauthorized UI actions.
+  - Preserved full-stack structured error logging for unexpected exceptions.
+
 - **Optional Microsoft Entra ID SSO (`src/lib/auth.ts`, `src/routes/login.tsx`, `.env.example`)**
   - Fixed a startup crash (`Missing required environment variable: MICROSOFT_GROUP_ADMIN_IDS`) that occurred because `better-auth` evaluates social-provider env vars at module load time, blocking all users — even email/password login — when the MS vars were absent.
   - `auth.ts`: All env var reads (`MICROSOFT_GROUP_*`, `BOOTSTRAP_*`) are now lazy (read inside functions at call time). `socialProviders.microsoft` is conditionally spread — omitted entirely when the three MS client vars are absent so `better-auth` never initialises the provider.

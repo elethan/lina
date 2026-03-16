@@ -1,7 +1,45 @@
-import { authServerFn, requireRole } from '../lib/server-utils'
-import { db } from '../db/client'
-import { workOrders, workOrderRequests, workOrderEngineers, workOrderParts, workOrderNotes, userRequests, assets, sites, systems, engineers } from '../db/schema'
-import { eq, sql, inArray, desc } from 'drizzle-orm'
+import { authServerFn } from '../lib/server-utils'
+
+async function getWorkOrderDbDeps() {
+    const [dbMod, schemaMod, ormMod] = await Promise.all([
+        import('../db/client'),
+        import('../db/schema'),
+        import('drizzle-orm'),
+    ])
+
+    const { db } = dbMod
+    const {
+        workOrders,
+        workOrderRequests,
+        workOrderEngineers,
+        workOrderParts,
+        workOrderNotes,
+        userRequests,
+        assets,
+        sites,
+        systems,
+        engineers,
+    } = schemaMod
+    const { eq, sql, inArray, desc } = ormMod
+
+    return {
+        db,
+        workOrders,
+        workOrderRequests,
+        workOrderEngineers,
+        workOrderParts,
+        workOrderNotes,
+        userRequests,
+        assets,
+        sites,
+        systems,
+        engineers,
+        eq,
+        sql,
+        inArray,
+        desc,
+    }
+}
 
 // ── Types ─────────────────────────────────────────────────────
 export type WorkOrderRow = {
@@ -21,6 +59,20 @@ export type WorkOrderRow = {
 // ── Fetch all work orders ─────────────────────────────────────
 export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
     async (): Promise<WorkOrderRow[]> => {
+        const {
+            db,
+            workOrders,
+            workOrderRequests,
+            workOrderEngineers,
+            assets,
+            sites,
+            systems,
+            engineers,
+            eq,
+            sql,
+            desc,
+        } = await getWorkOrderDbDeps()
+
         // Base WO data with joins
         const rows = await db
             .select({
@@ -94,6 +146,15 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const {
+            db,
+            workOrders,
+            workOrderRequests,
+            userRequests,
+            inArray,
+        } = await getWorkOrderDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         const { requestIds } = data
 
@@ -155,6 +216,18 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const {
+            db,
+            workOrders,
+            workOrderRequests,
+            workOrderEngineers,
+            workOrderParts,
+            workOrderNotes,
+            userRequests,
+            inArray,
+        } = await getWorkOrderDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         const { woIds, requestAction } = data
 
@@ -198,6 +271,8 @@ export const fetchWorkOrderNotes = authServerFn({ method: 'GET' })
         return data
     })
     .handler(async ({ data }) => {
+        const { db, workOrderNotes, engineers, eq, sql, desc } = await getWorkOrderDbDeps()
+
         return await db
             .select({
                 id: workOrderNotes.id,
@@ -219,6 +294,9 @@ export const addWorkOrderNote = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const { db, workOrderNotes } = await getWorkOrderDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         const result = await db.insert(workOrderNotes).values({
             woId: data.woId,
@@ -235,6 +313,9 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const { db, workOrders, eq, sql } = await getWorkOrderDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         await db.update(workOrders)
             .set({ startAt: sql`CURRENT_TIMESTAMP` })
@@ -249,6 +330,17 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const {
+            db,
+            workOrders,
+            workOrderRequests,
+            userRequests,
+            eq,
+            sql,
+            inArray,
+        } = await getWorkOrderDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         // 1. Update WO status and end date
         await db.update(workOrders)
@@ -281,6 +373,9 @@ export const updateWorkOrderNote = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data, context }) => {
+        const { db, workOrderNotes, eq } = await getWorkOrderDbDeps()
+        const { requireRole } = await import('../lib/auth-guards.server')
+
         await requireRole(context, 'admin', 'engineer')
         await db.update(workOrderNotes)
             .set({ noteText: data.noteText })

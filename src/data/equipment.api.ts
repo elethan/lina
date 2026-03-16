@@ -1,7 +1,18 @@
 import { authServerFn } from '../lib/server-utils'
-import { db } from '../db/client'
-import { systems, assets, assetSystems } from '../db/schema'
-import { eq, inArray } from 'drizzle-orm'
+
+async function getEquipmentDbDeps() {
+    const [dbMod, schemaMod, ormMod] = await Promise.all([
+        import('../db/client'),
+        import('../db/schema'),
+        import('drizzle-orm'),
+    ])
+
+    const { db } = dbMod
+    const { systems, assets, assetSystems } = schemaMod
+    const { eq, inArray } = ormMod
+
+    return { db, systems, assets, assetSystems, eq, inArray }
+}
 
 export const fetchSiteEquipment = authServerFn({ method: 'GET' })
     .inputValidator((data: { siteId: number }) => {
@@ -9,6 +20,8 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
         return data
     })
     .handler(async ({ data }) => {
+        const { db, systems, assets, assetSystems, eq, inArray } = await getEquipmentDbDeps()
+
         const { siteId } = data
 
         // Fetch all assets for this site

@@ -5,14 +5,11 @@ import {
     createRootRouteWithContext,
     redirect,
 } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
+import { Suspense, lazy } from 'react'
 import { authServerFn } from '../lib/server-utils'
 import { getRequest } from '@tanstack/react-start/server'
-import { auth } from '../lib/auth'
 
 import TanStackQueryProvider from '../integrations/tanstack-query/root-provider'
-import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import appCss from '../styles.css?url'
 
@@ -22,11 +19,17 @@ interface MyRouterContext {
     queryClient: QueryClient
 }
 
+const AppDevtools = import.meta.env.DEV
+    ? lazy(() => import('../components/AppDevtools'))
+    : null
+
 const fetchSession = authServerFn({ method: 'GET' }).handler(async () => {
+    const { fetchSessionFromHeaders } = await import('../lib/session.server')
+
     const request = getRequest()
     if (!request) return null
     try {
-        const session = await auth.api.getSession({ headers: request.headers })
+        const session = await fetchSessionFromHeaders(request.headers)
         return session
     } catch {
         return null
@@ -83,13 +86,11 @@ function RootComponent() {
     return (
         <TanStackQueryProvider>
             <Outlet />
-            <TanStackDevtools
-                config={{ position: 'bottom-right' }}
-                plugins={[
-                    { name: 'Tanstack Router', render: <TanStackRouterDevtoolsPanel /> },
-                    TanStackQueryDevtools,
-                ]}
-            />
+            {AppDevtools ? (
+                <Suspense fallback={null}>
+                    <AppDevtools />
+                </Suspense>
+            ) : null}
         </TanStackQueryProvider>
     )
 }

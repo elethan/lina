@@ -42,7 +42,9 @@ src/
 │   └── seed-dev.ts      # Dev seed data (users, sites, assets, requests, WOs)
 ├── lib/
 │   ├── auth.ts          # Better Auth server config (roles, optional Entra ID SSO)
+│   ├── auth-guards.server.ts  # Server-only role/session guards
 │   ├── auth-client.ts   # Better Auth client
+│   ├── session.server.ts # Server-only session fetch helper
 │   ├── server-utils.ts  # authServerFn builder + global error middleware
 │   ├── logger.ts        # Structured JSON logger (stdout/stderr)
 │   └── utils.ts         # cn() helper (clsx + tailwind-merge)
@@ -194,6 +196,10 @@ export const myApi = authServerFn({ method: 'GET' }).handler(...)
 ```
 
 The global middleware captures raw thrown errors locally (logging them securely to the Node console) and strictly throws a sanitized generic `Error` back across the network boundary to the frontend.
+
+Expected authorization rejections (`Unauthorized`, `Forbidden`) are classified separately as `API_AUTH_REJECTED` warnings and are deduplicated over a short time window to reduce terminal noise during repeated user actions.
+
+To keep client bundles clean, auth/session guards are isolated in server-only modules (`auth-guards.server.ts`, `session.server.ts`) and imported dynamically inside server handlers.
 
 ---
 
