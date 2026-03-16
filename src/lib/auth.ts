@@ -28,14 +28,18 @@ export const auth = betterAuth({
         enabled: true,
     },
 
-    // 3. Configure Microsoft Entra ID (Azure AD) for SSO
-    socialProviders: {
-        microsoft: {
-            clientId: process.env.MICROSOFT_CLIENT_ID as string,
-            clientSecret: process.env.MICROSOFT_CLIENT_SECRET as string,
-            tenantId: process.env.MICROSOFT_TENANT_ID as string, // Your company's Entra ID tenant
-        },
-    },
+    // 3. Configure Microsoft Entra ID (Azure AD) for SSO — only enabled when env vars are present
+    ...(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && process.env.MICROSOFT_TENANT_ID
+        ? {
+              socialProviders: {
+                  microsoft: {
+                      clientId: process.env.MICROSOFT_CLIENT_ID,
+                      clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+                      tenantId: process.env.MICROSOFT_TENANT_ID,
+                  },
+              },
+          }
+        : {}),
 
     // 3. The Mapping Hook
     databaseHooks: {
