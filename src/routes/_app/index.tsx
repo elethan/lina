@@ -14,7 +14,7 @@ import {
     type ColumnResizeMode,
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react'
 import {
     Dialog,
@@ -30,7 +30,7 @@ import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
 import { fetchEngineers } from '../../data/engineers.api'
-import { fetchSiteEquipment } from '../../data/equipment.api'
+import { fetchSiteEquipment, fetchSites } from '../../data/equipment.api'
 import { useQuery } from '@tanstack/react-query'
 
 type RequestSearchParams = {
@@ -402,14 +402,7 @@ function RequestsPage() {
                 <button
                     id="btn-new"
                     className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-40 disabled:opacity-50"
-                    disabled={!siteId}
-                    onClick={() => {
-                        if (!siteId) {
-                            alert('Please filter by a Site in the URL (?siteId=X) to create a new request.')
-                            return
-                        }
-                        setShowNewRequestDialog(true)
-                    }}
+                    onClick={() => setShowNewRequestDialog(true)}
                 >
                     <PlusCircle size={16} />
                     New
@@ -443,7 +436,7 @@ function RequestsPage() {
                 </button>
             </div>
         ),
-    }), [globalFilter, dateFrom, dateTo, selectedCount, userRole])
+    }), [globalFilter, dateFrom, dateTo, selectedCount, userRole, siteId])
 
     useSetToolbar(toolbarConfig)
 
@@ -697,27 +690,33 @@ function RequestsPage() {
                 </div>
             </div>
 
-            {siteId && (
-                <NewRequestDialog
-                    siteId={siteId}
-                    open={showNewRequestDialog}
-                    onOpenChange={setShowNewRequestDialog}
-                />
-            )}
+            <NewRequestDialog
+                initialSiteId={siteId}
+                open={showNewRequestDialog}
+                onOpenChange={setShowNewRequestDialog}
+            />
         </>
     )
 }
 
 // ── New Request Dialog ──────────────────────────────────────────────
 
-function NewRequestDialog({ siteId, open, onOpenChange }: { siteId: number, open: boolean, onOpenChange: (open: boolean) => void }) {
+function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId?: number, open: boolean, onOpenChange: (open: boolean) => void }) {
     const router = useRouter()
+    const siteLocked = typeof initialSiteId === 'number'
+    const [selectedSiteId, setSelectedSiteId] = useState<number | undefined>(initialSiteId)
+
+    const { data: sites, isLoading: isLoadingSites } = useQuery({
+        queryKey: ['sites'],
+        queryFn: async () => fetchSites(),
+        enabled: open,
+    })
 
     // Fetch equipment data for the selected site
     const { data: equipment, isLoading } = useQuery({
-        queryKey: ['siteEquipment', siteId],
-        queryFn: async () => fetchSiteEquipment({ data: { siteId } }),
-        enabled: open && !!siteId,
+        queryKey: ['siteEquipment', selectedSiteId],
+        queryFn: async () => fetchSiteEquipment({ data: { siteId: selectedSiteId as number } }),
+        enabled: open && !!selectedSiteId,
     })
 
     const { mutateAsync: mutateCreateRequest } = useMutation({
@@ -760,19 +759,33 @@ function NewRequestDialog({ siteId, open, onOpenChange }: { siteId: number, open
         }
     })
 
+    useEffect(() => {
+        if (!open) return
+
+        setSelectedSiteId(siteLocked ? initialSiteId : undefined)
+        form.setFieldValue('systemId', 0)
+        form.setFieldValue('assetId', 0)
+        form.setFieldValue('reportedBy', '')
+        form.setFieldValue('commentText', '')
+    }, [open, siteLocked, initialSiteId])
+
+    const selectedSiteName = sites?.find((site) => site.siteId === selectedSiteId)?.name
+
     // Derived asset logic moved inside Asset Field subscription
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] min-h-[620px]">
                 <DialogHeader>
                     <DialogTitle>New Request</DialogTitle>
                     <DialogDescription>
-                        Create a new service request for site ID {siteId}.
+                        {selectedSiteId
+                            ? `for ${selectedSiteName ?? `site ID ${selectedSiteId}`}.`
+                            : ''}
                     </DialogDescription>
                 </DialogHeader>
 
-                {isLoading ? (
+                {(isLoadingSites && open) || (isLoading && !!selectedSiteId) ? (
                     <div className="py-8 text-center text-sm text-gray-500">Loading equipment...</div>
                 ) : (
                     <form
@@ -783,57 +796,79 @@ function NewRequestDialog({ siteId, open, onOpenChange }: { siteId: number, open
                         }}
                         className="space-y-4 pt-4"
                     >
-                        {/* System Dropdown */}
-                        <form.Field name="systemId">
+                        {/* Site Dropdown */}
+                        <div className="space-y-1.5">
+                            <label htmlFor="new-request-site" className="text-sm font-medium text-gray-700">Site</label>
+                            <select
+                                id="new-request-site"
+                                disabled={siteLocked || isLoadingSites}
+                                value={selectedSiteId ?? ''}
+                                onChange={(e) => {
+                                    const value = e.target.value ? Number(e.target.value) : undefined
+                                    setSelectedSiteId(value)
+                                    form.setFieldValue('systemId', 0)
+                                    form.setFieldValue('assetId', 0)
+                                }}
+                                className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
+                            >
+                                <option value="">Select a Site</option>
+                                {sites?.map((site) => (
+                                    <option key={site.siteId} value={site.siteId}>{site.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Asset Dropdown */}
+                        <form.Field name="assetId">
                             {(field) => (
                                 <div className="space-y-1.5">
-                                    <label htmlFor={field.name} className="text-sm font-medium text-gray-700">System</label>
+                                    <label htmlFor={field.name} className="text-sm font-medium text-gray-700">Asset</label>
                                     <select
                                         id={field.name}
+                                        disabled={!selectedSiteId}
                                         value={field.state.value || ''}
                                         onChange={(e) => {
                                             field.handleChange(Number(e.target.value))
-                                            // Reset asset when system changes
-                                            form.setFieldValue('assetId', 0)
+                                            form.setFieldValue('systemId', 0)
                                         }}
-                                        className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                        className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
                                     >
-                                        <option value="">Select a System</option>
-                                        {equipment?.systems.map(s => (
-                                            <option key={s.systemId} value={s.systemId}>{s.name}</option>
+                                        <option value="">{selectedSiteId ? 'Select an Asset' : 'Select a Site first'}</option>
+                                        {equipment?.assets.map(a => (
+                                            <option key={a.assetId} value={a.assetId}>{a.modelName || 'Unknown Model'} (SN: {a.serialNumber})</option>
                                         ))}
                                     </select>
                                 </div>
                             )}
                         </form.Field>
 
-                        {/* Asset Dropdown */}
-                        <form.Subscribe selector={(state) => state.values.systemId}>
-                            {(selectedSystemId) => {
-                                const availableAssets = (() => {
+                        {/* System Dropdown */}
+                        <form.Subscribe selector={(state) => state.values.assetId}>
+                            {(selectedAssetId) => {
+                                const availableSystems = (() => {
                                     if (!equipment) return []
-                                    if (!selectedSystemId) return []
-                                    const validAssetIds = equipment.assetSystemMap
-                                        .filter(m => m.systemId === selectedSystemId)
-                                        .map(m => m.assetId)
-                                    return equipment.assets.filter(a => validAssetIds.includes(a.assetId))
+                                    if (!selectedAssetId) return equipment.systems
+                                    const validSystemIds = equipment.assetSystemMap
+                                        .filter(m => m.assetId === selectedAssetId)
+                                        .map(m => m.systemId)
+                                    return equipment.systems.filter(s => validSystemIds.includes(s.systemId))
                                 })()
 
                                 return (
-                                    <form.Field name="assetId">
+                                    <form.Field name="systemId">
                                         {(field) => (
                                             <div className="space-y-1.5">
-                                                <label htmlFor={field.name} className="text-sm font-medium text-gray-700">Asset</label>
+                                                <label htmlFor={field.name} className="text-sm font-medium text-gray-700">System</label>
                                                 <select
                                                     id={field.name}
-                                                    disabled={!selectedSystemId}
+                                                    disabled={!selectedSiteId}
                                                     value={field.state.value || ''}
                                                     onChange={(e) => field.handleChange(Number(e.target.value))}
                                                     className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
                                                 >
-                                                    <option value="">{selectedSystemId ? "Select an Asset" : "Select a System first"}</option>
-                                                    {availableAssets.map(a => (
-                                                        <option key={a.assetId} value={a.assetId}>{a.modelName || 'Unknown Model'} (SN: {a.serialNumber})</option>
+                                                    <option value="">{selectedSiteId ? 'Select a System' : 'Select a Site first'}</option>
+                                                    {availableSystems.map(s => (
+                                                        <option key={s.systemId} value={s.systemId}>{s.name}</option>
                                                     ))}
                                                 </select>
                                             </div>
@@ -868,7 +903,7 @@ function NewRequestDialog({ siteId, open, onOpenChange }: { siteId: number, open
                                     <textarea
                                         id={field.name}
                                         placeholder="Describe the issue..."
-                                        rows={3}
+                                        rows={6}
                                         value={field.state.value}
                                         onChange={(e) => field.handleChange(e.target.value)}
                                         className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary resize-none"

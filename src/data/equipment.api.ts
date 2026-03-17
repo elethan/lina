@@ -8,11 +8,25 @@ async function getEquipmentDbDeps() {
     ])
 
     const { db } = dbMod
-    const { systems, assets, assetSystems } = schemaMod
-    const { eq, inArray } = ormMod
+    const { systems, assets, assetSystems, sites } = schemaMod
+    const { eq, inArray, asc } = ormMod
 
-    return { db, systems, assets, assetSystems, eq, inArray }
+    return { db, systems, assets, assetSystems, sites, eq, inArray, asc }
 }
+
+export const fetchSites = authServerFn({ method: 'GET' }).handler(async () => {
+    const { db, sites, asc } = await getEquipmentDbDeps()
+
+    const rows = await db
+        .select({
+            siteId: sites.id,
+            name: sites.name,
+        })
+        .from(sites)
+        .orderBy(asc(sites.name))
+
+    return rows
+})
 
 export const fetchSiteEquipment = authServerFn({ method: 'GET' })
     .inputValidator((data: { siteId: number }) => {
