@@ -1,4 +1,5 @@
 import { auth } from './auth'
+import { getRequest } from '@tanstack/react-start/server'
 import {
     canRole,
     type AppRole,
@@ -12,23 +13,12 @@ type SessionUser = {
     role?: string | null
 }
 
-function resolveHeaders(context: any): Headers {
-    const fromRequest = context?.request?.headers
-    if (fromRequest) {
-        return new Headers(fromRequest)
+export async function requireSessionUser(): Promise<SessionUser> {
+    const request = getRequest()
+    if (!request) {
+        throw new Error('Unauthorized')
     }
-
-    const fromContext = context?.headers
-    if (fromContext) {
-        return new Headers(fromContext)
-    }
-
-    return new Headers()
-}
-
-export async function requireSessionUser(context: any): Promise<SessionUser> {
-    const headers = resolveHeaders(context)
-    const session = await auth.api.getSession({ headers })
+    const session = await auth.api.getSession({ headers: request.headers })
     if (!session?.user) {
         throw new Error('Unauthorized')
     }
@@ -36,8 +26,8 @@ export async function requireSessionUser(context: any): Promise<SessionUser> {
     return session.user as SessionUser
 }
 
-export async function requireRole(context: any, ...allowedRoles: AppRole[]) {
-    const user = await requireSessionUser(context)
+export async function requireRole(...allowedRoles: AppRole[]) {
+    const user = await requireSessionUser()
     const currentRole = (user.role ?? 'user') as AppRole
 
     if (!allowedRoles.includes(currentRole)) {
@@ -48,11 +38,10 @@ export async function requireRole(context: any, ...allowedRoles: AppRole[]) {
 }
 
 export async function requirePermission(
-    context: any,
     resource: PermissionResource,
     action: PermissionAction,
 ) {
-    const user = await requireSessionUser(context)
+    const user = await requireSessionUser()
     const currentRole = (user.role ?? 'user') as AppRole
 
     if (!canRole(currentRole, resource, action)) {

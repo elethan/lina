@@ -145,7 +145,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const {
             db,
             workOrders,
@@ -155,7 +155,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'workOrders', 'create')
+        await requirePermission('workOrders', 'create')
         const { requestIds } = data
 
         // Fetch the selected requests to get asset/system info
@@ -215,7 +215,7 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const {
             db,
             workOrders,
@@ -228,7 +228,7 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'workOrders', 'delete')
+        await requirePermission('workOrders', 'delete')
         const { woIds, requestAction } = data
 
         // 1. Find all associated requests
@@ -293,11 +293,11 @@ export const addWorkOrderNote = authServerFn({ method: 'POST' })
         if (!data.woId || !data.noteText) throw new Error('Missing required fields for note')
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, workOrderNotes } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'workOrders', 'update')
+        await requirePermission('workOrders', 'update')
         const result = await db.insert(workOrderNotes).values({
             woId: data.woId,
             engineerId: data.engineerId,
@@ -312,11 +312,11 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
         if (!data.woId) throw new Error('Work Order ID is required')
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, workOrders, eq, sql } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'workOrders', 'update')
+        await requirePermission('workOrders', 'update')
         await db.update(workOrders)
             .set({ startAt: sql`CURRENT_TIMESTAMP` })
             .where(eq(workOrders.id, data.woId))
@@ -329,7 +329,7 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         if (!data.woId) throw new Error('Work Order ID is required')
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const {
             db,
             workOrders,
@@ -341,7 +341,7 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'workOrders', 'update')
+        await requirePermission('workOrders', 'update')
         // 1. Update WO status and end date
         await db.update(workOrders)
             .set({
@@ -372,11 +372,11 @@ export const updateWorkOrderNote = authServerFn({ method: 'POST' })
         if (!data.noteId || !data.noteText) throw new Error('Note ID and text are required')
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, workOrderNotes, eq } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'workOrders', 'update')
+        await requirePermission('workOrders', 'update')
         await db.update(workOrderNotes)
             .set({ noteText: data.noteText })
             .where(eq(workOrderNotes.id, data.noteId))

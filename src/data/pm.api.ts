@@ -122,11 +122,11 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, assetPm, eq, and, isNull } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'pmInstances', 'create')
+        await requirePermission('pmInstances', 'create')
 
         const parsedStartAt = new Date(data.newStartAt)
         if (Number.isNaN(parsedStartAt.getTime())) {
@@ -191,11 +191,11 @@ export const reopenPmInstance = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, assetPm, eq, and, isNull } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'pmInstances', 'update')
+        await requirePermission('pmInstances', 'update')
 
         const [current] = await db
             .select({
@@ -292,14 +292,14 @@ export const savePm = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, assetPm, eq } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         if (data.pmId) {
-            await requirePermission(context, 'pmInstances', 'update')
+            await requirePermission('pmInstances', 'update')
         } else {
-            await requirePermission(context, 'pmInstances', 'create')
+            await requirePermission('pmInstances', 'create')
         }
 
         const parsedStartAt = new Date(data.startAt)

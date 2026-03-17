@@ -96,11 +96,11 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, userRequests, inArray } = await getRequestDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'requests', 'delete')
+        await requirePermission('requests', 'delete')
         const { requestIds } = data
 
         await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
@@ -118,11 +118,11 @@ export const createRequest = authServerFn({ method: 'POST' })
         if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, userRequests } = await getRequestDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'requests', 'create')
+        await requirePermission('requests', 'create')
         const result = await db.insert(userRequests).values({
             assetId: data.assetId,
             systemId: data.systemId,

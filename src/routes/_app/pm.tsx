@@ -11,7 +11,7 @@ import {
     type ColumnResizeMode,
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
     Calendar,
     CheckCircle2,
@@ -31,6 +31,8 @@ import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import {
     fetchPmRows,
+    fetchPmFormOptions,
+    savePm,
     duplicatePmInstance,
     reopenPmInstance,
     type PmRow,
@@ -74,8 +76,11 @@ export const Route = createFileRoute('/_app/pm')({
         }
     },
     loader: async () => {
-        const rows = await fetchPmRows()
-        return { rows }
+        const [rows, options] = await Promise.all([
+            fetchPmRows(),
+            fetchPmFormOptions(),
+        ])
+        return { rows, options }
     },
     component: PreventiveMaintenancePage,
 })
@@ -191,7 +196,7 @@ function getSuggestedStartDate(source: PmRow | null): string {
 }
 
 function PreventiveMaintenancePage() {
-    const { rows } = Route.useLoaderData()
+    const { rows, options } = Route.useLoaderData()
     const navigate = useNavigate({ from: '/pm' })
     const router = useRouter()
     const { user } = useRouteContext({ from: '/_app' })
@@ -251,9 +256,23 @@ function PreventiveMaintenancePage() {
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const [selectedPmId, setSelectedPmId] = useState<number | null>(null)
     const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
+    const [showNewDialog, setShowNewDialog] = useState(false)
+    const [showEditDialog, setShowEditDialog] = useState(false)
     const [duplicateDate, setDuplicateDate] = useState('')
     const [duplicateError, setDuplicateError] = useState<string | null>(null)
+    const [newPmError, setNewPmError] = useState<string | null>(null)
+    const [editPmError, setEditPmError] = useState<string | null>(null)
     const [showReopenDialog, setShowReopenDialog] = useState(false)
+    const [newAssetId, setNewAssetId] = useState<number | ''>('')
+    const [newSystemId, setNewSystemId] = useState<number | ''>('')
+    const [newIntervalMonths, setNewIntervalMonths] = useState<number | ''>('')
+    const [newStartAt, setNewStartAt] = useState<string>('')
+    const [newEngineerId, setNewEngineerId] = useState<number | ''>('')
+    const [editAssetId, setEditAssetId] = useState<number | ''>('')
+    const [editSystemId, setEditSystemId] = useState<number | ''>('')
+    const [editIntervalMonths, setEditIntervalMonths] = useState<number | ''>('')
+    const [editStartAt, setEditStartAt] = useState<string>('')
+    const [editEngineerId, setEditEngineerId] = useState<number | ''>('')
 
     const table = useReactTable({
         data: filteredData,
@@ -323,22 +342,79 @@ function PreventiveMaintenancePage() {
         onSuccess: async () => {
             setShowReopenDialog(false)
             await router.invalidate()
-            if (selectedPm) {
-                navigate({
-                    to: '/pm-form',
-                    search: {
-                        pmId: selectedPm.id,
-                        returnSearch: globalFilter || undefined,
-                        returnDateFrom: dateFrom || undefined,
-                        returnDateTo: dateTo || undefined,
-                        returnCompletionState: completionState,
-                    },
-                })
-            }
+            if (!selectedPm) return
+            setEditPmError(null)
+            setEditAssetId(selectedPm.assetId ?? '')
+            setEditSystemId(selectedPm.systemId ?? '')
+            setEditIntervalMonths(selectedPm.intervalMonths ?? '')
+            setEditStartAt(selectedPm.startAt ? toDateInputValue(new Date(selectedPm.startAt)) : '')
+            setEditEngineerId(selectedPm.engineerId ?? '')
+            setShowEditDialog(true)
         },
     })
 
-    const handleOpenDuplicateDialog = () => {
+    const { mutate: mutateCreatePm, isPending: isCreatingPm } = useMutation({
+        mutationFn: async () => {
+            if (!newAssetId || !newSystemId || !newIntervalMonths || !newStartAt) {
+                throw new Error('Please complete all required fields')
+            }
+
+            return savePm({
+                data: {
+                    assetId: newAssetId,
+                    systemId: newSystemId,
+                    intervalMonths: newIntervalMonths,
+                    startAt: newStartAt,
+                    engineerId: newEngineerId || null,
+                },
+            })
+        },
+        onSuccess: async () => {
+            setShowNewDialog(false)
+            setNewPmError(null)
+            setNewAssetId('')
+            setNewSystemId('')
+            setNewIntervalMonths('')
+            setNewStartAt('')
+            setNewEngineerId('')
+            await router.invalidate()
+        },
+        onError: (error) => {
+            setNewPmError(error instanceof Error ? error.message : 'Unable to create PM')
+        },
+    })
+
+    const { mutate: mutateUpdatePm, isPending: isUpdatingPm } = useMutation({
+        mutationFn: async () => {
+            if (!selectedPm) {
+                throw new Error('Select a PM record first')
+            }
+            if (!editAssetId || !editSystemId || !editIntervalMonths || !editStartAt) {
+                throw new Error('Please complete all required fields')
+            }
+
+            return savePm({
+                data: {
+                    pmId: selectedPm.id,
+                    assetId: editAssetId,
+                    systemId: editSystemId,
+                    intervalMonths: editIntervalMonths,
+                    startAt: editStartAt,
+                    engineerId: editEngineerId || null,
+                },
+            })
+        },
+        onSuccess: async () => {
+            setShowEditDialog(false)
+            setEditPmError(null)
+            await router.invalidate()
+        },
+        onError: (error) => {
+            setEditPmError(error instanceof Error ? error.message : 'Unable to update PM')
+        },
+    })
+
+    const handleOpenDuplicateDialog = useCallback(() => {
         if (!selectedPm) {
             return
         }
@@ -353,9 +429,9 @@ function PreventiveMaintenancePage() {
         setDuplicateError(null)
         setDuplicateDate(getSuggestedStartDate(selectedPm))
         setShowDuplicateDialog(true)
-    }
+    }, [selectedPm])
 
-    const handleEdit = () => {
+    const handleEdit = useCallback(() => {
         if (!selectedPm) {
             return
         }
@@ -365,20 +441,19 @@ function PreventiveMaintenancePage() {
             return
         }
 
-        navigate({
-            to: '/pm-form',
-            search: {
-                pmId: selectedPm.id,
-                returnSearch: globalFilter || undefined,
-                returnDateFrom: dateFrom || undefined,
-                returnDateTo: dateTo || undefined,
-                returnCompletionState: completionState,
-            },
-        })
-    }
+        setEditPmError(null)
+        setEditAssetId(selectedPm.assetId ?? '')
+        setEditSystemId(selectedPm.systemId ?? '')
+        setEditIntervalMonths(selectedPm.intervalMonths ?? '')
+        setEditStartAt(selectedPm.startAt ? toDateInputValue(new Date(selectedPm.startAt)) : '')
+        setEditEngineerId(selectedPm.engineerId ?? '')
+        setShowEditDialog(true)
+    }, [selectedPm])
 
     const hasSelection = !!selectedPm
     const canManagePm = user?.role === 'admin' || user?.role === 'engineer'
+    const canCreatePm = !!newAssetId && !!newSystemId && !!newIntervalMonths && !!newStartAt
+    const canUpdatePm = !!editAssetId && !!editSystemId && !!editIntervalMonths && !!editStartAt
 
     const toolbarConfig = useMemo(
         () => ({
@@ -442,17 +517,15 @@ function PreventiveMaintenancePage() {
                     <button
                         id="btn-new-pm"
                         disabled={!canManagePm}
-                        onClick={() =>
-                            navigate({
-                                to: '/pm-form',
-                                search: {
-                                    returnSearch: globalFilter || undefined,
-                                    returnDateFrom: dateFrom || undefined,
-                                    returnDateTo: dateTo || undefined,
-                                    returnCompletionState: completionState,
-                                },
-                            })
-                        }
+                        onClick={() => {
+                            setNewPmError(null)
+                            setNewAssetId('')
+                            setNewSystemId('')
+                            setNewIntervalMonths('')
+                            setNewStartAt('')
+                            setNewEngineerId('')
+                            setShowNewDialog(true)
+                        }}
                         className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                     >
                         <PlusCircle size={16} />
@@ -538,6 +611,208 @@ function PreventiveMaintenancePage() {
                             className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                             {isDuplicating ? 'Duplicating...' : 'Create Duplicate'}
+                        </button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+                <DialogContent className="sm:max-w-xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-base font-semibold text-gray-900">
+                            New PM
+                        </DialogTitle>
+                        <DialogDescription className="text-sm text-gray-500 leading-relaxed">
+                            Create a new PM header record. PM tasks and completion are handled in the execution workflow.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-new-asset" className="text-sm font-medium text-gray-700">Asset *</label>
+                            <select
+                                id="pm-new-asset"
+                                value={newAssetId}
+                                onChange={(e) => setNewAssetId(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Select asset</option>
+                                {options.assets.map((asset) => (
+                                    <option key={asset.id} value={asset.id}>{asset.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-new-system" className="text-sm font-medium text-gray-700">System *</label>
+                            <select
+                                id="pm-new-system"
+                                value={newSystemId}
+                                onChange={(e) => setNewSystemId(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Select system</option>
+                                {options.systems.map((system) => (
+                                    <option key={system.id} value={system.id}>{system.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-new-interval" className="text-sm font-medium text-gray-700">Interval (months) *</label>
+                            <input
+                                id="pm-new-interval"
+                                type="number"
+                                min={1}
+                                value={newIntervalMonths}
+                                onChange={(e) => setNewIntervalMonths(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-new-start" className="text-sm font-medium text-gray-700">Start date *</label>
+                            <input
+                                id="pm-new-start"
+                                type="date"
+                                value={newStartAt}
+                                onChange={(e) => setNewStartAt(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5 md:col-span-2">
+                            <label htmlFor="pm-new-engineer" className="text-sm font-medium text-gray-700">Engineer</label>
+                            <select
+                                id="pm-new-engineer"
+                                value={newEngineerId}
+                                onChange={(e) => setNewEngineerId(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Unassigned</option>
+                                {options.engineers.map((eng) => (
+                                    <option key={eng.id} value={eng.id}>{eng.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {newPmError && <p className="text-sm text-red-600">{newPmError}</p>}
+
+                    <DialogFooter>
+                        <button
+                            onClick={() => setShowNewDialog(false)}
+                            className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => mutateCreatePm()}
+                            disabled={!canCreatePm || isCreatingPm}
+                            className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {isCreatingPm ? 'Creating...' : 'Create PM'}
+                        </button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+                <DialogContent className="sm:max-w-xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-base font-semibold text-gray-900">
+                            Edit PM
+                        </DialogTitle>
+                        <DialogDescription className="text-sm text-gray-500 leading-relaxed">
+                            Update PM header details. PM tasks and completion are handled in the execution workflow.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-edit-asset" className="text-sm font-medium text-gray-700">Asset *</label>
+                            <select
+                                id="pm-edit-asset"
+                                value={editAssetId}
+                                onChange={(e) => setEditAssetId(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Select asset</option>
+                                {options.assets.map((asset) => (
+                                    <option key={asset.id} value={asset.id}>{asset.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-edit-system" className="text-sm font-medium text-gray-700">System *</label>
+                            <select
+                                id="pm-edit-system"
+                                value={editSystemId}
+                                onChange={(e) => setEditSystemId(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Select system</option>
+                                {options.systems.map((system) => (
+                                    <option key={system.id} value={system.id}>{system.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-edit-interval" className="text-sm font-medium text-gray-700">Interval (months) *</label>
+                            <input
+                                id="pm-edit-interval"
+                                type="number"
+                                min={1}
+                                value={editIntervalMonths}
+                                onChange={(e) => setEditIntervalMonths(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="pm-edit-start" className="text-sm font-medium text-gray-700">Start date *</label>
+                            <input
+                                id="pm-edit-start"
+                                type="date"
+                                value={editStartAt}
+                                onChange={(e) => setEditStartAt(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5 md:col-span-2">
+                            <label htmlFor="pm-edit-engineer" className="text-sm font-medium text-gray-700">Engineer</label>
+                            <select
+                                id="pm-edit-engineer"
+                                value={editEngineerId}
+                                onChange={(e) => setEditEngineerId(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Unassigned</option>
+                                {options.engineers.map((eng) => (
+                                    <option key={eng.id} value={eng.id}>{eng.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {editPmError && <p className="text-sm text-red-600">{editPmError}</p>}
+
+                    <DialogFooter>
+                        <button
+                            onClick={() => setShowEditDialog(false)}
+                            className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => mutateUpdatePm()}
+                            disabled={!canUpdatePm || isUpdatingPm}
+                            className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {isUpdatingPm ? 'Saving...' : 'Save Changes'}
                         </button>
                     </DialogFooter>
                 </DialogContent>

@@ -49,11 +49,11 @@ export const assignRequestsToEngineer = authServerFn({ method: 'POST' })
         }
         return data
     })
-    .handler(async ({ data, context }) => {
+    .handler(async ({ data }) => {
         const { db, userRequests, inArray } = await getEngineerDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission(context, 'requests', 'assign')
+        await requirePermission('requests', 'assign')
         const { requestIds, engineerId } = data
 
         await db
