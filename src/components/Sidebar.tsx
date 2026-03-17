@@ -3,6 +3,7 @@ import { useState } from 'react'
 import {
     MessageSquareText,
     ClipboardList,
+    CalendarCheck2,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -12,6 +13,7 @@ import { authClient } from '../lib/auth-client'
 const navItems = [
     { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'user'] },
     { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer'] },
+    { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, allowedRoles: ['admin', 'engineer', 'scientist'] },
 ]
 
 type SidebarProps = {

@@ -31,7 +31,8 @@ export const rolePermissions = sqliteTable('role_permissions', {
   Role: engineer | Resource: work_orders | Action: create
   Role: user | Resource: assets | Action: read
   Role: scientist | Resource: pm_tasks | Action: update
-  When a user tries to do something in the app, your server function will check: "Does the user's role have the corresponding record in role_permissions?"*/
+  When a user tries to do something in the app, your server function will check:
+   "Does the user's role have the corresponding record in role_permissions?"*/
 
   role: text('role', { enum: ['admin', 'engineer', 'scientist', 'user'] }).notNull(),
   resource: text('resource').notNull(), // e.g., 'assets', 'work_orders', 'pm_tasks'
