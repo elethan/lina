@@ -4,6 +4,28 @@
 
 ## 2026-03-17
 
+- **PM In-Page Modals — New / Edit / Duplicate / Reopen (`src/routes/_app/pm.tsx`)**
+  - Converted the New PM flow from route navigation (`/pm-form`) to an in-page dialog modal on `/pm`. The table and topbar remain fully visible behind the dialog.
+  - Converted the Edit PM flow to the same in-page modal pattern. Selecting a row and clicking Edit opens a pre-populated dialog; no route change occurs.
+  - Reopen flow (for completed PMs) now feeds into the Edit modal after confirmation, instead of navigating away.
+  - Duplicate flow unchanged — already used an in-page dialog.
+  - PM page loader now fetches both table rows and form dropdown options (`fetchPmFormOptions`) in parallel so modal selects render immediately.
+  - Removed the standalone `/pm-form` route file (`src/routes/_app/pm-form.tsx`) entirely since all CRUD is now handled on-page.
+  - New PM dialog resets all form fields on each open to prevent stale data from the previous entry.
+
+- **Infinite Re-render Loop Fix (`src/routes/_app/pm.tsx`)**
+  - `handleEdit` and `handleOpenDuplicateDialog` were plain functions recreated every render, which caused the toolbar `useMemo` to recompute → `useSetToolbar` to set state → infinite loop.
+  - Wrapped both handlers in `useCallback([selectedPm])` to stabilize references.
+
+- **Auth Resolution Rewrite — `getRequest()` (`src/lib/auth-guards.server.ts`)**
+  - Replaced the unreliable `context`-based header resolution with `getRequest()` from `@tanstack/react-start/server` — the same pattern the root route's `fetchSession` uses.
+  - `requireSessionUser()`, `requirePermission()`, and `requireRole()` no longer accept a `context` parameter; they read the HTTP request directly.
+  - Updated all 13 callsites across `pm.api.ts`, `workorders.api.ts`, `requests.api.ts`, and `engineers.api.ts` to remove the `context` argument.
+  - This permanently fixes the "Unauthorized" errors that occurred on both GET loaders and POST mutations.
+
+- **GET Loader Auth Guard Removal (`src/data/pm.api.ts`)**
+  - Removed `requirePermission` calls from `fetchPmFormOptions` and `fetchPmById` GET handlers. TanStack Start GET server functions called from route loaders don't propagate request context reliably. Route-level `beforeLoad` guards already enforce access for these read paths.
+
 - **Server-Side Capability Guards (`src/lib/auth-guards.server.ts`, `src/lib/role-permissions.ts`)**
   - Added centralized capability policy constants (`ROLE_CAPABILITIES`) with resource/action checks and shared role helpers.
   - Introduced `requirePermission(context, resource, action)` to enforce authorization by capability instead of scattered role arrays.

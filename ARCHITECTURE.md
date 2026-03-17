@@ -1,7 +1,7 @@
 # Lina — Architecture Overview
 
 > CMMS (Computerised Maintenance Management System) for medical equipment.
-> Last updated: 2026-03-16
+> Last updated: 2026-03-17
 
 ---
 
@@ -32,9 +32,10 @@ src/
 │   ├── Toolbar.tsx      # Shared toolbar (renders ToolbarContext state)
 │   └── ToolbarContext.tsx  # SSR-safe toolbar state via useSetToolbar()
 ├── data/                # Server functions (API layer)
-│   ├── requests.api.ts  # fetchRequests()
+│   ├── requests.api.ts  # fetchRequests(), createRequest(), deleteRequests()
 │   ├── workorders.api.ts  # fetchWorkOrders(), startWorkOrder(), closeWorkOrder(), workOrderNotes
-│   └── engineers.api.ts # fetchEngineers(), assignRequestsToEngineer()
+│   ├── engineers.api.ts # fetchEngineers(), assignRequestsToEngineer()
+│   └── pm.api.ts        # fetchPmRows(), fetchPmFormOptions(), savePm(), duplicatePmInstance(), reopenPmInstance()
 ├── db/
 │   ├── schema.ts        # Drizzle schema (all tables)
 │   ├── client.ts        # DB connection (better-sqlite3)
@@ -42,7 +43,8 @@ src/
 │   └── seed-dev.ts      # Dev seed data (users, sites, assets, requests, WOs)
 ├── lib/
 │   ├── auth.ts          # Better Auth server config (roles, optional Entra ID SSO)
-│   ├── auth-guards.server.ts  # Server-only role/session guards
+│   ├── auth-guards.server.ts  # Server-only session/permission guards (uses getRequest())
+│   ├── role-permissions.ts   # Capability matrix, canRole(), role UI constants
 │   ├── auth-client.ts   # Better Auth client
 │   ├── session.server.ts # Server-only session fetch helper
 │   ├── server-utils.ts  # authServerFn builder + global error middleware
@@ -53,7 +55,8 @@ src/
 │   ├── _app.tsx         # App layout — Sidebar + Toolbar + Outlet, passes user context
 │   ├── _app/
 │   │   ├── index.tsx    # Requests page (TanStack Table + toolbar filters)
-│   │   └── work-orders.tsx  # Work Orders page (TanStack Table + toolbar filters)
+│   │   ├── work-orders.tsx  # Work Orders page (TanStack Table + toolbar filters)
+│   │   └── pm.tsx       # PM page (TanStack Table + New/Edit/Duplicate/Reopen dialogs)
 │   ├── login.tsx        # Login page (email/password; MS SSO button when enabled)
 │   └── api/
 │       └── auth.$.ts    # Better Auth API catch-all
@@ -133,8 +136,8 @@ Interpretation notes:
 - `_app.tsx` passes user to child routes via `beforeLoad` + to `<Sidebar userRole={...} />`
 - Restricted routes have `beforeLoad` guards that `throw redirect({ to: '/' })`
 - `Sidebar.tsx` filters nav items by `allowedRoles` array
-- Server mutations enforce role checks in the API layer (`requireRole(...)`) so direct server-function calls cannot bypass UI route guards
-- Capability-based authorization is enforced server-side via `requirePermission(context, resource, action)` to keep permission rules centralized and consistent with the role policy matrix.
+- Server mutations enforce role checks in the API layer (`requirePermission(...)`) so direct server-function calls cannot bypass UI route guards
+- Capability-based authorization is enforced server-side via `requirePermission(resource, action)` using `getRequest()` from `@tanstack/react-start/server` to read session cookies from the actual HTTP request. This replaces the earlier `context`-based approach which was unreliable for both GET and POST server functions in TanStack Start.
 
 ### 4. Entra Group Role Mapping
 
@@ -207,6 +210,37 @@ The global middleware captures raw thrown errors locally (logging them securely 
 Expected authorization rejections (`Unauthorized`, `Forbidden`) are classified separately as `API_AUTH_REJECTED` warnings and are deduplicated over a short time window to reduce terminal noise during repeated user actions.
 
 To keep client bundles clean, auth/session guards are isolated in server-only modules (`auth-guards.server.ts`, `session.server.ts`) and imported dynamically inside server handlers.
+
+### 8. Server-Side Auth Resolution (`getRequest()`)
+
+All server-side auth functions (`requireSessionUser`, `requirePermission`, `requireRole`) use `getRequest()` from `@tanstack/react-start/server` to obtain the actual HTTP request object with cookies. This is the same mechanism the root route's `fetchSession` uses.
+
+**Why not `context`?** TanStack Start's server function `context` parameter does not reliably propagate request headers/cookies — neither for GET loaders nor for POST mutations. Using `getRequest()` is the canonical approach and works uniformly for all server function types.
+
+```ts
+import { getRequest } from '@tanstack/react-start/server'
+
+export async function requireSessionUser(): Promise<SessionUser> {
+    const request = getRequest()
+    if (!request) throw new Error('Unauthorized')
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (!session?.user) throw new Error('Unauthorized')
+    return session.user as SessionUser
+}
+```
+
+### 9. PM Page — In-Page Modal Pattern
+
+The PM page (`src/routes/_app/pm.tsx`) handles **New**, **Edit**, **Duplicate**, and **Reopen** entirely via dialog modals rendered on the same page. No separate form route exists.
+
+- **New**: Opens a blank form modal. Fields reset on each open.
+- **Edit**: Opens a pre-populated form modal with the selected row's data.
+- **Duplicate**: Opens a date-picker dialog; copies header fields, resets engineer/completion.
+- **Reopen**: Confirmation dialog for completed PMs; on confirm, clears `completedAt` then opens the Edit modal.
+
+This avoids the table/topbar vanishing during route transitions. The PM page loader fetches both table rows and form dropdown options (`fetchPmFormOptions`) so dialogs render immediately.
+
+Handler functions used in toolbar `useMemo` deps (`handleEdit`, `handleOpenDuplicateDialog`) are wrapped in `useCallback` to prevent infinite re-render loops with `useSetToolbar`.
 
 ---
 
