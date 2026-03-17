@@ -5,7 +5,6 @@ import {
     createRootRouteWithContext,
     redirect,
 } from '@tanstack/react-router'
-import { Suspense, lazy } from 'react'
 import { authServerFn } from '../lib/server-utils'
 import { getRequest } from '@tanstack/react-start/server'
 
@@ -18,10 +17,6 @@ import type { QueryClient } from '@tanstack/react-query'
 interface MyRouterContext {
     queryClient: QueryClient
 }
-
-const AppDevtools = import.meta.env.DEV
-    ? lazy(() => import('../components/AppDevtools'))
-    : null
 
 const fetchSession = authServerFn({ method: 'GET' }).handler(async () => {
     const { fetchSessionFromHeaders } = await import('../lib/session.server')
@@ -86,11 +81,6 @@ function RootComponent() {
     return (
         <TanStackQueryProvider>
             <Outlet />
-            {AppDevtools ? (
-                <Suspense fallback={null}>
-                    <AppDevtools />
-                </Suspense>
-            ) : null}
         </TanStackQueryProvider>
     )
 }

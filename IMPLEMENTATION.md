@@ -2,6 +2,26 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-17
+
+- **Server-Side Capability Guards (`src/lib/auth-guards.server.ts`, `src/lib/role-permissions.ts`)**
+  - Added centralized capability policy constants (`ROLE_CAPABILITIES`) with resource/action checks and shared role helpers.
+  - Introduced `requirePermission(context, resource, action)` to enforce authorization by capability instead of scattered role arrays.
+  - Migrated Requests, Work Orders, Engineers assignment, and PM mutation APIs to capability checks for consistent policy enforcement.
+  - Updated PM UI flow so scientists remain read-only for PM operations while retaining visibility.
+
+- **Sidebar Role Menu UX (`src/components/Sidebar.tsx`)**
+  - Moved the role indicator into the top-left brand row and aligned it to the far right of the logo/title area.
+  - Replaced the static role hint with a clickable dropdown menu showing current role context and a quick Sign Out action.
+  - Removed the toolbar-level role badge so toolbar control sizing/layout remains stable for page filters and action buttons.
+
+- **Permission Policy Documentation Refresh (`ARCHITECTURE.md`)**
+  - Updated the RBAC section to document the agreed operational baseline:
+    - Engineers: full operational workflows except creating/editing assets/systems and PM task templates.
+    - Scientists: view-all posture, with request creation allowed; no broader create/edit operations.
+    - Users: request-only create/view access.
+  - Added explicit role matrix coverage for Requests, Work Orders, PM instances, Assets/Systems, and PM Tasks.
+
 ## 2026-03-16
 
 - **Bundle Optimization Second Pass (Server-Only Boundaries + Chunking)**

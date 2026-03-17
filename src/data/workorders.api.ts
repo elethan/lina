@@ -153,9 +153,9 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             userRequests,
             inArray,
         } = await getWorkOrderDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer')
+        await requirePermission(context, 'workOrders', 'create')
         const { requestIds } = data
 
         // Fetch the selected requests to get asset/system info
@@ -226,9 +226,9 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
             userRequests,
             inArray,
         } = await getWorkOrderDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer')
+        await requirePermission(context, 'workOrders', 'delete')
         const { woIds, requestAction } = data
 
         // 1. Find all associated requests
@@ -295,9 +295,9 @@ export const addWorkOrderNote = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, workOrderNotes } = await getWorkOrderDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer')
+        await requirePermission(context, 'workOrders', 'update')
         const result = await db.insert(workOrderNotes).values({
             woId: data.woId,
             engineerId: data.engineerId,
@@ -314,9 +314,9 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, workOrders, eq, sql } = await getWorkOrderDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer')
+        await requirePermission(context, 'workOrders', 'update')
         await db.update(workOrders)
             .set({ startAt: sql`CURRENT_TIMESTAMP` })
             .where(eq(workOrders.id, data.woId))
@@ -339,9 +339,9 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
             sql,
             inArray,
         } = await getWorkOrderDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer')
+        await requirePermission(context, 'workOrders', 'update')
         // 1. Update WO status and end date
         await db.update(workOrders)
             .set({
@@ -374,9 +374,9 @@ export const updateWorkOrderNote = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, workOrderNotes, eq } = await getWorkOrderDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer')
+        await requirePermission(context, 'workOrders', 'update')
         await db.update(workOrderNotes)
             .set({ noteText: data.noteText })
             .where(eq(workOrderNotes.id, data.noteId))

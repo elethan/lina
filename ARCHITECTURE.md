@@ -112,14 +112,20 @@ const setSearch = (value: string) =>
 
 **Roles** (defined in `schema.ts`): `admin`, `engineer`, `scientist`, `user`
 
-| Role | Requests | Work Orders |
-|------|----------|-------------|
-| `admin` | ✅ | ✅ |
-| `engineer` | ✅ | ✅ |
-| `scientist` | ✅ | ❌ |
-| `user` (radiographer) | ✅ | ❌ |
+Current permission policy baseline:
 
-Planned (not shipped yet): PMs, Config, and Spare Parts workflows.
+| Role | Requests | Work Orders | PM Instances | Assets / Systems | PM Tasks |
+|------|----------|-------------|--------------|------------------|----------|
+| `admin` | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Full CRUD |
+| `engineer` | Full CRUD | Full CRUD | Full CRUD | View only (no create/edit) | View only (no create/edit) |
+| `scientist` | View + create requests | View only | View only | View only | View only |
+| `user` (radiographer) | View + create requests | No access | No access | No access | No access |
+
+Interpretation notes:
+
+- Engineers can do everything operational except creating/editing assets/systems and creating/editing PM task templates.
+- Scientists can see everything but cannot create/edit operational records outside request creation.
+- Users can only create and view requests.
 
 **How it works:**
 
@@ -128,6 +134,7 @@ Planned (not shipped yet): PMs, Config, and Spare Parts workflows.
 - Restricted routes have `beforeLoad` guards that `throw redirect({ to: '/' })`
 - `Sidebar.tsx` filters nav items by `allowedRoles` array
 - Server mutations enforce role checks in the API layer (`requireRole(...)`) so direct server-function calls cannot bypass UI route guards
+- Capability-based authorization is enforced server-side via `requirePermission(context, resource, action)` to keep permission rules centralized and consistent with the role policy matrix.
 
 ### 4. Entra Group Role Mapping
 

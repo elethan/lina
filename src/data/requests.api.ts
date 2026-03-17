@@ -98,9 +98,9 @@ export const deleteRequests = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, userRequests, inArray } = await getRequestDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer', 'scientist')
+        await requirePermission(context, 'requests', 'delete')
         const { requestIds } = data
 
         await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
@@ -120,9 +120,9 @@ export const createRequest = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, userRequests } = await getRequestDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer', 'scientist', 'user')
+        await requirePermission(context, 'requests', 'create')
         const result = await db.insert(userRequests).values({
             assetId: data.assetId,
             systemId: data.systemId,

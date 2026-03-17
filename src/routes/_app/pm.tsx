@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
+import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import {
     fetchPmRows,
@@ -64,7 +65,11 @@ export const Route = createFileRoute('/_app/pm')({
     }),
     beforeLoad: ({ context }) => {
         const user = (context as any).user
-        if (user?.role === 'user') {
+        const role = user?.role as string | undefined
+        if (!role) {
+            throw redirect({ to: '/login' })
+        }
+        if (!['admin', 'engineer', 'scientist'].includes(role)) {
             throw redirect({ to: '/' })
         }
     },
@@ -189,6 +194,7 @@ function PreventiveMaintenancePage() {
     const { rows } = Route.useLoaderData()
     const navigate = useNavigate({ from: '/pm' })
     const router = useRouter()
+    const { user } = useRouteContext({ from: '/_app' })
     const {
         search: globalFilter = '',
         dateFrom = '',
@@ -317,8 +323,18 @@ function PreventiveMaintenancePage() {
         onSuccess: async () => {
             setShowReopenDialog(false)
             await router.invalidate()
-            // Placeholder until PM form route is implemented.
-            window.alert('PM reopened. Edit form will be wired in the next step.')
+            if (selectedPm) {
+                navigate({
+                    to: '/pm-form',
+                    search: {
+                        pmId: selectedPm.id,
+                        returnSearch: globalFilter || undefined,
+                        returnDateFrom: dateFrom || undefined,
+                        returnDateTo: dateTo || undefined,
+                        returnCompletionState: completionState,
+                    },
+                })
+            }
         },
     })
 
@@ -349,11 +365,20 @@ function PreventiveMaintenancePage() {
             return
         }
 
-        // Placeholder until PM form route is implemented.
-        window.alert('Edit form will be wired in the next step.')
+        navigate({
+            to: '/pm-form',
+            search: {
+                pmId: selectedPm.id,
+                returnSearch: globalFilter || undefined,
+                returnDateFrom: dateFrom || undefined,
+                returnDateTo: dateTo || undefined,
+                returnCompletionState: completionState,
+            },
+        })
     }
 
     const hasSelection = !!selectedPm
+    const canManagePm = user?.role === 'admin' || user?.role === 'engineer'
 
     const toolbarConfig = useMemo(
         () => ({
@@ -416,14 +441,26 @@ function PreventiveMaintenancePage() {
                 <div className="flex items-center gap-2">
                     <button
                         id="btn-new-pm"
-                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-40"
+                        disabled={!canManagePm}
+                        onClick={() =>
+                            navigate({
+                                to: '/pm-form',
+                                search: {
+                                    returnSearch: globalFilter || undefined,
+                                    returnDateFrom: dateFrom || undefined,
+                                    returnDateTo: dateTo || undefined,
+                                    returnCompletionState: completionState,
+                                },
+                            })
+                        }
+                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                     >
                         <PlusCircle size={16} />
                         New
                     </button>
                     <button
                         id="btn-edit-pm"
-                        disabled={!hasSelection}
+                        disabled={!hasSelection || !canManagePm}
                         onClick={handleEdit}
                         className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                     >
@@ -432,7 +469,7 @@ function PreventiveMaintenancePage() {
                     </button>
                     <button
                         id="btn-duplicate-pm"
-                        disabled={!hasSelection}
+                        disabled={!hasSelection || !canManagePm}
                         onClick={handleOpenDuplicateDialog}
                         className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
                     >
@@ -448,6 +485,7 @@ function PreventiveMaintenancePage() {
             dateTo,
             completionState,
             hasSelection,
+            canManagePm,
             handleEdit,
             handleOpenDuplicateDialog,
         ],

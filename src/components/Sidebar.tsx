@@ -1,14 +1,17 @@
 import { Link, useRouter } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
     MessageSquareText,
     ClipboardList,
     CalendarCheck2,
+    ShieldCheck,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     LogOut,
 } from 'lucide-react'
 import { authClient } from '../lib/auth-client'
+import { ROLE_DETAILS, formatRoleLabel } from '../lib/role-permissions'
 
 const navItems = [
     { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'user'] },
@@ -22,7 +25,34 @@ type SidebarProps = {
 
 export default function Sidebar({ userRole }: SidebarProps) {
     const [collapsed, setCollapsed] = useState(false)
+    const [showRoleMenu, setShowRoleMenu] = useState(false)
+    const [showRoleDetails, setShowRoleDetails] = useState(false)
     const router = useRouter()
+    const roleMenuRef = useRef<HTMLDivElement | null>(null)
+
+    const roleLabel = formatRoleLabel(userRole)
+
+    useEffect(() => {
+        if (!showRoleMenu) return
+
+        const onPointerDown = (event: MouseEvent) => {
+            const target = event.target as Node
+            if (!roleMenuRef.current?.contains(target)) {
+                setShowRoleMenu(false)
+                setShowRoleDetails(false)
+            }
+        }
+
+        document.addEventListener('mousedown', onPointerDown)
+        return () => document.removeEventListener('mousedown', onPointerDown)
+    }, [showRoleMenu])
+
+    useEffect(() => {
+        if (collapsed) {
+            setShowRoleMenu(false)
+            setShowRoleDetails(false)
+        }
+    }, [collapsed])
 
     const visibleNavItems = navItems.filter((item) =>
         item.allowedRoles.includes(userRole)
@@ -39,14 +69,70 @@ export default function Sidebar({ userRole }: SidebarProps) {
                 }`}
         >
             {/* Brand */}
-            <div className="flex items-center gap-3 px-4 h-14 border-b border-gray-200">
+            <div className="relative flex items-center gap-2 px-4 h-14 border-b border-gray-200">
                 <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-darker text-white font-black text-sm shrink-0">
                     L
                 </div>
                 {!collapsed && (
-                    <span className="text-lg font-bold text-gray-900 tracking-tight">
-                        Lina
-                    </span>
+                    <>
+                        <span className="text-lg font-bold text-gray-900 tracking-tight">
+                            Lina
+                        </span>
+
+                        <div className="ml-auto relative" ref={roleMenuRef}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowRoleMenu((prev) => !prev)
+                                    if (showRoleMenu) {
+                                        setShowRoleDetails(false)
+                                    }
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-primary/30 bg-primary/10 text-[11px] font-semibold uppercase tracking-wide text-primary-darker hover:bg-primary/15 transition-colors"
+                                aria-label="Open role menu"
+                            >
+                                {roleLabel}
+                                <ChevronDown size={12} />
+                            </button>
+
+                            {showRoleMenu && (
+                                <div className="absolute top-9 right-0 z-20 w-52 rounded-lg border border-gray-200 bg-white shadow-md p-2">
+                                    <div className="px-2 py-1.5 text-[11px] uppercase tracking-wide text-gray-400">
+                                        Signed In As
+                                    </div>
+                                    <div className="px-2 pb-2 text-sm font-semibold text-gray-800">
+                                        {roleLabel}
+                                    </div>
+                                    <div className="h-px bg-gray-100 my-1" />
+                                    <button
+                                        onClick={() => setShowRoleDetails((prev) => !prev)}
+                                        className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <ShieldCheck size={14} />
+                                        Role details
+                                    </button>
+
+                                    {showRoleDetails && (
+                                        <div className="mt-1 mb-1 px-2 py-2 rounded-md bg-gray-50 border border-gray-100 space-y-1">
+                                            {(ROLE_DETAILS[userRole as keyof typeof ROLE_DETAILS] ?? ROLE_DETAILS.user).map((item) => (
+                                                <p key={item} className="text-xs text-gray-600 leading-relaxed">
+                                                    {item}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={handleSignOut}
+                                        className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-sm text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                    >
+                                        <LogOut size={14} />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </>
                 )}
             </div>
 

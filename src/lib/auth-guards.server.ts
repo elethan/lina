@@ -1,6 +1,10 @@
 import { auth } from './auth'
-
-export type AppRole = 'admin' | 'engineer' | 'scientist' | 'user'
+import {
+    canRole,
+    type AppRole,
+    type PermissionAction,
+    type PermissionResource,
+} from './role-permissions'
 
 type SessionUser = {
     id: string
@@ -9,12 +13,14 @@ type SessionUser = {
 }
 
 function resolveHeaders(context: any): Headers {
-    if (context?.request?.headers instanceof Headers) {
-        return context.request.headers
+    const fromRequest = context?.request?.headers
+    if (fromRequest) {
+        return new Headers(fromRequest)
     }
 
-    if (context?.headers instanceof Headers) {
-        return context.headers
+    const fromContext = context?.headers
+    if (fromContext) {
+        return new Headers(fromContext)
     }
 
     return new Headers()
@@ -36,6 +42,21 @@ export async function requireRole(context: any, ...allowedRoles: AppRole[]) {
 
     if (!allowedRoles.includes(currentRole)) {
         throw new Error('Forbidden')
+    }
+
+    return user
+}
+
+export async function requirePermission(
+    context: any,
+    resource: PermissionResource,
+    action: PermissionAction,
+) {
+    const user = await requireSessionUser(context)
+    const currentRole = (user.role ?? 'user') as AppRole
+
+    if (!canRole(currentRole, resource, action)) {
+        throw new Error(`Forbidden: missing permission ${resource}.${action}`)
     }
 
     return user

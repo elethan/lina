@@ -41,6 +41,22 @@ export type PmRow = {
     createdAt: string | null
 }
 
+export type PmFormData = {
+    id: number
+    assetId: number
+    systemId: number
+    intervalMonths: number
+    startAt: string
+    engineerId: number | null
+    completedAt: string | null
+}
+
+export type PmFormOptions = {
+    assets: Array<{ id: number; label: string }>
+    systems: Array<{ id: number; label: string }>
+    engineers: Array<{ id: number; label: string }>
+}
+
 export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
     async (): Promise<PmRow[]> => {
         const {
@@ -108,9 +124,9 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, assetPm, eq, and, isNull } = await getPmDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer', 'scientist')
+        await requirePermission(context, 'pmInstances', 'create')
 
         const parsedStartAt = new Date(data.newStartAt)
         if (Number.isNaN(parsedStartAt.getTime())) {
@@ -177,9 +193,9 @@ export const reopenPmInstance = authServerFn({ method: 'POST' })
     })
     .handler(async ({ data, context }) => {
         const { db, assetPm, eq, and, isNull } = await getPmDbDeps()
-        const { requireRole } = await import('../lib/auth-guards.server')
+        const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requireRole(context, 'admin', 'engineer', 'scientist')
+        await requirePermission(context, 'pmInstances', 'update')
 
         const [current] = await db
             .select({
@@ -203,4 +219,111 @@ export const reopenPmInstance = authServerFn({ method: 'POST' })
             .where(eq(assetPm.id, data.pmId))
 
         return { reopened: true }
+    })
+
+export const fetchPmById = authServerFn({ method: 'GET' })
+    .inputValidator((data: { pmId: number }) => {
+        if (!data.pmId) {
+            throw new Error('PM record is required')
+        }
+        return data
+    })
+    .handler(async ({ data }): Promise<PmFormData> => {
+        const { db, assetPm, eq, and, isNull, sql } = await getPmDbDeps()
+
+        const [row] = await db
+            .select({
+                id: assetPm.id,
+                assetId: assetPm.assetId,
+                systemId: assetPm.systemId,
+                intervalMonths: assetPm.intervalMonths,
+                engineerId: assetPm.engineerId,
+                startAt: sql<string>`${assetPm.startAt}`,
+                completedAt: sql<string>`${assetPm.completedAt}`,
+            })
+            .from(assetPm)
+            .where(and(eq(assetPm.id, data.pmId), isNull(assetPm.deletedAt)))
+
+        if (!row || !row.assetId || !row.systemId || !row.intervalMonths || !row.startAt) {
+            throw new Error('PM record not found or incomplete')
+        }
+
+        return {
+            id: row.id,
+            assetId: row.assetId,
+            systemId: row.systemId,
+            intervalMonths: row.intervalMonths,
+            startAt: row.startAt,
+            engineerId: row.engineerId ?? null,
+            completedAt: row.completedAt ?? null,
+        }
+    })
+
+export const fetchPmFormOptions = authServerFn({ method: 'GET' }).handler(
+    async (): Promise<PmFormOptions> => {
+        const { db } = await import('../db/client')
+        const { assets, systems, engineers } = await import('../db/schema')
+
+        const [assetRows, systemRows, engineerRows] = await Promise.all([
+            db.select({ id: assets.id, serialNumber: assets.serialNumber }).from(assets),
+            db.select({ id: systems.id, name: systems.name }).from(systems),
+            db.select({ id: engineers.id, firstName: engineers.firstName, lastName: engineers.lastName }).from(engineers),
+        ])
+
+        return {
+            assets: assetRows.map((a) => ({ id: a.id, label: a.serialNumber })),
+            systems: systemRows.map((s) => ({ id: s.id, label: s.name })),
+            engineers: engineerRows.map((e) => ({ id: e.id, label: `${e.firstName} ${e.lastName}` })),
+        }
+    },
+)
+
+export const savePm = authServerFn({ method: 'POST' })
+    .inputValidator((data: {
+        pmId?: number
+        assetId: number
+        systemId: number
+        intervalMonths: number
+        startAt: string
+        engineerId?: number | null
+    }) => {
+        if (!data.assetId || !data.systemId || !data.intervalMonths || !data.startAt) {
+            throw new Error('Missing required PM fields')
+        }
+        return data
+    })
+    .handler(async ({ data, context }) => {
+        const { db, assetPm, eq } = await getPmDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        if (data.pmId) {
+            await requirePermission(context, 'pmInstances', 'update')
+        } else {
+            await requirePermission(context, 'pmInstances', 'create')
+        }
+
+        const parsedStartAt = new Date(data.startAt)
+        if (Number.isNaN(parsedStartAt.getTime())) {
+            throw new Error('Invalid start date')
+        }
+
+        const values = {
+            assetId: data.assetId,
+            systemId: data.systemId,
+            intervalMonths: data.intervalMonths,
+            startAt: parsedStartAt,
+            engineerId: data.engineerId ?? null,
+        }
+
+        if (data.pmId) {
+            await db.update(assetPm).set(values).where(eq(assetPm.id, data.pmId))
+            return { id: data.pmId }
+        }
+
+        const [created] = await db
+            .insert(assetPm)
+            .values({ ...values, completedAt: null })
+            .returning({ id: assetPm.id })
+
+        return { id: created.id }
     })

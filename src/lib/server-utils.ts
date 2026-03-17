@@ -13,7 +13,7 @@ export const globalMiddleware = createMiddleware().server(
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
             const isExpectedAuthError =
-                message === 'Unauthorized' || message === 'Forbidden'
+                message.startsWith('Unauthorized') || message.startsWith('Forbidden')
 
             if (isExpectedAuthError) {
                 const now = Date.now()
