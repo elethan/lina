@@ -48,7 +48,15 @@ export const Route = createFileRoute('/_app/')({
         search: typeof search.search === 'string' ? search.search : undefined,
         dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
-        status: typeof search.status === 'string' ? search.status : 'OpenActive',
+        status:
+            search.status === 'Open' ||
+            search.status === 'Active' ||
+            search.status === 'Closed' ||
+            search.status === 'All'
+                ? search.status
+                : search.status === 'OpenActive'
+                    ? 'Open'
+                    : 'Open',
         engineerId: search.engineerId ? Number(search.engineerId) : undefined,
         siteId: search.siteId ? Number(search.siteId) : undefined,
     }),
@@ -141,12 +149,11 @@ const columns: ColumnDef<RequestRow, any>[] = [
             <div className="flex flex-col gap-1">
                 <span>Status</span>
                 <select
-                    value={(column.getFilterValue() ?? 'OpenActive') as string}
+                    value={(column.getFilterValue() ?? 'Open') as string}
                     onChange={(e) => column.setFilterValue(e.target.value === 'All' ? undefined : e.target.value)}
-                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-32 truncate"
+                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-20 "
                 >
                     <option value="All">All</option>
-                    <option value="OpenActive">Open & Active</option>
                     <option value="Open">Open</option>
                     <option value="Active">Active</option>
                     <option value="Closed">Closed</option>
@@ -170,13 +177,10 @@ const columns: ColumnDef<RequestRow, any>[] = [
         },
         filterFn: (row, columnId, filterValue) => {
             if (!filterValue || filterValue === 'All') return true
-            if (filterValue === 'OpenActive') {
-                const val = row.getValue(columnId)
-                return val === 'Open' || val === 'Active'
-            }
             return row.getValue(columnId) === filterValue
         },
-    }),
+        size: 100,
+     }),
     columnHelper.accessor('engineerId', {
         header: ({ column, table }) => {
             const engineers = (table.options.meta as any)?.engineersList ?? []
@@ -235,7 +239,7 @@ function RequestsPage() {
     const navigate = useNavigate({ from: '/' })
     const { user } = useRouteContext({ from: '/_app/' })
     const userRole = user?.role ?? 'user'
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'OpenActive', engineerId, siteId } = Route.useSearch()
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId, siteId } = Route.useSearch()
     const selectedEngineerId = engineerId ?? null
 
     const setGlobalFilter = (value: string) =>
@@ -372,7 +376,7 @@ function RequestsPage() {
                         placeholder="Search serial number or site…"
                         value={globalFilter}
                         onChange={(e) => setGlobalFilter(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                        className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                     />
                 </div>
 
@@ -384,7 +388,7 @@ function RequestsPage() {
                         type="date"
                         value={dateFrom}
                         onChange={(e) => setDateFrom(e.target.value)}
-                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                     />
                     <span className="text-gray-400">to</span>
                     <input
@@ -392,7 +396,7 @@ function RequestsPage() {
                         type="date"
                         value={dateTo}
                         onChange={(e) => setDateTo(e.target.value)}
-                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                     />
                 </div>
             </>
@@ -401,18 +405,18 @@ function RequestsPage() {
             <div className="flex items-center gap-2">
                 <button
                     id="btn-new"
-                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-40 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-32 whitespace-nowrap disabled:opacity-50"
                     onClick={() => setShowNewRequestDialog(true)}
                 >
                     <PlusCircle size={16} />
                     New
                 </button>
-                <div className="w-px h-6 bg-gray-200" />
+                <div className="w-px h-8 bg-gray-200" />
                 <button
                     id="btn-create-wo"
                     disabled={selectedCount === 0 || userRole === 'user'}
                     onClick={() => setShowCreateWODialog(true)}
-                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
                     <ClipboardPlus size={16} />
                     Create WO
@@ -420,7 +424,7 @@ function RequestsPage() {
                 <button
                     id="btn-merge"
                     disabled={selectedCount < 2 || userRole === 'user'}
-                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
                     <Merge size={16} />
                     Merge
@@ -429,7 +433,7 @@ function RequestsPage() {
                     id="btn-close"
                     disabled={selectedCount === 0}
                     onClick={() => setShowCloseDialog(true)}
-                    className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
                     <XCircle size={16} />
                     Close

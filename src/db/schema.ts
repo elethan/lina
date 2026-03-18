@@ -3,10 +3,10 @@ import { sql } from 'drizzle-orm';
 
 // --- A. HELPER COLUMNS (Sync & Soft Delete) ---
 const commonCols = {
-  updatedAt: integer('updated_at', { mode: 'timestamp' })
+  updatedAt: text('updated_at')
     .default(sql`CURRENT_TIMESTAMP`)
-    .$onUpdate(() => new Date()), // Auto-update timestamp
-  deletedAt: integer('deleted_at', { mode: 'timestamp' }), // Soft Delete support
+    .$onUpdate(() => new Date().toISOString()),
+  deletedAt: text('deleted_at'),
 };
 
 // --- B. AUTHENTICATION TABLES (Better-Auth + Entra ID) ---
@@ -78,7 +78,7 @@ export const verification = sqliteTable('verification', {
 // --- C. SYNC ARCHITECTURE ---
 export const syncState = sqliteTable('sync_state', {
   tableName: text('table_name').primaryKey(),
-  lastModified: integer('last_modified', { mode: 'timestamp' }).notNull(),
+  lastModified: text('last_modified').notNull(),
 });
 
 // --- D. CORE DOMAIN: LOOKUPS ---
@@ -105,8 +105,8 @@ export const engineers = sqliteTable('engineers', {
 // --- E. CORE DOMAIN: ASSETS ---
 export const assetInfo = sqliteTable('asset_info', {
   id: integer('info_id').primaryKey({ autoIncrement: true }),
-  magnetronDate: integer('magnetron_date', { mode: 'timestamp' }), // [cite: 19]
-  thyratronDate: integer('thyratron_date', { mode: 'timestamp' }),
+  magnetronDate: text('magnetron_date'),
+  thyratronDate: text('thyratron_date'),
   htHours: real('ht_hours'),
   daysSinceBreakdown: integer('days_since_breakdown').default(0),
   ...commonCols,
@@ -117,8 +117,8 @@ export const assets = sqliteTable('assets', {
   serialNumber: text('serial_number').notNull().unique(), // [cite: 20]
   modelName: text('model_name'),
   warrantyYears: integer('warranty_years'),
-  catDate: integer('cat_date', { mode: 'timestamp' }), // Customer Acceptance [cite: 7]
-  installationDate: integer('installation_date', { mode: 'timestamp' }),
+  catDate: text('cat_date'),
+  installationDate: text('installation_date'),
   status: text('status').notNull().default('Operational'),
 
   siteId: integer('site_id').references(() => sites.id),
@@ -149,10 +149,10 @@ export const assetPm = sqliteTable('asset_pm', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
   intervalMonths: integer('interval_months'),
-  startAt: integer('start_at', { mode: 'timestamp' }),
+  startAt: text('start_at'),
   engineerId: integer('engineer_id').references(() => engineers.id),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
-  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text('completed_at'),
   ...commonCols,
 });
 
@@ -175,7 +175,7 @@ export const userRequests = sqliteTable('user_requests', {
   commentText: text('comment_text').notNull(),
   status: text('status').notNull().default('Open'),
   engineerId: integer('engineer_id').references(() => engineers.id), // Null implies "not assigned"
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   ...commonCols,
 });
 
@@ -184,9 +184,9 @@ export const workOrders = sqliteTable('work_orders', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
   description: text('description_of_fault').notNull(), // [cite: 26]
-  createdAt: integer('created_at', { mode: 'timestamp' }),
-  startAt: integer('start_at', { mode: 'timestamp' }),
-  endAt: integer('end_at', { mode: 'timestamp' }),
+  createdAt: text('created_at'),
+  startAt: text('start_at'),
+  endAt: text('end_at'),
   status: text('status').notNull().default('Open'),
   ...commonCols,
 });
@@ -196,7 +196,7 @@ export const workOrderNotes = sqliteTable('work_order_notes', {
   woId: integer('wo_id').references(() => workOrders.id).notNull(),
   engineerId: integer('engineer_id').references(() => engineers.id),
   noteText: text('note_text').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Link Requests to Work Orders [cite: 27]

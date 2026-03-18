@@ -132,6 +132,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
         if (Number.isNaN(parsedStartAt.getTime())) {
             throw new Error('Invalid start date')
         }
+        const startAtIso = parsedStartAt.toISOString()
 
         const [source] = await db
             .select({
@@ -159,7 +160,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
                 and(
                     eq(assetPm.assetId, source.assetId),
                     eq(assetPm.systemId, source.systemId),
-                    eq(assetPm.startAt, parsedStartAt),
+                    eq(assetPm.startAt, startAtIso),
                     isNull(assetPm.deletedAt),
                 ),
             )
@@ -175,7 +176,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
                 assetId: source.assetId,
                 systemId: source.systemId,
                 intervalMonths: source.intervalMonths,
-                startAt: parsedStartAt,
+                startAt: startAtIso,
                 engineerId: null,
                 completedAt: null,
             })
@@ -311,7 +312,7 @@ export const savePm = authServerFn({ method: 'POST' })
             assetId: data.assetId,
             systemId: data.systemId,
             intervalMonths: data.intervalMonths,
-            startAt: parsedStartAt,
+            startAt: parsedStartAt.toISOString(),
             engineerId: data.engineerId ?? null,
         }
 

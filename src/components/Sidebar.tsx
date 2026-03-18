@@ -65,11 +65,11 @@ export default function Sidebar({ userRole }: SidebarProps) {
 
     return (
         <aside
-            className={`flex flex-col h-screen bg-white border-r border-gray-200 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'
+            className={`flex flex-col h-screen bg-white border-r border-gray-200 transition-all duration-300 ${collapsed ? 'w-14' : 'w-52'
                 }`}
         >
             {/* Brand */}
-            <div className="relative flex items-center gap-2 px-4 h-14 border-b border-gray-200">
+            <div className="relative flex items-center gap-2 px-4 h-16 border-b border-gray-200">
                 <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-darker text-white font-black text-sm shrink-0">
                     L
                 </div>
@@ -96,7 +96,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
                             </button>
 
                             {showRoleMenu && (
-                                <div className="absolute top-9 right-0 z-20 w-52 rounded-lg border border-gray-200 bg-white shadow-md p-2">
+                                <div className="absolute top-0 left-full ml-2 z-20 w-52 rounded-lg border border-gray-200 bg-white shadow-md p-2">
                                     <div className="px-2 py-1.5 text-[11px] uppercase tracking-wide text-gray-400">
                                         Signed In As
                                     </div>

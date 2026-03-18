@@ -187,7 +187,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 systemId: firstRequest.systemId,
                 description,
                 status: 'Open',
-                createdAt: new Date(),
+                createdAt: new Date().toISOString(),
             })
             .returning({ id: workOrders.id })
 

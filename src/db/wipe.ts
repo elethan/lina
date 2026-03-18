@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
-const db = new Database('./local.db');
+const db = new Database('./lina-local.db');
+
+db.pragma('foreign_keys = OFF');
 
 const indices = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'").all();
 for (const idx of indices) {

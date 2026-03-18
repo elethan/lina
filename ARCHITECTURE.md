@@ -22,6 +22,23 @@
 
 ---
 
+## Date Storage Convention
+
+> **⚠️ PERMANENT NOTE — Do not erase this section from future iterations of this file.**
+
+All **domain date columns** in `src/db/schema.ts` use **SQLite TEXT** type and store dates as **ISO 8601 strings** (e.g. `2026-03-18T08:00:00.000Z`).
+
+Rules:
+- Schema declarations use `text('column_name')` — never `integer('col', { mode: 'timestamp' })` for domain dates.
+- `CURRENT_TIMESTAMP` defaults are correct (SQLite produces TEXT format natively).
+- `$onUpdate` callbacks return `new Date().toISOString()`.
+- All API write operations pass ISO strings (via `.toISOString()`) — never raw `Date` objects.
+- `sql\`CURRENT_TIMESTAMP\`` in mutations is safe and preferred for server-side timestamps.
+- Read queries use `sql<string>\`${table.column}\`` to return TEXT values directly.
+- **Better Auth tables** (`user`, `session`, `account`, `verification`) are **excluded** — they remain `integer` timestamps as managed by the library.
+
+---
+
 ## Project Structure
 
 ```

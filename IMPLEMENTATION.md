@@ -2,6 +2,27 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-18
+
+- **PM Completed Filter Moved to Header (`src/routes/_app/pm.tsx`)**
+  - Removed the toolbar-level completion filter dropdown from the PM page.
+  - Added an in-header Completed filter select (`All / Pending / Completed`) inside the `completedAt` TanStack column definition, matching the Requests page pattern.
+  - Switched PM completion filtering to TanStack `columnFilters` state + `filterFn` on the `completedAt` column, instead of manual pre-filtering in `filteredData`.
+  - Added URL sync for the header filter via `onColumnFiltersChange` with `completedAt` search param.
+  - Preserved backward compatibility for older PM links using `completionState` by mapping legacy values in `validateSearch`.
+
+- **SQLite TEXT Date Convention (`src/db/schema.ts`, `src/data/pm.api.ts`, `src/data/workorders.api.ts`)**
+  - Converted all domain date columns from `integer('col', { mode: 'timestamp' })` to `text('col')` storing ISO 8601 strings.
+  - Root cause: Drizzle's integer timestamp mode stores Unix seconds, but `sql<string>` read casts bypass the ORM's mode layer, returning raw seconds as strings. Frontend `new Date("1234567890")` produced wrong dates. Additionally, `.default(sql\`CURRENT_TIMESTAMP\`)` on integer columns created a TEXT/INTEGER type mismatch.
+  - Affected schema tables: `commonCols` (updatedAt, deletedAt), `syncState`, `assetInfo`, `assets`, `assetPm`, `userRequests`, `workOrders`, `workOrderNotes`.
+  - Better Auth tables (`user`, `session`, `account`, `verification`) excluded — library-managed with their own integer timestamp expectations.
+  - `pm.api.ts`: `savePm()` and `duplicatePmInstance()` now pass `.toISOString()` strings instead of `Date` objects.
+  - `workorders.api.ts`: `createWorkOrder()` now passes `new Date().toISOString()` for `createdAt`.
+  - `startWorkOrder()` and `closeWorkOrder()` already used `sql\`CURRENT_TIMESTAMP\`` — no change needed.
+  - `commonCols.$onUpdate` changed from `() => new Date()` to `() => new Date().toISOString()`.
+  - Added permanent "Date Storage Convention" section to `ARCHITECTURE.md`.
+  - Fixed `src/db/wipe.ts`: corrected DB path to `lina-local.db` and added `pragma('foreign_keys = OFF')` to prevent FK constraint errors during wipe.
+
 ## 2026-03-17
 
 - **PM In-Page Modals — New / Edit / Duplicate / Reopen (`src/routes/_app/pm.tsx`)**

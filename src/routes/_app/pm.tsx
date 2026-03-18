@@ -50,7 +50,9 @@ type PmSearchParams = {
     search?: string
     dateFrom?: string
     dateTo?: string
-    completionState?: 'nonCompleted' | 'completed' | 'all'
+    completedAt?: 'pending' | 'completed' | 'all'
+    siteName?: string
+    systemName?: string
 }
 
 export const Route = createFileRoute('/_app/pm')({
@@ -58,12 +60,18 @@ export const Route = createFileRoute('/_app/pm')({
         search: typeof search.search === 'string' ? search.search : undefined,
         dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
-        completionState:
-            search.completionState === 'completed' ||
-            search.completionState === 'all' ||
-            search.completionState === 'nonCompleted'
-                ? search.completionState
-                : 'nonCompleted',
+        completedAt:
+            search.completedAt === 'completed' ||
+            search.completedAt === 'all' ||
+            search.completedAt === 'pending'
+                ? search.completedAt
+                : search.completionState === 'completed'
+                    ? 'completed'
+                    : search.completionState === 'all'
+                        ? 'all'
+                        : 'pending',
+        siteName: typeof search.siteName === 'string' ? search.siteName : undefined,
+        systemName: typeof search.systemName === 'string' ? search.systemName : undefined,
     }),
     beforeLoad: ({ context }) => {
         const user = (context as any).user
@@ -107,16 +115,64 @@ const columns: ColumnDef<PmRow, any>[] = [
         ),
     }),
     columnHelper.accessor('siteName', {
-        header: 'Site',
+        header: ({ column, table }) => {
+            const siteOptions = ((table.options.meta as any)?.siteOptions ?? []) as string[]
+
+            return (
+                <div className="flex flex-col gap-1">
+                    <span>Site</span>
+                    <select
+                        value={(column.getFilterValue() ?? '') as string}
+                        onChange={(e) => column.setFilterValue(e.target.value || undefined)}
+                        className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-40"
+                    >
+                        <option value="">All</option>
+                        {siteOptions.map((site) => (
+                            <option key={site} value={site}>
+                                {site}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )
+        },
         cell: (info) => (
             <span className="font-medium font-mono text-md text-gray-900">
                 {info.getValue() ?? '—'}
             </span>
         ),
+        filterFn: (row, columnId, filterValue) => {
+            if (!filterValue) return true
+            return row.getValue(columnId) === filterValue
+        },
     }),
     columnHelper.accessor('systemName', {
-        header: 'System',
+        header: ({ column, table }) => {
+            const systemOptions = ((table.options.meta as any)?.systemOptions ?? []) as string[]
+
+            return (
+                <div className="flex flex-col gap-1">
+                    <span>System</span>
+                    <select
+                        value={(column.getFilterValue() ?? '') as string}
+                        onChange={(e) => column.setFilterValue(e.target.value || undefined)}
+                        className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-32"
+                    >
+                        <option value="">All</option>
+                        {systemOptions.map((system) => (
+                            <option key={system} value={system}>
+                                {system}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )
+        },
         cell: (info) => info.getValue() ?? '—',
+        filterFn: (row, columnId, filterValue) => {
+            if (!filterValue) return true
+            return row.getValue(columnId) === filterValue
+        },
     }),
     columnHelper.accessor('intervalMonths', {
         header: 'Interval',
@@ -148,7 +204,24 @@ const columns: ColumnDef<PmRow, any>[] = [
         size: 120,
     }),
     columnHelper.accessor('completedAt', {
-        header: 'Completed',
+        header: ({ column }) => (
+            <div className="flex flex-col gap-1">
+                <span>Completed</span>
+                <select
+                    value={(column.getFilterValue() ?? 'pending') as string}
+                    onChange={(e) =>
+                        column.setFilterValue(
+                            e.target.value === 'all' ? undefined : e.target.value,
+                        )
+                    }
+                    className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-green-50 text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-26 truncate"
+                >
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                </select>
+            </div>
+        ),
         cell: (info) => {
             const value = info.getValue()
             if (!value) {
@@ -170,7 +243,14 @@ const columns: ColumnDef<PmRow, any>[] = [
                 </span>
             )
         },
-        size: 140,
+        filterFn: (row, columnId, filterValue) => {
+            if (!filterValue || filterValue === 'all') return true
+            const value = row.getValue(columnId)
+            if (filterValue === 'pending') return !value
+            if (filterValue === 'completed') return !!value
+            return true
+        },
+        size: 100,
     }),
 ]
 
@@ -204,7 +284,9 @@ function PreventiveMaintenancePage() {
         search: globalFilter = '',
         dateFrom = '',
         dateTo = '',
-        completionState = 'nonCompleted',
+        completedAt = 'pending',
+        siteName = '',
+        systemName = '',
     } = Route.useSearch()
 
     const setGlobalFilter = (value: string) =>
@@ -219,22 +301,15 @@ function PreventiveMaintenancePage() {
         navigate({
             search: (prev: PmSearchParams) => ({ ...prev, dateTo: value || undefined }),
         })
-    const setCompletionState = (value: PmSearchParams['completionState']) =>
-        navigate({
-            search: (prev: PmSearchParams) => ({
-                ...prev,
-                completionState: value ?? 'nonCompleted',
-            }),
-        })
+
+    const [columnFilters, setColumnFilters] = useState<any[]>([
+        ...(completedAt && completedAt !== 'all' ? [{ id: 'completedAt', value: completedAt }] : []),
+        ...(siteName ? [{ id: 'siteName', value: siteName }] : []),
+        ...(systemName ? [{ id: 'systemName', value: systemName }] : []),
+    ])
 
     const filteredData = useMemo(() => {
         let result = rows
-
-        if (completionState === 'nonCompleted') {
-            result = result.filter((row) => !row.completedAt)
-        } else if (completionState === 'completed') {
-            result = result.filter((row) => !!row.completedAt)
-        }
 
         if (dateFrom || dateTo) {
             result = result.filter((row) => {
@@ -251,7 +326,7 @@ function PreventiveMaintenancePage() {
         }
 
         return result
-    }, [rows, completionState, dateFrom, dateTo])
+    }, [rows, dateFrom, dateTo])
 
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const [selectedPmId, setSelectedPmId] = useState<number | null>(null)
@@ -274,12 +349,52 @@ function PreventiveMaintenancePage() {
     const [editStartAt, setEditStartAt] = useState<string>('')
     const [editEngineerId, setEditEngineerId] = useState<number | ''>('')
 
+    const siteOptions = useMemo(
+        () =>
+            Array.from(new Set(rows.map((row) => row.siteName).filter((v): v is string => !!v))).sort(
+                (a, b) => a.localeCompare(b),
+            ),
+        [rows],
+    )
+
+    const systemOptions = useMemo(
+        () =>
+            Array.from(new Set(rows.map((row) => row.systemName).filter((v): v is string => !!v))).sort(
+                (a, b) => a.localeCompare(b),
+            ),
+        [rows],
+    )
+
     const table = useReactTable({
         data: filteredData,
         columns,
-        state: { globalFilter },
+        state: { globalFilter, columnFilters },
         initialState: { pagination: { pageSize: 20 } },
         onGlobalFilterChange: setGlobalFilter,
+        onColumnFiltersChange: (updater) => {
+            setColumnFilters(updater)
+            const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
+            const newCompletedAt = newFilters.find((f: any) => f.id === 'completedAt')?.value as
+                | 'pending'
+                | 'completed'
+                | 'all'
+                | undefined
+            const newSiteName = newFilters.find((f: any) => f.id === 'siteName')?.value as
+                | string
+                | undefined
+            const newSystemName = newFilters.find((f: any) => f.id === 'systemName')?.value as
+                | string
+                | undefined
+
+            navigate({
+                search: (prev: PmSearchParams) => ({
+                    ...prev,
+                    completedAt: newCompletedAt,
+                    siteName: newSiteName,
+                    systemName: newSystemName,
+                }),
+            })
+        },
         globalFilterFn: (row, _columnId, filterValue) => {
             const pmId = rankItem(String(row.getValue('id')), filterValue)
             const serial = rankItem(row.getValue('serialNumber') ?? '', filterValue)
@@ -294,6 +409,7 @@ function PreventiveMaintenancePage() {
         getSortedRowModel: getSortedRowModel(),
         columnResizeMode,
         enableColumnResizing: true,
+        meta: { siteOptions, systemOptions },
     })
 
     const selectedPm = useMemo(
@@ -471,7 +587,7 @@ function PreventiveMaintenancePage() {
                             placeholder="Search PM, asset, site, system, engineer..."
                             value={globalFilter}
                             onChange={(e) => setGlobalFilter(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                         />
                     </div>
 
@@ -482,7 +598,7 @@ function PreventiveMaintenancePage() {
                             type="date"
                             value={dateFrom}
                             onChange={(e) => setDateFrom(e.target.value)}
-                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                         />
                         <span className="text-gray-400">to</span>
                         <input
@@ -490,25 +606,8 @@ function PreventiveMaintenancePage() {
                             type="date"
                             value={dateTo}
                             onChange={(e) => setDateTo(e.target.value)}
-                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                         />
-                    </div>
-
-                    <div className="flex items-center gap-2 text-sm">
-                        <select
-                            id="pm-completion-state"
-                            value={completionState}
-                            onChange={(e) =>
-                                setCompletionState(
-                                    e.target.value as PmSearchParams['completionState'],
-                                )
-                            }
-                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700 text-xs focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
-                        >
-                            <option value="nonCompleted">Non-completed</option>
-                            <option value="completed">Completed</option>
-                            <option value="all">All</option>
-                        </select>
                     </div>
                 </>
             ),
@@ -556,7 +655,6 @@ function PreventiveMaintenancePage() {
             globalFilter,
             dateFrom,
             dateTo,
-            completionState,
             hasSelection,
             canManagePm,
             handleEdit,
