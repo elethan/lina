@@ -452,8 +452,8 @@ export const fetchDowntimeByWoId = authServerFn({ method: 'GET' })
     })
 
 export const createDowntimeEvent = authServerFn({ method: 'POST' })
-    .inputValidator((data: { assetId: number; systemId: number; woId?: number; startAt: string; endAt?: string; notes?: string }) => {
-        if (!data.assetId || !data.systemId || !data.startAt) throw new Error('Asset, system, and start time are required')
+    .inputValidator((data: { assetId: number; systemId: number; woId: number; startAt: string; endAt?: string; notes?: string }) => {
+        if (!data.assetId || !data.systemId || !data.woId || !data.startAt) throw new Error('Asset, system, work order, and start time are required')
         return data
     })
     .handler(async ({ data }) => {

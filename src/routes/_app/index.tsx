@@ -116,6 +116,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
         header: 'Site',
         cell: (info) => info.getValue() ?? '—',
         filterFn: fuzzyFilter,
+        size: 120
     }),
     columnHelper.accessor('commentText', {
         header: 'Comment',
@@ -127,6 +128,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
                 </span>
             )
         },
+        size:400
     }),
     columnHelper.accessor('createdAt', {
         header: 'Date Created',
@@ -253,6 +255,7 @@ function RequestsPage() {
     const [showCreateWODialog, setShowCreateWODialog] = useState(false)
     const [showCloseDialog, setShowCloseDialog] = useState(false)
     const [showNewRequestDialog, setShowNewRequestDialog] = useState(false)
+    const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
     const [columnFilters, setColumnFilters] = useState<any[]>([
         ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
         ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
@@ -698,18 +701,50 @@ function RequestsPage() {
                 initialSiteId={siteId}
                 open={showNewRequestDialog}
                 onOpenChange={setShowNewRequestDialog}
+                onAutoWoCreated={(info) => setAutoWoNotice(info)}
             />
+
+            {autoWoNotice && (
+                <Dialog open={!!autoWoNotice} onOpenChange={() => setAutoWoNotice(null)}>
+                    <DialogContent className="sm:max-w-sm">
+                        <DialogHeader>
+                            <DialogTitle>
+                                Work Order {autoWoNotice.isNew ? 'Created' : 'Linked'} Automatically
+                            </DialogTitle>
+                            <DialogDescription className="pt-1">
+                                {autoWoNotice.isNew
+                                    ? `A new Work Order WO-${String(autoWoNotice.woId).padStart(4, '0')} was automatically created because you reported system downtime.`
+                                    : `Your request was linked to the existing open Work Order WO-${String(autoWoNotice.woId).padStart(4, '0')}.`
+                                }
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter className="pt-4">
+                            <button
+                                onClick={() => setAutoWoNotice(null)}
+                                className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md shadow-sm transition-colors"
+                            >
+                                OK
+                            </button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
         </>
     )
 }
 
 // ── New Request Dialog ──────────────────────────────────────────────
 
-function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId?: number, open: boolean, onOpenChange: (open: boolean) => void }) {
+function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }: { initialSiteId?: number, open: boolean, onOpenChange: (open: boolean) => void, onAutoWoCreated?: (info: { woId: number; isNew: boolean }) => void }) {
     const router = useRouter()
     const siteLocked = typeof initialSiteId === 'number'
     const [selectedSiteId, setSelectedSiteId] = useState<number | undefined>(initialSiteId)
+    const [formErrorToast, setFormErrorToast] = useState<string | null>(null)
     const getTodayDateValue = () => new Date().toISOString().slice(0, 10)
+
+    const showFormError = (message: string) => {
+        setFormErrorToast(message)
+    }
 
     const { data: sites, isLoading: isLoadingSites } = useQuery({
         queryKey: ['sites'],
@@ -728,9 +763,12 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
         mutationFn: async (data: { assetId?: number, systemId?: number, reportedBy: string, commentText: string, downtimeStartAt?: string }) => {
             return await createRequest({ data })
         },
-        onSuccess: () => {
+        onSuccess: (result) => {
             router.invalidate()
             onOpenChange(false)
+            if (result.linkedWoId !== undefined) {
+                onAutoWoCreated?.({ woId: result.linkedWoId, isNew: result.woIsNew ?? false })
+            }
         }
     })
 
@@ -753,14 +791,21 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
             }).safeParse(value)
 
             if (!parsed.success) {
-                alert('Please fill out all required fields.')
+                const firstError = parsed.error.issues[0]?.message ?? 'Please fill out all required fields.'
+                showFormError(firstError)
                 return
             }
 
             const hasDowntimeTime = value.downtimeTime.trim().length > 0
-            const downtimeStartAt = hasDowntimeTime
-                ? new Date(`${value.downtimeDate}T${value.downtimeTime}`).toISOString()
-                : undefined
+            let downtimeStartAt: string | undefined
+            if (hasDowntimeTime) {
+                const parsedDowntime = new Date(`${value.downtimeDate}T${value.downtimeTime}`)
+                if (Number.isNaN(parsedDowntime.getTime())) {
+                    showFormError('Downtime date/time is invalid')
+                    return
+                }
+                downtimeStartAt = parsedDowntime.toISOString()
+            }
 
             await mutateCreateRequest({
                 systemId: parsed.data.systemId,
@@ -782,7 +827,14 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
         form.setFieldValue('commentText', '')
         form.setFieldValue('downtimeDate', getTodayDateValue())
         form.setFieldValue('downtimeTime', '')
+        setFormErrorToast(null)
     }, [open, siteLocked, initialSiteId])
+
+    useEffect(() => {
+        if (!formErrorToast) return
+        const timer = setTimeout(() => setFormErrorToast(null), 2000)
+        return () => clearTimeout(timer)
+    }, [formErrorToast])
 
     const selectedSiteName = sites?.find((site) => site.siteId === selectedSiteId)?.name
 
@@ -790,7 +842,12 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px] min-h-[620px]">
+            <DialogContent className="sm:max-w-[425px]">
+                {formErrorToast && (
+                    <div className="absolute top-4 right-4 z-50 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 shadow-sm">
+                        {formErrorToast}
+                    </div>
+                )}
                 <DialogHeader>
                     <DialogTitle>New Request</DialogTitle>
                     <DialogDescription>
@@ -809,6 +866,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
                             e.stopPropagation();
                             form.handleSubmit()
                         }}
+                        noValidate
                         className="space-y-4 pt-4"
                     >
                         {/* Site Dropdown */}

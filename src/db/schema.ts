@@ -221,7 +221,7 @@ export const downtimeEvents = sqliteTable('downtime_events', {
   id: integer('downtime_id').primaryKey({ autoIncrement: true }),
   assetId: integer('asset_id').references(() => assets.id).notNull(),
   systemId: integer('system_id').references(() => systems.id).notNull(),
-  woId: integer('wo_id').references(() => workOrders.id), // Null for standalone events
+  woId: integer('wo_id').references(() => workOrders.id).notNull(), // Every downtime must belong to a WO
   startAt: text('start_at').notNull(), // When system went down (ISO 8601)
   endAt: text('end_at'), // Nullable until engineer records restoration; required before WO close
   notes: text('notes'),

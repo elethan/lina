@@ -8,8 +8,8 @@ async function getRequestDbDeps() {
     ])
 
     const { db } = dbMod
-    const { userRequests, assets, sites, systems, engineers } = schemaMod
-    const { eq, sql, desc, inArray } = ormMod
+    const { userRequests, assets, sites, systems, engineers, workOrders, workOrderRequests, downtimeEvents } = schemaMod
+    const { eq, sql, desc, inArray, and, ne, isNull } = ormMod
 
     return {
         db,
@@ -18,10 +18,16 @@ async function getRequestDbDeps() {
         sites,
         systems,
         engineers,
+        workOrders,
+        workOrderRequests,
+        downtimeEvents,
         eq,
         sql,
         desc,
         inArray,
+        and,
+        ne,
+        isNull,
     }
 }
 
@@ -119,12 +125,17 @@ export const createRequest = authServerFn({ method: 'POST' })
         if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
         return data
     })
-    .handler(async ({ data }) => {
-        const { db, userRequests } = await getRequestDbDeps()
+    .handler(async ({ data }): Promise<{ id: number; linkedWoId?: number; woIsNew?: boolean }> => {
+        const {
+            db, userRequests, workOrders, workOrderRequests, downtimeEvents,
+            eq, and, ne, isNull,
+        } = await getRequestDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         await requirePermission('requests', 'create')
-        const result = await db.insert(userRequests).values({
+
+        // Insert the request
+        const [request] = await db.insert(userRequests).values({
             assetId: data.assetId,
             systemId: data.systemId,
             reportedBy: data.reportedBy,
@@ -133,5 +144,80 @@ export const createRequest = authServerFn({ method: 'POST' })
             status: 'Open',
         }).returning({ id: userRequests.id })
 
-        return result[0]
+        // Auto-WO workflow: only when downtime + asset + system are all present
+        if (data.downtimeStartAt && data.assetId && data.systemId) {
+            // Look for an existing open WO for the same asset + system
+            const existingWos = await db
+                .select({ id: workOrders.id })
+                .from(workOrders)
+                .where(and(
+                    eq(workOrders.assetId, data.assetId),
+                    eq(workOrders.systemId, data.systemId),
+                    ne(workOrders.status, 'Closed'),
+                ))
+                .limit(1)
+
+            let woId: number
+            let woIsNew: boolean
+
+            if (existingWos.length > 0) {
+                // Reuse the existing open WO
+                woId = existingWos[0].id
+                woIsNew = false
+
+                // Link request to WO
+                await db.insert(workOrderRequests).values({ woId, requestId: request.id })
+
+                // Only create a downtime event if there is not already an open one for this WO
+                const openDowntime = await db
+                    .select({ id: downtimeEvents.id })
+                    .from(downtimeEvents)
+                    .where(and(
+                        eq(downtimeEvents.woId, woId),
+                        isNull(downtimeEvents.endAt),
+                    ))
+                    .limit(1)
+
+                if (openDowntime.length === 0) {
+                    await db.insert(downtimeEvents).values({
+                        assetId: data.assetId,
+                        systemId: data.systemId,
+                        woId,
+                        startAt: data.downtimeStartAt,
+                    })
+                }
+            } else {
+                // Create a new WO
+                const [wo] = await db.insert(workOrders).values({
+                    assetId: data.assetId,
+                    systemId: data.systemId,
+                    description: data.commentText,
+                    status: 'Open',
+                    createdAt: new Date().toISOString(),
+                }).returning({ id: workOrders.id })
+
+                woId = wo.id
+                woIsNew = true
+
+                // Link request to new WO
+                await db.insert(workOrderRequests).values({ woId, requestId: request.id })
+
+                // Create downtime event linked to new WO
+                await db.insert(downtimeEvents).values({
+                    assetId: data.assetId,
+                    systemId: data.systemId,
+                    woId,
+                    startAt: data.downtimeStartAt,
+                })
+            }
+
+            // Mark request Active (it now belongs to a WO)
+            await db.update(userRequests)
+                .set({ status: 'Active' })
+                .where(eq(userRequests.id, request.id))
+
+            return { id: request.id, linkedWoId: woId, woIsNew }
+        }
+
+        return { id: request.id }
     })

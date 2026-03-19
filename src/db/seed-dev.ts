@@ -67,9 +67,9 @@ async function seedDomainData() {
     const siteRows = await db
         .insert(sites)
         .values([
-            { name: 'GenesisCare Oxford' },
-            { name: 'GenesisCare Chelmsford' },
-            { name: 'GenesisCare Bristol' },
+            { name: 'Oxford' },
+            { name: 'Chelmsford' },
+            { name: 'Bristol' },
         ])
         .onConflictDoNothing()
         .returning()
@@ -79,13 +79,12 @@ async function seedDomainData() {
     const systemRows = await db
         .insert(systems)
         .values([
-            { name: 'Magnetron' },
-            { name: 'Thyratron' },
-            { name: 'Cooling System' },
-            { name: 'Beam Transport' },
-            { name: 'Patient Positioning' },
-            { name: 'MR Imaging' },
-            { name: 'RF System' },
+            { name: 'Linac' },
+            { name: 'iViewGT' },
+            { name: 'XVI' },
+            { name: 'PPS' },
+            { name: 'MRL' },
+            { name: 'Magnet' },
         ])
         .onConflictDoNothing()
         .returning()
@@ -162,8 +161,8 @@ async function seedDomainData() {
     console.log(`   Assets: ${assetRows.length} inserted`)
 
     // --- Link Assets to Systems ---
-    const linacSystemIds = [systemRows[0]?.id, systemRows[1]?.id, systemRows[2]?.id, systemRows[3]?.id, systemRows[4]?.id] // Magnetron, Thyratron, Cooling, Beam, Patient
-    const mriSystemIds = [systemRows[0]?.id, systemRows[2]?.id, systemRows[3]?.id, systemRows[4]?.id, systemRows[5]?.id, systemRows[6]?.id] // Magnetron, Cooling, Beam, Patient, MR, RF
+    const linacSystemIds = [systemRows[0]?.id, systemRows[1]?.id, systemRows[2]?.id, systemRows[3]?.id] // Linac, iViewGT, XVI, PPS
+    const mriSystemIds = [systemRows[4]?.id, systemRows[5]?.id, systemRows[3]?.id] // MRL, Magnet, PPS
 
     const assetSystemLinks = assetRows.flatMap((asset) => {
         const isMR = asset.modelName?.includes('MR-Linac')
@@ -183,23 +182,23 @@ async function seedDomainData() {
         .insert(pmTasks)
         .values([
             // Interval: 1 Month
-            { systemId: systemRows[5]?.id, instruction: 'MR imaging QA — check SNR, geometric distortion', docSection: 'PM-MRI-01', intervalMonths: 1 },
-            { systemId: systemRows[4]?.id, instruction: 'Verify patient positioning lasers and optical alignment', docSection: 'PM-PP-01', intervalMonths: 1 },
+            { systemId: systemRows[0]?.id, instruction: 'Linac output constancy check at reference conditions', docSection: 'PM-LIN-01', intervalMonths: 1 },
+            { systemId: systemRows[3]?.id, instruction: 'Verify PPS couch movement and laser alignment', docSection: 'PM-PPS-01', intervalMonths: 1 },
 
             // Interval: 3 Months
-            { systemId: systemRows[2]?.id, instruction: 'Clean cooling filters and verify flow rate', docSection: 'PM-COOL-01', intervalMonths: 3 },
-            { systemId: systemRows[2]?.id, instruction: 'Test chiller water conductivity and top-up coolant', docSection: 'PM-COOL-02', intervalMonths: 3 },
+            { systemId: systemRows[1]?.id, instruction: 'iViewGT image quality QA (resolution/contrast)', docSection: 'PM-IVG-01', intervalMonths: 3 },
+            { systemId: systemRows[2]?.id, instruction: 'XVI CBCT geometry and image-quality verification', docSection: 'PM-XVI-01', intervalMonths: 3 },
 
             // Interval: 6 Months
-            { systemId: systemRows[0]?.id, instruction: 'Inspect magnetron output power and pulse stability', docSection: 'PM-MAG-01', intervalMonths: 6 },
-            { systemId: systemRows[3]?.id, instruction: 'Verify beam symmetry, flatness and output', docSection: 'PM-BT-01', intervalMonths: 6 },
-            { systemId: systemRows[6]?.id, instruction: 'RF system calibration and coil inspection', docSection: 'PM-RF-01', intervalMonths: 6 },
+            { systemId: systemRows[0]?.id, instruction: 'Linac beam symmetry, flatness and output checks', docSection: 'PM-LIN-02', intervalMonths: 6 },
+            { systemId: systemRows[4]?.id, instruction: 'MRL beam output and MLC positioning checks', docSection: 'PM-MRL-01', intervalMonths: 6 },
+            { systemId: systemRows[5]?.id, instruction: 'Magnet helium level and cold-head inspection', docSection: 'PM-MAG-01', intervalMonths: 6 },
 
             // Interval: 12 Months
-            { systemId: systemRows[1]?.id, instruction: 'Check thyratron pulse shape and timing', docSection: 'PM-THY-01', intervalMonths: 12 },
-            { systemId: systemRows[1]?.id, instruction: 'Replace thyratron grid 1 and 2 trigger thyristors', docSection: 'PM-THY-02', intervalMonths: 12 },
-            { systemId: systemRows[0]?.id, instruction: 'Complete waveguide inspection and vacuum test', docSection: 'PM-MAG-02', intervalMonths: 12 },
-            { systemId: systemRows[5]?.id, instruction: 'MR comprehensive shim verification and tuning', docSection: 'PM-MRI-02', intervalMonths: 12 },
+            { systemId: systemRows[0]?.id, instruction: 'Full linac annual calibration and waveguide checks', docSection: 'PM-LIN-03', intervalMonths: 12 },
+            { systemId: systemRows[0]?.id, instruction: 'Linac pulse-shape and timing verification', docSection: 'PM-LIN-04', intervalMonths: 12 },
+            { systemId: systemRows[5]?.id, instruction: 'Magnet comprehensive shim and quench safety checks', docSection: 'PM-MAG-02', intervalMonths: 12 },
+            { systemId: systemRows[4]?.id, instruction: 'MRL annual system calibration (gantry/MLC/imaging)', docSection: 'PM-MRL-02', intervalMonths: 12 },
         ])
         .returning()
     console.log(`   PM Tasks: ${pmTaskRows.length} inserted`)
@@ -218,7 +217,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[0]?.id,
-                systemId: systemRows[3]?.id,
+                systemId: systemRows[0]?.id,
                 reportedBy: 'RTT Lucy Chen',
                 commentText: 'Beam symmetry has drifted out of tolerance on daily QA — same Versa HD.',
                 status: 'Open',
@@ -226,7 +225,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[0]?.id,
-                systemId: systemRows[2]?.id,
+                systemId: systemRows[0]?.id,
                 reportedBy: 'Physicist David Tan',
                 commentText: 'Cooling flow alarm triggered intermittently on Versa HD during afternoon treatments.',
                 status: 'Open',
@@ -234,7 +233,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[2]?.id,
-                systemId: systemRows[5]?.id,
+                systemId: systemRows[4]?.id,
                 reportedBy: 'RTT James Cooper',
                 commentText: 'MR image artefacts appearing on daily QA scans.',
                 status: 'Open',
@@ -242,7 +241,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[3]?.id,
-                systemId: systemRows[2]?.id,
+                systemId: systemRows[0]?.id,
                 reportedBy: 'RTT Emily Watson',
                 commentText: 'Cooling water temperature reading higher than normal after long treatment run.',
                 status: 'Open',
@@ -250,7 +249,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[4]?.id,
-                systemId: systemRows[6]?.id,
+                systemId: systemRows[4]?.id,
                 reportedBy: 'Dr. Richard Hayes',
                 commentText: 'RF coil intermittently dropping signal during treatment.',
                 status: 'Open',
@@ -258,7 +257,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[1]?.id,
-                systemId: systemRows[4]?.id,
+                systemId: systemRows[3]?.id,
                 reportedBy: 'RTT Lucy Chen',
                 commentText: 'HexaPOD couch top not responding to remote corrections.',
                 status: 'Open',
@@ -266,7 +265,7 @@ async function seedDomainData() {
             },
             {
                 assetId: assetRows[5]?.id,
-                systemId: systemRows[1]?.id,
+                systemId: systemRows[0]?.id,
                 reportedBy: 'Dr. Sarah Mitchell',
                 commentText: 'Beam dropout during VMAT delivery — suspected thyratron issue.',
                 status: 'Open',
@@ -282,12 +281,12 @@ async function seedDomainData() {
         .values([
             {
                 assetId: assetRows[0]?.id,
-                description: 'Investigate magnetron noise on Versa HD (Oxford) — reported by clinical staff.',
+                description: 'Investigate linac noise on Versa HD (Oxford) — reported by clinical staff.',
                 status: 'Open',
             },
             {
                 assetId: assetRows[3]?.id,
-                description: 'Cooling system investigation on Versa HD (Chelmsford) — elevated temps.',
+                description: 'Linac cooling investigation on Versa HD (Chelmsford) — elevated temps.',
                 status: 'Open',
             },
         ])
@@ -341,7 +340,7 @@ async function seedDomainData() {
     if (woRows[1] && assetRows[1] && systemRows[1]) {
         await db.insert(downtimeEvents).values({
             assetId: assetRows[1].id,
-            systemId: systemRows[1].id,
+            systemId: systemRows[0].id,
             woId: woRows[1].id,
             startAt: '2026-03-17T14:00:00.000Z',
         })
