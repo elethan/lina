@@ -18,6 +18,7 @@ import {
     workOrderParts,
     pmTasks,
     workOrderRequests,
+    downtimeEvents,
 } from './schema'
 
 // ── 1. Auth User ──────────────────────────────────────────────
@@ -324,6 +325,27 @@ async function seedDomainData() {
     if (woRows[1] && partRows[4]) {
         await db.insert(workOrderParts).values({ woId: woRows[1].id, partId: partRows[4].id, quantity: 1 })
         console.log(`   Linked Part #${partRows[4].id} to WO #${woRows[1].id}`)
+    }
+
+    // --- Downtime Events ---
+    if (woRows[0] && assetRows[0] && systemRows[0]) {
+        await db.insert(downtimeEvents).values({
+            assetId: assetRows[0].id,
+            systemId: systemRows[0].id,
+            woId: woRows[0].id,
+            startAt: '2026-03-12T09:30:00.000Z',
+            endAt: '2026-03-12T16:45:00.000Z',
+        })
+        console.log(`   Downtime event (closed) linked to WO #${woRows[0].id}`)
+    }
+    if (woRows[1] && assetRows[1] && systemRows[1]) {
+        await db.insert(downtimeEvents).values({
+            assetId: assetRows[1].id,
+            systemId: systemRows[1].id,
+            woId: woRows[1].id,
+            startAt: '2026-03-17T14:00:00.000Z',
+        })
+        console.log(`   Downtime event (open) linked to WO #${woRows[1].id}`)
     }
 
     console.log('\n✅ Domain data seeded successfully!')

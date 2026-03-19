@@ -14,13 +14,13 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus } from 'lucide-react'
+import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus, Clock } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
 import { fetchEngineers } from '../../data/engineers.api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog'
-import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, updateWorkOrderNote, startWorkOrder } from '../../data/workorders.api'
+import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, updateWorkOrderNote, startWorkOrder, fetchDowntimeByWoId, createDowntimeEvent, updateDowntimeEvent } from '../../data/workorders.api'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 
@@ -711,6 +711,14 @@ function EditableNoteCell({ noteId, value, onSave }: { noteId: number; value: st
   )
 }
 
+// ── Helper: ISO → datetime-local input value ───────────────────
+function toLocalDatetime(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 // ── Nested Work Order Execution Dialog ──────────────────────────
 function WorkOrderExecutionDialog({
   wo,
@@ -768,6 +776,44 @@ function WorkOrderExecutionDialog({
     enabled: !!wo && open,
   })
 
+  // Fetch downtime events for this WO
+  const { data: downtimeData, refetch: refetchDowntime } = useQuery({
+    queryKey: ['wo-downtime', wo?.id],
+    queryFn: () => wo ? fetchDowntimeByWoId({ data: { woId: wo.id } }) : Promise.resolve([]),
+    enabled: !!wo && open,
+  })
+  const downtimeEvent = downtimeData?.[0] ?? null
+
+  // Local downtime form state
+  const [dtStartAt, setDtStartAt] = useState('')
+  const [dtEndAt, setDtEndAt] = useState('')
+  const [showDowntimeForm, setShowDowntimeForm] = useState(false)
+
+  // Sync local state when downtime data loads
+  useEffect(() => {
+    if (downtimeEvent) {
+      setDtStartAt(downtimeEvent.startAt ? toLocalDatetime(downtimeEvent.startAt) : '')
+      setDtEndAt(downtimeEvent.endAt ? toLocalDatetime(downtimeEvent.endAt) : '')
+      setShowDowntimeForm(false)
+    } else {
+      setDtStartAt('')
+      setDtEndAt('')
+      setShowDowntimeForm(false)
+    }
+  }, [downtimeEvent?.id, downtimeEvent?.endAt])
+
+  const createDtMutation = useMutation({
+    mutationFn: async (vals: { startAt: string; endAt?: string }) =>
+      await createDowntimeEvent({ data: { assetId: wo!.assetId!, systemId: wo!.systemId!, woId: wo!.id, ...vals } }),
+    onSuccess: () => { refetchDowntime(); setShowDowntimeForm(false) },
+  })
+
+  const updateDtMutation = useMutation({
+    mutationFn: async (vals: { id: number; endAt?: string }) =>
+      await updateDowntimeEvent({ data: vals }),
+    onSuccess: () => refetchDowntime(),
+  })
+
   // Mini table setup for Notes
   const notesColumnHelper = createColumnHelper<any>()
   const notesColumns = useMemo(() => [
@@ -805,6 +851,13 @@ function WorkOrderExecutionDialog({
       setDisplayStatus('Closed')
       router.invalidate()
       onCloseComplete()
+    },
+    onError: (err: Error) => {
+      if (err.message.includes('downtime end time')) {
+        alert('Cannot close: please record downtime end time first.')
+      } else {
+        alert(err.message || 'Failed to close work order')
+      }
     },
   })
 
@@ -852,6 +905,123 @@ function WorkOrderExecutionDialog({
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Downtime Section */}
+            <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/60">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-amber-600" />
+                  <h4 className="text-xs font-semibold text-amber-800 uppercase tracking-wider">System Downtime</h4>
+                </div>
+                {!downtimeEvent && !showDowntimeForm && displayStatus !== 'Closed' && (
+                  <button
+                    onClick={() => setShowDowntimeForm(true)}
+                    className="text-xs font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
+                  >
+                    Record Downtime
+                  </button>
+                )}
+              </div>
+
+              {downtimeEvent ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Down Since</label>
+                    <p className="text-sm text-gray-800 font-medium mt-0.5">
+                      {new Date(downtimeEvent.startAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Restored At</label>
+                    {downtimeEvent.endAt ? (
+                      <p className="text-sm text-gray-800 font-medium mt-0.5">
+                        {new Date(downtimeEvent.endAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
+                    ) : displayStatus !== 'Closed' ? (
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <input
+                          type="datetime-local"
+                          value={dtEndAt}
+                          onChange={(e) => setDtEndAt(e.target.value)}
+                          className="text-sm border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!dtEndAt) return
+                            updateDtMutation.mutate({ id: downtimeEvent.id, endAt: new Date(dtEndAt).toISOString() })
+                          }}
+                          disabled={!dtEndAt || updateDtMutation.isPending}
+                          className="text-xs font-medium px-3 py-1.5 bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                        >
+                          {updateDtMutation.isPending ? 'Saving...' : 'Save'}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-amber-600 italic mt-0.5">Not recorded</p>
+                    )}
+                  </div>
+                  {downtimeEvent.endAt && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">Total Downtime</label>
+                      <p className="text-sm text-gray-800 font-medium mt-0.5">
+                        {(() => {
+                          const ms = new Date(downtimeEvent.endAt).getTime() - new Date(downtimeEvent.startAt).getTime()
+                          const hours = Math.floor(ms / 3600000)
+                          const mins = Math.floor((ms % 3600000) / 60000)
+                          return hours >= 24
+                            ? `${Math.floor(hours / 24)}d ${hours % 24}h ${mins}m`
+                            : `${hours}h ${mins}m`
+                        })()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : showDowntimeForm ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-500">Down Since</label>
+                    <input
+                      type="datetime-local"
+                      value={dtStartAt}
+                      onChange={(e) => setDtStartAt(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-md py-1.5 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-500">Restored At <span className="text-gray-400">(optional)</span></label>
+                    <input
+                      type="datetime-local"
+                      value={dtEndAt}
+                      onChange={(e) => setDtEndAt(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-md py-1.5 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (!dtStartAt) { alert('Start time is required'); return }
+                        createDtMutation.mutate({
+                          startAt: new Date(dtStartAt).toISOString(),
+                          endAt: dtEndAt ? new Date(dtEndAt).toISOString() : undefined,
+                        })
+                      }}
+                      disabled={!dtStartAt || createDtMutation.isPending}
+                      className="text-xs font-medium px-4 py-1.5 bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                    >
+                      {createDtMutation.isPending ? 'Saving...' : 'Save Downtime'}
+                    </button>
+                    <button
+                      onClick={() => { setShowDowntimeForm(false); setDtStartAt(''); setDtEndAt('') }}
+                      className="text-xs font-medium px-4 py-1.5 text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic">No downtime recorded for this work order.</p>
+              )}
             </div>
 
             {/* Middle Row: Notes Table */}

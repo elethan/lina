@@ -2,6 +2,24 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-19
+
+- **Asset Downtime Tracking (`src/db/schema.ts`, `src/data/workorders.api.ts`, `src/data/requests.api.ts`, `src/routes/_app/index.tsx`, `src/routes/_app/work-orders.tsx`)**
+  - Added `downtimeStartAt` (nullable TEXT, ISO 8601) to `userRequests` table — allows users to optionally report when the system went down.
+  - Created new `downtimeEvents` table with `assetId` (required FK), `systemId` (required FK), `woId` (nullable FK for standalone events), `startAt` (required), `endAt` (nullable — enforced before WO close), `notes`, and `commonCols`.
+  - Updated `createRequest()` to accept optional `downtimeStartAt` parameter.
+  - Updated `createWorkOrder()` to auto-create a `downtime_events` row when the first linked request has `downtimeStartAt`, inheriting `assetId` and `systemId` from the WO.
+  - Updated `closeWorkOrder()` with a server-side guard: blocks close if any linked `downtime_events` have null `endAt`. Returns error "Cannot close: record downtime end time first".
+  - Added `WorkOrderRow.assetId` and `WorkOrderRow.systemId` to the fetch query so the execution dialog can reference them for downtime creation.
+  - New server functions: `fetchDowntimeByWoId()` (GET), `createDowntimeEvent()` (POST), `updateDowntimeEvent()` (POST) — all using `authServerFn` with `requirePermission('workOrders', 'update')`.
+  - New Request dialog: added optional "System Down Since" `datetime-local` input below the description textarea, with reset-on-open.
+  - WO Execution Dialog: added amber-highlighted "System Downtime" section between snapshot and notes table.
+    - If downtime exists: shows inherited start time (read-only) + manual `endAt` input with Save button + computed total duration (hours+minutes or days+hours).
+    - If no downtime: "Record Downtime" button opens inline form with start + optional end inputs.
+    - Close WO button shows alert if blocked by open downtime.
+  - Updated `seed-dev.ts`: added two sample downtime events (one closed with 7h15m duration, one open/ongoing) linked to existing WOs.
+  - Build verified successful (`npm run build`).
+
 ## 2026-03-18
 
 - **PM Completed Filter Moved to Header (`src/routes/_app/pm.tsx`)**

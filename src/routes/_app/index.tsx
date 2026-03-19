@@ -709,6 +709,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
     const router = useRouter()
     const siteLocked = typeof initialSiteId === 'number'
     const [selectedSiteId, setSelectedSiteId] = useState<number | undefined>(initialSiteId)
+    const getTodayDateValue = () => new Date().toISOString().slice(0, 10)
 
     const { data: sites, isLoading: isLoadingSites } = useQuery({
         queryKey: ['sites'],
@@ -724,7 +725,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
     })
 
     const { mutateAsync: mutateCreateRequest } = useMutation({
-        mutationFn: async (data: { assetId?: number, systemId?: number, reportedBy: string, commentText: string }) => {
+        mutationFn: async (data: { assetId?: number, systemId?: number, reportedBy: string, commentText: string, downtimeStartAt?: string }) => {
             return await createRequest({ data })
         },
         onSuccess: () => {
@@ -738,7 +739,9 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
             systemId: 0,
             assetId: 0,
             reportedBy: '',
-            commentText: ''
+            commentText: '',
+            downtimeDate: getTodayDateValue(),
+            downtimeTime: '',
         },
         onSubmit: async ({ value }) => {
             // Validation step
@@ -754,11 +757,17 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
                 return
             }
 
+            const hasDowntimeTime = value.downtimeTime.trim().length > 0
+            const downtimeStartAt = hasDowntimeTime
+                ? new Date(`${value.downtimeDate}T${value.downtimeTime}`).toISOString()
+                : undefined
+
             await mutateCreateRequest({
                 systemId: parsed.data.systemId,
                 assetId: parsed.data.assetId,
                 reportedBy: parsed.data.reportedBy,
                 commentText: parsed.data.commentText,
+                downtimeStartAt,
             })
         }
     })
@@ -771,6 +780,8 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
         form.setFieldValue('assetId', 0)
         form.setFieldValue('reportedBy', '')
         form.setFieldValue('commentText', '')
+        form.setFieldValue('downtimeDate', getTodayDateValue())
+        form.setFieldValue('downtimeTime', '')
     }, [open, siteLocked, initialSiteId])
 
     const selectedSiteName = sites?.find((site) => site.siteId === selectedSiteId)?.name
@@ -915,6 +926,37 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange }: { initialSiteId
                                 </div>
                             )}
                         </form.Field>
+
+                        {/* System Down Since (optional) */}
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-gray-700">System Down Since <span className="text-gray-400 font-normal">(optional)</span></label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <form.Field name="downtimeDate">
+                                    {(field) => (
+                                        <input
+                                            id={field.name}
+                                            type="date"
+                                            value={field.state.value}
+                                            onChange={(e) => field.handleChange(e.target.value)}
+                                            className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                        />
+                                    )}
+                                </form.Field>
+                                <form.Field name="downtimeTime">
+                                    {(field) => (
+                                        <input
+                                            id={field.name}
+                                            type="time"
+                                            step={60}
+                                            value={field.state.value}
+                                            onChange={(e) => field.handleChange(e.target.value)}
+                                            className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                        />
+                                    )}
+                                </form.Field>
+                            </div>
+                            <p className="text-xs text-gray-500">Date defaults to today. Enter a time only if the system is currently down.</p>
+                        </div>
 
                         <DialogFooter className="pt-2">
                             <button

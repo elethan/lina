@@ -175,6 +175,7 @@ export const userRequests = sqliteTable('user_requests', {
   commentText: text('comment_text').notNull(),
   status: text('status').notNull().default('Open'),
   engineerId: integer('engineer_id').references(() => engineers.id), // Null implies "not assigned"
+  downtimeStartAt: text('downtime_start_at'), // Optional: when the system went down (ISO 8601)
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   ...commonCols,
 });
@@ -215,7 +216,19 @@ export const workOrderEngineers = sqliteTable('work_order_engineers', {
   pk: primaryKey({ columns: [t.woId, t.engineerId] }),
 }));
 
-// --- H. SPARE PARTS ---
+// --- H. DOWNTIME TRACKING ---
+export const downtimeEvents = sqliteTable('downtime_events', {
+  id: integer('downtime_id').primaryKey({ autoIncrement: true }),
+  assetId: integer('asset_id').references(() => assets.id).notNull(),
+  systemId: integer('system_id').references(() => systems.id).notNull(),
+  woId: integer('wo_id').references(() => workOrders.id), // Null for standalone events
+  startAt: text('start_at').notNull(), // When system went down (ISO 8601)
+  endAt: text('end_at'), // Nullable until engineer records restoration; required before WO close
+  notes: text('notes'),
+  ...commonCols,
+});
+
+// --- I. SPARE PARTS ---
 export const spareParts = sqliteTable('spare_parts', {
   id: integer('part_id').primaryKey({ autoIncrement: true }),
   siteId: integer('site_id').references(() => sites.id).notNull(),

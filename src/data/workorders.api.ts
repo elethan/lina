@@ -19,8 +19,9 @@ async function getWorkOrderDbDeps() {
         sites,
         systems,
         engineers,
+        downtimeEvents,
     } = schemaMod
-    const { eq, sql, inArray, desc } = ormMod
+    const { eq, sql, inArray, desc, and, isNull } = ormMod
 
     return {
         db,
@@ -34,16 +35,21 @@ async function getWorkOrderDbDeps() {
         sites,
         systems,
         engineers,
+        downtimeEvents,
         eq,
         sql,
         inArray,
         desc,
+        and,
+        isNull,
     }
 }
 
 // ── Types ─────────────────────────────────────────────────────
 export type WorkOrderRow = {
     id: number
+    assetId: number | null
+    systemId: number | null
     serialNumber: string | null
     siteName: string | null
     systemName: string | null
@@ -77,6 +83,8 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
         const rows = await db
             .select({
                 id: workOrders.id,
+                assetId: workOrders.assetId,
+                systemId: workOrders.systemId,
                 serialNumber: assets.serialNumber,
                 siteName: sites.name,
                 systemName: systems.name,
@@ -124,6 +132,8 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
 
         return rows.map((r) => ({
             id: r.id,
+            assetId: r.assetId ?? null,
+            systemId: r.systemId ?? null,
             serialNumber: r.serialNumber ?? null,
             siteName: r.siteName ?? null,
             systemName: r.systemName ?? null,
@@ -165,6 +175,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 assetId: userRequests.assetId,
                 systemId: userRequests.systemId,
                 commentText: userRequests.commentText,
+                downtimeStartAt: userRequests.downtimeStartAt,
             })
             .from(userRequests)
             .where(inArray(userRequests.id, requestIds))
@@ -204,6 +215,17 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             .update(userRequests)
             .set({ status: 'Active' })
             .where(inArray(userRequests.id, requestIds))
+
+        // Auto-create downtime event if first request has downtimeStartAt
+        if (firstRequest.downtimeStartAt && firstRequest.assetId && firstRequest.systemId) {
+            const { downtimeEvents } = await getWorkOrderDbDeps()
+            await db.insert(downtimeEvents).values({
+                assetId: firstRequest.assetId,
+                systemId: firstRequest.systemId,
+                woId: wo.id,
+                startAt: firstRequest.downtimeStartAt,
+            })
+        }
 
         return { woId: wo.id }
     })
@@ -342,6 +364,17 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         await requirePermission('workOrders', 'update')
+        // Check for open downtime events (endAt is null) — block close if any exist
+        const { downtimeEvents, and, isNull } = await getWorkOrderDbDeps()
+        const openDowntime = await db
+            .select({ id: downtimeEvents.id })
+            .from(downtimeEvents)
+            .where(and(eq(downtimeEvents.woId, data.woId), isNull(downtimeEvents.endAt)))
+
+        if (openDowntime.length > 0) {
+            throw new Error('Cannot close: record downtime end time first')
+        }
+
         // 1. Update WO status and end date
         await db.update(workOrders)
             .set({
@@ -380,6 +413,82 @@ export const updateWorkOrderNote = authServerFn({ method: 'POST' })
         await db.update(workOrderNotes)
             .set({ noteText: data.noteText })
             .where(eq(workOrderNotes.id, data.noteId))
+
+        return { success: true }
+    })
+
+// ── Downtime Events ───────────────────────────────────────────
+
+export type DowntimeEventRow = {
+    id: number
+    assetId: number
+    systemId: number
+    woId: number | null
+    startAt: string
+    endAt: string | null
+    notes: string | null
+}
+
+export const fetchDowntimeByWoId = authServerFn({ method: 'GET' })
+    .inputValidator((data: { woId: number }) => {
+        if (!data.woId) throw new Error('Work Order ID is required')
+        return data
+    })
+    .handler(async ({ data }): Promise<DowntimeEventRow[]> => {
+        const { db, downtimeEvents, eq, sql } = await getWorkOrderDbDeps()
+
+        return await db
+            .select({
+                id: downtimeEvents.id,
+                assetId: downtimeEvents.assetId,
+                systemId: downtimeEvents.systemId,
+                woId: downtimeEvents.woId,
+                startAt: sql<string>`${downtimeEvents.startAt}`,
+                endAt: sql<string>`${downtimeEvents.endAt}`,
+                notes: downtimeEvents.notes,
+            })
+            .from(downtimeEvents)
+            .where(eq(downtimeEvents.woId, data.woId))
+    })
+
+export const createDowntimeEvent = authServerFn({ method: 'POST' })
+    .inputValidator((data: { assetId: number; systemId: number; woId?: number; startAt: string; endAt?: string; notes?: string }) => {
+        if (!data.assetId || !data.systemId || !data.startAt) throw new Error('Asset, system, and start time are required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { db, downtimeEvents } = await getWorkOrderDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('workOrders', 'update')
+        const result = await db.insert(downtimeEvents).values({
+            assetId: data.assetId,
+            systemId: data.systemId,
+            woId: data.woId,
+            startAt: data.startAt,
+            endAt: data.endAt,
+            notes: data.notes,
+        }).returning({ id: downtimeEvents.id })
+
+        return result[0]
+    })
+
+export const updateDowntimeEvent = authServerFn({ method: 'POST' })
+    .inputValidator((data: { id: number; endAt?: string; notes?: string }) => {
+        if (!data.id) throw new Error('Downtime event ID is required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { db, downtimeEvents, eq } = await getWorkOrderDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('workOrders', 'update')
+        await db.update(downtimeEvents)
+            .set({
+                ...(data.endAt !== undefined ? { endAt: data.endAt } : {}),
+                ...(data.notes !== undefined ? { notes: data.notes } : {}),
+            })
+            .where(eq(downtimeEvents.id, data.id))
 
         return { success: true }
     })

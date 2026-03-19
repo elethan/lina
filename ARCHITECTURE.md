@@ -1,7 +1,7 @@
 # Lina — Architecture Overview
 
 > CMMS (Computerised Maintenance Management System) for medical equipment.
-> Last updated: 2026-03-17
+> Last updated: 2026-03-19
 
 ---
 
@@ -50,14 +50,14 @@ src/
 │   └── ToolbarContext.tsx  # SSR-safe toolbar state via useSetToolbar()
 ├── data/                # Server functions (API layer)
 │   ├── requests.api.ts  # fetchRequests(), createRequest(), deleteRequests()
-│   ├── workorders.api.ts  # fetchWorkOrders(), startWorkOrder(), closeWorkOrder(), workOrderNotes
+│   ├── workorders.api.ts  # fetchWorkOrders(), startWorkOrder(), closeWorkOrder(), workOrderNotes, downtime CRUD
 │   ├── engineers.api.ts # fetchEngineers(), assignRequestsToEngineer()
 │   └── pm.api.ts        # fetchPmRows(), fetchPmFormOptions(), savePm(), duplicatePmInstance(), reopenPmInstance()
 ├── db/
 │   ├── schema.ts        # Drizzle schema (all tables)
 │   ├── client.ts        # DB connection (better-sqlite3)
 │   ├── migrate.ts       # Migration runner
-│   └── seed-dev.ts      # Dev seed data (users, sites, assets, requests, WOs)
+│   └── seed-dev.ts      # Dev seed data (users, sites, assets, requests, WOs, downtime events)
 ├── lib/
 │   ├── auth.ts          # Better Auth server config (roles, optional Entra ID SSO)
 │   ├── auth-guards.server.ts  # Server-only session/permission guards (uses getRequest())
@@ -198,9 +198,11 @@ Work Orders are no longer just rows in a table; they feature a dedicated **Execu
 
 - **Auto-Start**: Opening a Work Order that hasn't been started automatically triggers `startWorkOrder()` to record the `startAt` timestamp.
 - **Status Cascading**: Closing a Work Order via `closeWorkOrder()` automatically transitions all linked `user_requests` to `"Closed"`.
+- **Close Guard**: `closeWorkOrder()` blocks if any linked `downtime_events` have a null `endAt` — the engineer must record the downtime end time first.
 - **Historical Notes**: Uses a nested TanStack Table to show engineer commentary.
 - **Inline Editing**: Implemented via a `EditableNoteCell` pattern — clicking text swaps the cell for a `textarea`, saving on blur or `Ctrl+Enter`. This reduces UI clutter compared to traditional "Edit" modals.
 - **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
+- **Downtime Section**: An amber-highlighted panel between the snapshot area and notes table. Shows inherited downtime start (read-only), manual end-time input, and computed total duration. If no downtime exists, a "Record Downtime" button allows manual creation with start + optional end time.
 
 ### 7. Server Error Handling (TanStack Start Middleware)
 
@@ -326,11 +328,12 @@ The app starts, and the hardwired admin (`super@lina.com` / `genesiscare`) can l
 | `systems` | Equipment types (e.g. "CT Scanner", "MRI") |
 | `engineers` | Field engineers (first/last name). No UNIQUE constraint on name columns — deduplication handled in `fetchEngineers()` via `.groupBy(firstName, lastName)`. |
 | `assets` | Individual machines (serial number, linked to site + system) |
-| `user_requests` | Service requests from users (linked to asset, engineer) |
+| `user_requests` | Service requests from users (linked to asset, engineer). Optional `downtime_start_at` for system-down time. |
 | `work_orders` | Work orders grouping requests (includes `startAt`, `endAt`) |
 | `work_order_notes` | Chronological engineer commentary per WO |
 | `work_order_requests` | Junction: WO ↔ requests (many-to-many, auto-closed on WO close) |
 | `work_order_engineers` | Junction: WO ↔ engineers (many-to-many) |
+| `downtime_events` | Asset downtime tracking. `asset_id` + `system_id` required; optional `wo_id` link. `start_at` required, `end_at` nullable (must be set before WO close). Supports standalone events (no WO). |
 | `role_permissions` | Role-based permission rules |
 
 ---

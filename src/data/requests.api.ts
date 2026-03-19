@@ -113,7 +113,8 @@ export const createRequest = authServerFn({ method: 'POST' })
         assetId?: number,
         systemId?: number,
         reportedBy: string,
-        commentText: string
+        commentText: string,
+        downtimeStartAt?: string,
     }) => {
         if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
         return data
@@ -128,6 +129,7 @@ export const createRequest = authServerFn({ method: 'POST' })
             systemId: data.systemId,
             reportedBy: data.reportedBy,
             commentText: data.commentText,
+            downtimeStartAt: data.downtimeStartAt,
             status: 'Open',
         }).returning({ id: userRequests.id })
 
