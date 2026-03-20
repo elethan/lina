@@ -140,6 +140,7 @@ export const pmTasks = sqliteTable('pm_tasks', {
   systemId: integer('system_id').references(() => systems.id),
   instruction: text('instruction').notNull(),
   docSection: text('doc_section'), // Manual Reference [cite: 11]
+  category: text('category'),
   intervalMonths: integer('interval_months').notNull(),
   ...commonCols,
 });
