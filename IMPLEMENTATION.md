@@ -2,6 +2,41 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-20 (session 2)
+
+- **`PhysicsHandOver` Field — Schema + API + UI (`src/db/schema.ts`, `src/data/pm.api.ts`, `src/data/workorders.api.ts`, `src/data/requests.api.ts`, `src/routes/_app/pm.tsx`, `src/db/seed-pm-csv.ts`)**
+  - Added `physicsHandOver` (`text('physics_hand_over').notNull()`) to both `assetPm` and `workOrders` tables.
+  - Generated migrations: `drizzle/0003_sparkling_thing.sql` (asset_pm) and `drizzle/0004_late_leopardon.sql` (work_orders).
+  - All insert/update code paths set `physicsHandOver: 'Pending'` by default:
+    - `savePm()`, `duplicatePmInstance()` in `pm.api.ts`
+    - `createWorkOrder()` in `workorders.api.ts`
+    - Auto-WO creation in `requests.api.ts`
+    - CSV seed payloads for both PM instances and work orders.
+  - Added `updatePmPhysicsHandOver` server function for inline editing from PM dialog.
+  - `fetchPmExecutionData` now returns `physicsHandOver` in the `PmExecutionData` type.
+
+- **PM Execution Dialog — PhysicsHandedOver Editable Field (`src/routes/_app/pm.tsx`)**
+  - Added editable textarea for `PhysicsHandedOver` in top metadata section.
+  - Textarea saves on blur via `updatePmPhysicsHandOver` mutation (only when value changed and non-empty).
+  - Local state `physicsHandOverText` synced from server data on load.
+
+- **PM Execution Dialog — Compact Top Section (`src/routes/_app/pm.tsx`)**
+  - Increased metadata text from `text-xs` to `text-base` for readability.
+  - Reorganized layout: Asset, Site, System, Interval in row 1; Scheduled, Status, PhysicsHandedOver in row 2 (same row).
+  - Engineers table capped at `max-h-32` (~3 rows visible) with internal scroll.
+  - Removed dialog title/subtitle (`DialogHeader`) and "Showing X of X tasks" footer text to maximize table space.
+
+- **Engineer Seed Data Overhaul (`src/db/seed-pm-csv.ts`)**
+  - Replaced 3 engineer records (previously named after auth test users) with 7 standalone engineers:
+    James Hartley, Sophie Brennan, Marcus Okafor, Elena Vasquez, Tom Aldridge, Priya Nair, Daniel Kovalski.
+  - All seeded with `userId: null` — no link to auth users.
+  - Auth test users (admin/therapist/scientist) remain unchanged.
+
+- **New Request — Asset-to-System Auto-Select (`src/routes/_app/index.tsx`)**
+  - When an asset is selected in the New Request dialog, the system dropdown now auto-selects the first linked system for that asset (typically Linac).
+  - Extracted `getAvailableSystemsForAsset()` helper to compute valid systems based on `equipment.assetSystemMap`.
+  - Manual system override still available.
+
 ## 2026-03-20
 
 - **PM Tasks Schema Update (`src/db/schema.ts`)**

@@ -838,6 +838,17 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
 
     const selectedSiteName = sites?.find((site) => site.siteId === selectedSiteId)?.name
 
+    const getAvailableSystemsForAsset = (assetId?: number) => {
+        if (!equipment) return []
+        if (!assetId) return equipment.systems
+
+        const validSystemIds = equipment.assetSystemMap
+            .filter((m) => m.assetId === assetId)
+            .map((m) => m.systemId)
+
+        return equipment.systems.filter((s) => validSystemIds.includes(s.systemId))
+    }
+
     // Derived asset logic moved inside Asset Field subscription
 
     return (
@@ -901,8 +912,13 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
                                         disabled={!selectedSiteId}
                                         value={field.state.value || ''}
                                         onChange={(e) => {
-                                            field.handleChange(Number(e.target.value))
-                                            form.setFieldValue('systemId', 0)
+                                            const nextAssetId = e.target.value ? Number(e.target.value) : 0
+                                            field.handleChange(nextAssetId)
+
+                                            const systemsForAsset = getAvailableSystemsForAsset(
+                                                nextAssetId || undefined,
+                                            )
+                                            form.setFieldValue('systemId', systemsForAsset[0]?.systemId ?? 0)
                                         }}
                                         className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
                                     >
@@ -918,14 +934,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
                         {/* System Dropdown */}
                         <form.Subscribe selector={(state) => state.values.assetId}>
                             {(selectedAssetId) => {
-                                const availableSystems = (() => {
-                                    if (!equipment) return []
-                                    if (!selectedAssetId) return equipment.systems
-                                    const validSystemIds = equipment.assetSystemMap
-                                        .filter(m => m.assetId === selectedAssetId)
-                                        .map(m => m.systemId)
-                                    return equipment.systems.filter(s => validSystemIds.includes(s.systemId))
-                                })()
+                                const availableSystems = getAvailableSystemsForAsset(selectedAssetId || undefined)
 
                                 return (
                                     <form.Field name="systemId">

@@ -1,7 +1,7 @@
 # Lina — Architecture Overview
 
 > CMMS (Computerised Maintenance Management System) for medical equipment.
-> Last updated: 2026-03-19
+> Last updated: 2026-03-20
 
 ---
 
@@ -52,14 +52,18 @@ src/
 │   ├── requests.api.ts  # fetchRequests(), createRequest(), deleteRequests()
 │   ├── workorders.api.ts  # fetchWorkOrders(), startWorkOrder(), closeWorkOrder(), workOrderNotes, downtime CRUD
 │   ├── engineers.api.ts # fetchEngineers(), assignRequestsToEngineer()
-│   └── pm.api.ts        # fetchPmRows(), fetchPmFormOptions(), savePm(), duplicatePmInstance(), reopenPmInstance()
+│   └── pm.api.ts        # fetchPmRows(), fetchPmFormOptions(), savePm(), duplicatePmInstance(), reopenPmInstance(),
+│                        #   fetchPmExecutionData(), savePmTaskResult(), updatePmEngineers(), completePmInstance(),
+│                        #   updatePmPhysicsHandOver()
 ├── db/
 │   ├── schema.ts        # Drizzle schema (all tables)
 │   ├── client.ts        # DB connection (better-sqlite3)
 │   ├── migrate.ts       # Migration runner
-│   └── seed-dev.ts      # Dev seed data — users, sites, assets, requests, WOs, downtime events
+│   ├── seed-dev.ts      # RETIRED — redirects to seed-pm-csv
+│   └── seed-pm-csv.ts   # CSV-driven seed: auth users, engineers, sites, assets, systems, PMs, WOs, requests
 │                        # Sites: Oxford / Chelmsford / Bristol
-│                        # Sub-systems: Linac / iViewGT / XVI / PPS / MRL / Magnet
+│                        # Sub-systems: derived from pm-tasks.csv
+│                        # Engineers: 7 standalone engineers (not linked to auth users)
 ├── lib/
 │   ├── auth.ts          # Better Auth server config (roles, optional Entra ID SSO)
 │   ├── auth-guards.server.ts  # Server-only session/permission guards (uses getRequest())
@@ -206,6 +210,22 @@ Work Orders are no longer just rows in a table; they feature a dedicated **Execu
 - **Immediate UI Sync**: Local state within the dialog (`displayStartAt`, `displayEndAt`) provides instant feedback after mutations before the global router refresh completes.
 - **Downtime Section**: An amber-highlighted panel between the snapshot area and notes table. Shows inherited downtime start (read-only), manual end-time input, and computed total duration. If no downtime exists, a "Record Downtime" button allows manual creation with start + optional end time.
 
+### 6b. PM Execution Dialog
+
+The PM page features a **PM Execution Dialog** (`PmExecutionDialog`) for performing PM checks inline:
+
+- **Compact Top Section**: Fixed-height info panel showing Asset, Site, System, Interval, PhysicsHandedOver (editable textarea), Scheduled date, and Status. Uses `md:grid-cols-4` layout.
+- **Engineers Panel**: Top-right scrollable table (`max-h-32`) with checkbox assignment + click-to-select for task attribution. Row click sets `selectedEngineerId`; checkbox toggles assignment (DB persist via `updatePmEngineers`).
+- **Task Table**: Full-width scrollable table with columns: Interval (with filter dropdown), Section, Task, Status (dropdown: Pass/Fail/N/A), Findings (isolated `FindingsTextArea`), Engineer (read-only), Category.
+- **Status Changes**: `applyStatusForTask()` sets optimistic `draftStatus`, fills `draftEngineer` from selected engineer row (or logged-in user fallback), and persists via `savePmTaskResult`.
+- **PhysicsHandedOver**: Editable textarea in top section. Saves on blur via `updatePmPhysicsHandOver` mutation.
+- **Keyboard Navigation**: Arrow keys (Up/Down) navigate task rows with `scrollIntoView`. Spacebar sets selected task status to Pass. `tabIndex={0}` on table container with `onKeyDownCapture` handler.
+- **FindingsTextArea**: Isolated component with own `useState` to prevent focus loss from parent re-renders. Saves on blur.
+
+### 6c. New Request — Asset-to-System Auto-Select
+
+When creating a new request, selecting an asset automatically pre-selects the first linked system for that asset (typically Linac). The system dropdown remains editable for manual override.
+
 ### 7. Server Error Handling (TanStack Start Middleware)
 
 All TanStack Start server functions must be explicitly wrapped in the centralized error interception middleware to prevent backend failures from leaking database credentials or stack traces to the client.
@@ -329,13 +349,18 @@ The app starts, and the hardwired admin (`super@lina.com` / `genesiscare`) can l
 | `sites` | Physical locations (e.g. "GenesisCare Oxford") |
 | `systems` | Equipment types (e.g. "CT Scanner", "MRI") |
 | `engineers` | Field engineers (first/last name). No UNIQUE constraint on name columns — deduplication handled in `fetchEngineers()` via `.groupBy(firstName, lastName)`. |
+| `asset_systems` | Junction: asset ↔ system (many-to-many) |
 | `assets` | Individual machines (serial number, linked to site + system) |
 | `user_requests` | Service requests from users (linked to asset, engineer). Optional `downtime_start_at` for system-down time. |
-| `work_orders` | Work orders grouping requests (includes `startAt`, `endAt`) |
+| `asset_pm` | PM instances per asset/system/interval. Includes `physicsHandOver` (NOT NULL, editable). |
+| `asset_pm_results` | Per-task results for a PM instance (status, findings, engineer). Unique index on `(pm_instance_id, task_id)`. |
+| `pm_tasks` | PM task templates (instruction, doc section, interval, category, system). |
+| `work_orders` | Work orders grouping requests (includes `startAt`, `endAt`, `physicsHandOver` NOT NULL) |
 | `work_order_notes` | Chronological engineer commentary per WO |
 | `work_order_requests` | Junction: WO ↔ requests (many-to-many, auto-closed on WO close) |
 | `work_order_engineers` | Junction: WO ↔ engineers (many-to-many) |
-| `downtime_events` | Asset downtime tracking. `asset_id` + `system_id` required; optional `wo_id` link. `start_at` required, `end_at` nullable (must be set before WO close). Supports standalone events (no WO). |
+| `pm_engineers` | Junction: PM instance ↔ engineers (many-to-many) |
+| `downtime_events` | Asset downtime tracking. `asset_id` + `system_id` required; `wo_id` NOT NULL. `start_at` required, `end_at` nullable (must be set before WO close). |
 | `role_permissions` | Role-based permission rules |
 
 ---
@@ -366,7 +391,7 @@ Custom shades available as Tailwind classes:
 ```bash
 npm run dev         # Start dev server (port 3000)
 npm run build       # Production build
-npx tsx src/db/seed-dev.ts  # Seed dev database
+npm run seed:pm-csv         # Seed dev database (CSV-driven)
 npx drizzle-kit push       # Push schema changes to DB
 npx drizzle-kit generate   # Generate migration files
 npx drizzle-kit studio     # Open Drizzle Studio (DB browser)

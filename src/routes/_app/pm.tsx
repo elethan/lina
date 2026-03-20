@@ -614,15 +614,6 @@ function PmExecutionDialog({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-7xl h-[88vh] flex flex-col">
-                <DialogHeader>
-                    <DialogTitle className="text-base font-semibold text-gray-900">
-                        PM Execution
-                    </DialogTitle>
-                    <DialogDescription className="text-sm text-gray-500 leading-relaxed">
-                        Perform PM checks and save task results inline.
-                    </DialogDescription>
-                </DialogHeader>
-
                 {isLoading || !data ? (
                     <div className="flex-1 min-h-0 grid place-items-center text-sm text-gray-500">
                         Loading PM execution data...
@@ -809,9 +800,6 @@ function PmExecutionDialog({
                             </table>
                         </div>
 
-                        <div className="text-xs text-gray-500 px-1">
-                            Showing {taskTable.getRowModel().rows.length} of {taskRows.length} tasks
-                        </div>
                     </div>
                 )}
 
