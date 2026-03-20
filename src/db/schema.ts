@@ -150,6 +150,7 @@ export const assetPm = sqliteTable('asset_pm', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
   intervalMonths: integer('interval_months'),
+  physicsHandOver: text('physics_hand_over').notNull(),
   startAt: text('start_at'),
   engineerId: integer('engineer_id').references(() => engineers.id),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
@@ -195,6 +196,7 @@ export const workOrders = sqliteTable('work_orders', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
   description: text('description_of_fault').notNull(), // [cite: 26]
+  physicsHandOver: text('physics_hand_over').notNull(),
   createdAt: text('created_at'),
   startAt: text('start_at'),
   endAt: text('end_at'),

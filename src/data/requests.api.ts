@@ -192,6 +192,7 @@ export const createRequest = authServerFn({ method: 'POST' })
                     assetId: data.assetId,
                     systemId: data.systemId,
                     description: data.commentText,
+                    physicsHandOver: 'Pending',
                     status: 'Open',
                     createdAt: new Date().toISOString(),
                 }).returning({ id: workOrders.id })

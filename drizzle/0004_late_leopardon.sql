@@ -1,0 +1,1 @@
+ALTER TABLE `work_orders` ADD `physics_hand_over` text NOT NULL;

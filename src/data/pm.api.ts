@@ -590,6 +590,7 @@ export const savePm = authServerFn({ method: 'POST' })
             assetId: data.assetId,
             systemId: data.systemId,
             intervalMonths: data.intervalMonths,
+            physicsHandOver: 'Pending',
             startAt: parsedStartAt.toISOString(),
             engineerId: data.engineerId ?? null,
         }

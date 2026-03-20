@@ -197,6 +197,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 assetId: firstRequest.assetId,
                 systemId: firstRequest.systemId,
                 description,
+                physicsHandOver: 'Pending',
                 status: 'Open',
                 createdAt: new Date().toISOString(),
             })

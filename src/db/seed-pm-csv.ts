@@ -189,28 +189,14 @@ async function seedAuthUsers() {
 }
 
 async function seedEngineers() {
-  const [adminUser] = await db
-    .select({ id: user.id, email: user.email })
-    .from(user)
-    .where(eq(user.email, 'admin@lina.com'))
-    .limit(1)
-
-  const [scientistUser] = await db
-    .select({ id: user.id, email: user.email })
-    .from(user)
-    .where(eq(user.email, 'scientist@lina.com'))
-    .limit(1)
-
-  const [therapistUser] = await db
-    .select({ id: user.id, email: user.email })
-    .from(user)
-    .where(eq(user.email, 'therapist@lina.com'))
-    .limit(1)
-
   const targetEngineers = [
-    { firstName: 'Lina', lastName: 'Admin', userId: adminUser?.id ?? null },
-    { firstName: 'Lina', lastName: 'Scientist', userId: scientistUser?.id ?? null },
-    { firstName: 'Lina', lastName: 'Therapist', userId: therapistUser?.id ?? null },
+    { firstName: 'James', lastName: 'Hartley', userId: null },
+    { firstName: 'Sophie', lastName: 'Brennan', userId: null },
+    { firstName: 'Marcus', lastName: 'Okafor', userId: null },
+    { firstName: 'Elena', lastName: 'Vasquez', userId: null },
+    { firstName: 'Tom', lastName: 'Aldridge', userId: null },
+    { firstName: 'Priya', lastName: 'Nair', userId: null },
+    { firstName: 'Daniel', lastName: 'Kovalski', userId: null },
   ]
 
   const existingRows = await db.select().from(engineers)
@@ -346,12 +332,14 @@ async function seedFromCsv() {
         assetId: asset.id,
         systemId: defaultSystemId,
         description: `Investigate reported operational issue on ${asset.serialNumber}.`,
+        physicsHandOver: 'Pending',
         status: 'Open',
       },
       {
         assetId: asset.id,
         systemId: defaultSystemId,
         description: `Perform corrective and verification checks on ${asset.serialNumber}.`,
+        physicsHandOver: 'Pending',
         status: 'Open',
       },
     ]
@@ -367,6 +355,7 @@ async function seedFromCsv() {
         assetId: asset.id,
         systemId: systemRow.id,
         intervalMonths,
+        physicsHandOver: 'Pending',
         startAt: new Date().toISOString(),
       })),
     ),

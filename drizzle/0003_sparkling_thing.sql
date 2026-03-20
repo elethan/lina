@@ -1,0 +1,1 @@
+ALTER TABLE `asset_pm` ADD `physics_hand_over` text NOT NULL;
