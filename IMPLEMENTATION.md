@@ -2,11 +2,42 @@
 
 > A record of recent changes and implemented features.
 
-## 2026-03-19
+## 2026-03-19 (session 2)
+
+- **Auto Work Order Creation from Downtime Requests (`src/data/requests.api.ts`, `src/db/schema.ts`, `src/routes/_app/index.tsx`)**
+  - Made `downtimeEvents.woId` NOT NULL — standalone downtime events no longer exist; every downtime must belong to a WO.
+  - `createRequest()` now runs a full auto-WO workflow when `downtimeStartAt + assetId + systemId` are all provided:
+    - Searches for an existing open WO for the same `assetId + systemId` (status ≠ `'Closed'`).
+    - **Reuses** existing WO: links request, creates downtime event only if no open one already exists on that WO.
+    - **Creates new WO** if none found: inserts WO, links request, creates downtime event, sets request → `'Active'`.
+    - Returns `{ id, linkedWoId, woIsNew }` so the UI can show contextual feedback.
+  - `getRequestDbDeps()` expanded: imports `workOrders`, `workOrderRequests`, `downtimeEvents`, `and`, `ne`, `isNull`.
+  - `createDowntimeEvent()` validator: `woId` is now required (was optional).
+  - Auto-WO notification popup in `RequestsPage`: appears after downtime request submission, shows WO number, differentiates new vs. linked WO, dismissable.
+
+- **Seed Data Taxonomy Overhaul (`src/db/seed-dev.ts`)**
+  - Site names: removed `GenesisCare` prefix → `Oxford`, `Chelmsford`, `Bristol`.
+  - Systems replaced with six domain-accurate sub-systems: `Linac`, `iViewGT`, `XVI`, `PPS`, `MRL`, `Magnet`.
+  - Asset-to-system linkage: conventional linacs → Linac/iViewGT/XVI/PPS; MR-Linacs → MRL/Magnet/PPS.
+  - PM tasks and request/downtime `systemId` references updated to match new taxonomy.
+
+- **New Request — Inline Validation Toast (`src/routes/_app/index.tsx`)**
+  - Replaced blocking `alert()` with an in-dialog toast (top-right, red, auto-dismisses after 2 s).
+  - Shows specific Zod error message (e.g. `"System is required"`).
+  - Added `noValidate` on `<form>` to suppress browser-native validation popups.
+
+- **Dialog Centering Fix (`src/components/ui/dialog.tsx`)**
+  - Replaced `top-[50%] translate-x/y-[-50%]` with `inset-0 m-auto h-fit` — avoids Tailwind v4 `translate` property conflicts, reliably centers all dialogs.
+  - Added `max-h-[90vh] overflow-y-auto` to base; removed `sm:max-w-lg` default so per-dialog `max-w-*` overrides always win.
+
+- **WO Execution Dialog Width (`src/routes/_app/work-orders.tsx`)**
+  - Set `sm:max-w-4xl` (896 px) for a wider two-column layout.
+
+## 2026-03-19 (session 1)
 
 - **Asset Downtime Tracking (`src/db/schema.ts`, `src/data/workorders.api.ts`, `src/data/requests.api.ts`, `src/routes/_app/index.tsx`, `src/routes/_app/work-orders.tsx`)**
   - Added `downtimeStartAt` (nullable TEXT, ISO 8601) to `userRequests` table — allows users to optionally report when the system went down.
-  - Created new `downtimeEvents` table with `assetId` (required FK), `systemId` (required FK), `woId` (nullable FK for standalone events), `startAt` (required), `endAt` (nullable — enforced before WO close), `notes`, and `commonCols`.
+  - Created new `downtimeEvents` table with `assetId` (required FK), `systemId` (required FK), `woId` (NOT NULL FK), `startAt` (required), `endAt` (nullable — enforced before WO close), `notes`, and `commonCols`.
   - Updated `createRequest()` to accept optional `downtimeStartAt` parameter.
   - Updated `createWorkOrder()` to auto-create a `downtime_events` row when the first linked request has `downtimeStartAt`, inheriting `assetId` and `systemId` from the WO.
   - Updated `closeWorkOrder()` with a server-side guard: blocks close if any linked `downtime_events` have null `endAt`. Returns error "Cannot close: record downtime end time first".

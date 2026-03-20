@@ -57,7 +57,9 @@ src/
 │   ├── schema.ts        # Drizzle schema (all tables)
 │   ├── client.ts        # DB connection (better-sqlite3)
 │   ├── migrate.ts       # Migration runner
-│   └── seed-dev.ts      # Dev seed data (users, sites, assets, requests, WOs, downtime events)
+│   └── seed-dev.ts      # Dev seed data — users, sites, assets, requests, WOs, downtime events
+│                        # Sites: Oxford / Chelmsford / Bristol
+│                        # Sub-systems: Linac / iViewGT / XVI / PPS / MRL / Magnet
 ├── lib/
 │   ├── auth.ts          # Better Auth server config (roles, optional Entra ID SSO)
 │   ├── auth-guards.server.ts  # Server-only session/permission guards (uses getRequest())
