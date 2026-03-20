@@ -284,6 +284,34 @@ function getSuggestedStartDate(source: PmRow | null): string {
 
 type TaskStatus = 'Pass' | 'Fail' | 'N/A'
 
+function FindingsTextArea({
+    initialValue,
+    disabled,
+    onBlurSave,
+}: {
+    initialValue: string
+    disabled: boolean
+    onBlurSave: (value: string) => void
+}) {
+    const [text, setText] = useState(initialValue)
+
+    useEffect(() => {
+        setText(initialValue)
+    }, [initialValue])
+
+    return (
+        <textarea
+            rows={2}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => onBlurSave(text)}
+            disabled={disabled}
+            className="w-full max-h-[48px] bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm leading-5 text-gray-700 focus:outline-none focus:border-primary/60 resize-y"
+            placeholder="Add findings..."
+        />
+    )
+}
+
 function PmExecutionDialog({
     pmId,
     open,
@@ -302,9 +330,12 @@ function PmExecutionDialog({
     onSaved: () => Promise<void> | void
 }) {
     const queryClient = useQueryClient()
-    const [draftFindings, setDraftFindings] = useState<Record<number, string>>({})
     const [draftEngineer, setDraftEngineer] = useState<Record<number, string>>({})
+    const [draftStatus, setDraftStatus] = useState<Record<number, TaskStatus | ''>>({})
     const [assignedEngineerIds, setAssignedEngineerIds] = useState<number[]>([])
+    const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+    const [selectedEngineerId, setSelectedEngineerId] = useState<number | null>(null)
+    const [taskColumnFilters, setTaskColumnFilters] = useState<any[]>([])
 
     const { data, isLoading, refetch } = useQuery({
         queryKey: ['pm-execution', pmId],
@@ -316,11 +347,49 @@ function PmExecutionDialog({
     })
 
     const taskRows = data?.tasks ?? []
+    const taskIntervalOptions = useMemo(
+        () =>
+            Array.from(new Set(taskRows.map((row) => row.intervalMonths)))
+                .sort((a, b) => a - b),
+        [taskRows],
+    )
 
     const completedTasks = useMemo(
         () => taskRows.filter((row) => !!row.status).length,
         [taskRows],
     )
+
+    const selectedEngineerName = useMemo(
+        () => engineers.find((eng) => eng.id === selectedEngineerId)?.label ?? null,
+        [engineers, selectedEngineerId],
+    )
+
+    const taskById = useMemo(
+        () => new Map(taskRows.map((row) => [row.taskId, row])),
+        [taskRows],
+    )
+
+    const applyStatusForTask = (task: PmExecutionTaskRow, value: TaskStatus) => {
+        if (!pmId) return
+        const defaultEngineer =
+            selectedEngineerName ??
+            (currentUserName ? currentUserName : null)
+        setDraftStatus((prev) => ({
+            ...prev,
+            [task.taskId]: value,
+        }))
+        setDraftEngineer((prev) => ({
+            ...prev,
+            [task.taskId]: defaultEngineer ?? '',
+        }))
+        saveTaskResultMutation.mutate({
+            pmInstanceId: pmId,
+            taskId: task.taskId,
+            status: value,
+            findings: task.findings ?? null,
+            engineer: defaultEngineer,
+        })
+    }
 
     const saveTaskResultMutation = useMutation({
         mutationFn: async (payload: {
@@ -362,49 +431,61 @@ function PmExecutionDialog({
     const taskColumnHelper = createColumnHelper<PmExecutionTaskRow>()
     const taskColumns = useMemo<ColumnDef<PmExecutionTaskRow, any>[]>(
         () => [
+            taskColumnHelper.accessor('intervalMonths', {
+                header: ({ column }) => (
+                    <div className="w-8 flex flex-col gap-1">
+                        <span>Months</span>
+                        <select
+                            value={(column.getFilterValue() ?? '') as string}
+                            onChange={(e) =>
+                                column.setFilterValue(e.target.value || undefined)
+                            }
+                            className="w-12 text-[11px] py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60"
+                        >
+                            <option value="">All</option>
+                            {taskIntervalOptions.map((months) => (
+                                <option key={months} value={String(months)}>
+                                    {months}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                ),
+                cell: (info) => (
+                    <span className="text-sm font-semibold text-gray-900">{info.getValue()}m</span>
+                ),
+                filterFn: (row, columnId, filterValue) => {
+                    if (!filterValue) return true
+                    return String(row.getValue(columnId)) === String(filterValue)
+                },
+               size: 50, 
+            }),
             taskColumnHelper.accessor('docSection', {
                 header: 'Section',
                 cell: (info) => info.getValue() ?? '—',
-                size: 130,
+                size: 100,
             }),
             taskColumnHelper.accessor('instruction', {
                 header: 'Task',
                 cell: (info) => (
-                    <span className="whitespace-normal break-words text-gray-800">
+                    <span className="whitespace-normal break-words text-sm font-semibold text-gray-900">
                         {info.getValue()}
                     </span>
                 ),
-                size: 420,
-            }),
-            taskColumnHelper.accessor('category', {
-                header: 'Category',
-                cell: (info) => info.getValue() ?? '—',
-                size: 140,
+                size: 220,
             }),
             taskColumnHelper.display({
                 id: 'status',
                 header: 'Status',
                 cell: ({ row }) => {
-                    const status = row.original.status ?? ''
+                    const status = draftStatus[row.original.taskId] ?? row.original.status ?? ''
                     return (
                         <select
                             value={status}
                             onChange={(e) => {
                                 const value = e.target.value as TaskStatus
-                                if (!value || !pmId) return
-                                saveTaskResultMutation.mutate({
-                                    pmInstanceId: pmId,
-                                    taskId: row.original.taskId,
-                                    status: value,
-                                    findings:
-                                        draftFindings[row.original.taskId] ??
-                                        row.original.findings ??
-                                        null,
-                                    engineer:
-                                        draftEngineer[row.original.taskId] ??
-                                        row.original.engineer ??
-                                        (currentUserName ? currentUserName : null),
-                                })
+                                if (!value) return
+                                applyStatusForTask(row.original, value)
                             }}
                             disabled={!canManagePm}
                             className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-primary/60"
@@ -422,36 +503,28 @@ function PmExecutionDialog({
                 id: 'findings',
                 header: 'Findings',
                 cell: ({ row }) => {
-                    const value = draftFindings[row.original.taskId] ?? row.original.findings ?? ''
+                    const effectiveStatus = draftStatus[row.original.taskId] ?? row.original.status
                     return (
-                        <textarea
-                            value={value}
-                            onChange={(e) =>
-                                setDraftFindings((prev) => ({
-                                    ...prev,
-                                    [row.original.taskId]: e.target.value,
-                                }))
-                            }
-                            onBlur={() => {
-                                if (!pmId || !row.original.status) return
+                        <FindingsTextArea
+                            initialValue={row.original.findings ?? ''}
+                            disabled={!canManagePm}
+                            onBlurSave={(nextText) => {
+                                if (!pmId || !effectiveStatus) return
                                 saveTaskResultMutation.mutate({
                                     pmInstanceId: pmId,
                                     taskId: row.original.taskId,
-                                    status: row.original.status,
-                                    findings: draftFindings[row.original.taskId] ?? null,
+                                    status: effectiveStatus,
+                                    findings: nextText || null,
                                     engineer:
                                         draftEngineer[row.original.taskId] ??
                                         row.original.engineer ??
-                                        (currentUserName ? currentUserName : null),
+                                        null,
                                 })
                             }}
-                            disabled={!canManagePm}
-                            className="w-full min-h-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-primary/60 resize-y"
-                            placeholder="Add findings..."
                         />
                     )
                 },
-                size: 220,
+                size: 160,
             }),
             taskColumnHelper.display({
                 id: 'engineer',
@@ -459,55 +532,40 @@ function PmExecutionDialog({
                 cell: ({ row }) => {
                     const value =
                         draftEngineer[row.original.taskId] ??
-                        row.original.engineer ??
-                        currentUserName
+                        row.original.engineer
                     return (
-                        <input
-                            type="text"
-                            value={value}
-                            onChange={(e) =>
-                                setDraftEngineer((prev) => ({
-                                    ...prev,
-                                    [row.original.taskId]: e.target.value,
-                                }))
-                            }
-                            onBlur={() => {
-                                if (!pmId || !row.original.status) return
-                                saveTaskResultMutation.mutate({
-                                    pmInstanceId: pmId,
-                                    taskId: row.original.taskId,
-                                    status: row.original.status,
-                                    findings:
-                                        draftFindings[row.original.taskId] ??
-                                        row.original.findings ??
-                                        null,
-                                    engineer:
-                                        draftEngineer[row.original.taskId] ??
-                                        row.original.engineer ??
-                                        (currentUserName ? currentUserName : null),
-                                })
-                            }}
-                            disabled={!canManagePm}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-primary/60"
-                        />
+                        <span className="inline-block w-full px-2 py-1.5 text-sm font-medium text-gray-800 bg-gray-100 border border-gray-200 rounded-lg">
+                            {value || '—'}
+                        </span>
                     )
                 },
                 size: 160,
+            }),
+            taskColumnHelper.accessor('category', {
+                header: 'Category',
+                cell: (info) => info.getValue() ?? '—',
+                size: 100,
             }),
         ],
         [
             canManagePm,
             currentUserName,
             draftEngineer,
-            draftFindings,
+            draftStatus,
             pmId,
+            selectedEngineerName,
+            taskIntervalOptions,
+            applyStatusForTask,
         ],
     )
 
     const taskTable = useReactTable({
         data: taskRows,
         columns: taskColumns,
+        state: { columnFilters: taskColumnFilters },
+        onColumnFiltersChange: setTaskColumnFilters,
         getCoreRowModel: getCoreRowModel(),
+        getFilteredRowModel: getFilteredRowModel(),
     })
 
     const toggleEngineer = (engineerId: number) => {
@@ -522,12 +580,24 @@ function PmExecutionDialog({
     useEffect(() => {
         if (data) {
             setAssignedEngineerIds(data.assignedEngineerIds)
+            const nextDraftStatus: Record<number, TaskStatus | ''> = {}
+            for (const task of data.tasks) {
+                nextDraftStatus[task.taskId] = task.status ?? ''
+            }
+            setDraftStatus(nextDraftStatus)
+            if (data.tasks.length > 0) {
+                setSelectedTaskId((prev) => prev ?? data.tasks[0].taskId)
+            }
         }
     }, [data])
 
+    useEffect(() => {
+        setSelectedEngineerId(null)
+    }, [pmId, open])
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-7xl max-h-[88vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-7xl h-[88vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="text-base font-semibold text-gray-900">
                         PM Execution
@@ -538,55 +608,128 @@ function PmExecutionDialog({
                 </DialogHeader>
 
                 {isLoading || !data ? (
-                    <div className="py-10 text-sm text-gray-500 text-center">Loading PM execution data...</div>
+                    <div className="flex-1 min-h-0 grid place-items-center text-sm text-gray-500">
+                        Loading PM execution data...
+                    </div>
                 ) : (
-                    <div className="space-y-5">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                            <div className="space-y-1">
-                                <p className="text-xs text-gray-500">Asset</p>
-                                <p className="text-sm font-medium text-gray-800">{data.serialNumber ?? '—'}</p>
+                    <div className="flex-1 min-h-0 flex flex-col gap-3">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                <div className="space-y-0.5">
+                                    <p className="text-xs text-gray-500">Asset</p>
+                                    <p className="text-xs font-semibold text-gray-800">{data.serialNumber ?? '—'}</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <p className="text-xs text-gray-500">Site</p>
+                                    <p className="text-xs font-semibold text-gray-800">{data.siteName ?? '—'}</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <p className="text-xs text-gray-500">System</p>
+                                    <p className="text-xs font-semibold text-gray-800">{data.systemName ?? '—'}</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <p className="text-xs text-gray-500">Interval</p>
+                                    <p className="text-xs font-semibold text-gray-800">{data.intervalMonths} months</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <p className="text-xs text-gray-500">Scheduled</p>
+                                    <p className="text-xs font-semibold text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB')}</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <p className="text-xs text-gray-500">Status</p>
+                                    <p className="text-xs font-semibold text-gray-800">{data.completedAt ? 'Completed' : 'Pending'}</p>
+                                </div>
                             </div>
-                            <div className="space-y-1">
-                                <p className="text-xs text-gray-500">Site</p>
-                                <p className="text-sm font-medium text-gray-800">{data.siteName ?? '—'}</p>
-                            </div>
-                            <div className="space-y-1">
-                                <p className="text-xs text-gray-500">System</p>
-                                <p className="text-sm font-medium text-gray-800">{data.systemName ?? '—'}</p>
-                            </div>
-                            <div className="space-y-1">
-                                <p className="text-xs text-gray-500">Interval</p>
-                                <p className="text-sm font-medium text-gray-800">{data.intervalMonths} months</p>
-                            </div>
-                            <div className="space-y-1">
-                                <p className="text-xs text-gray-500">Scheduled</p>
-                                <p className="text-sm font-medium text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB')}</p>
-                            </div>
-                            <div className="space-y-1">
-                                <p className="text-xs text-gray-500">Status</p>
-                                <p className="text-sm font-medium text-gray-800">{data.completedAt ? 'Completed' : 'Pending'}</p>
+
+                            <div className="rounded-lg border border-gray-200 overflow-hidden">
+                                <div className="px-2 py-1.5 border-b border-gray-200 bg-primary-100">
+                                    <p className="text-xs font-semibold text-primary-900 uppercase tracking-wider">Assigned Engineers</p>
+                                </div>
+                                <table className="min-w-full">
+                                    <thead>
+                                        <tr>
+                                            <th className="px-2 py-1.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200 w-12">Sel</th>
+                                            <th className="px-2 py-1.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Engineer</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {engineers.map((engineer) => (
+                                            <tr
+                                                key={engineer.id}
+                                                onClick={() => setSelectedEngineerId(engineer.id)}
+                                                className={`cursor-pointer transition-colors ${
+                                                    selectedEngineerId === engineer.id
+                                                        ? 'bg-primary/10'
+                                                        : 'hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                <td className="px-2 py-1.5 text-xs">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={assignedEngineerIds.includes(engineer.id)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onChange={() => toggleEngineer(engineer.id)}
+                                                        disabled={!canManagePm || updateEngineersMutation.isPending}
+                                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                                    />
+                                                </td>
+                                                <td className="px-2 py-1.5 text-xs text-gray-700">{engineer.label}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <p className="text-sm font-medium text-gray-800">Assigned Engineers</p>
-                            <div className="flex flex-wrap gap-4">
-                                {engineers.map((engineer) => (
-                                    <label key={engineer.id} className="inline-flex items-center gap-2 text-sm text-gray-700">
-                                        <input
-                                            type="checkbox"
-                                            checked={assignedEngineerIds.includes(engineer.id)}
-                                            onChange={() => toggleEngineer(engineer.id)}
-                                            disabled={!canManagePm || updateEngineersMutation.isPending}
-                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                                        />
-                                        {engineer.label}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
+                        <div
+                            className="flex-1 min-h-0 rounded-lg border border-gray-200 overflow-auto focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            tabIndex={0}
+                            onKeyDownCapture={(e) => {
+                                if (!canManagePm) return
 
-                        <div className="rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
+                                const target = e.target as HTMLElement
+                                const tag = target.tagName
+                                const isTypingElement =
+                                    tag === 'INPUT' ||
+                                    tag === 'TEXTAREA' ||
+                                    tag === 'SELECT' ||
+                                    target.isContentEditable
+
+                                const visibleRows = taskTable.getRowModel().rows
+                                if (visibleRows.length === 0) return
+
+                                if (!isTypingElement && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                                    const currentIndex = selectedTaskId
+                                        ? visibleRows.findIndex((row) => row.original.taskId === selectedTaskId)
+                                        : 0
+                                    const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0
+                                    const nextIndex = e.key === 'ArrowDown'
+                                        ? Math.min(safeCurrentIndex + 1, visibleRows.length - 1)
+                                        : Math.max(safeCurrentIndex - 1, 0)
+                                    const nextTaskId = visibleRows[nextIndex]?.original.taskId
+                                    if (!nextTaskId) return
+
+                                    e.preventDefault()
+                                    setSelectedTaskId(nextTaskId)
+
+                                    const rowEl = (e.currentTarget as HTMLElement).querySelector(
+                                        'tr[data-task-id="' + nextTaskId + '"]',
+                                    ) as HTMLElement | null
+                                    rowEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+                                    return
+                                }
+
+                                if (isTypingElement) return
+                                if (e.key !== ' ' && e.code !== 'Space') return
+
+                                if (!selectedTaskId) return
+                                const task = taskById.get(selectedTaskId)
+                                if (!task) return
+
+                                e.preventDefault()
+                                applyStatusForTask(task, 'Pass')
+                            }}
+                        >
                             <table className="min-w-full" style={{ width: taskTable.getTotalSize() }}>
                                 <thead>
                                     {taskTable.getHeaderGroups().map((headerGroup) => (
@@ -607,7 +750,17 @@ function PmExecutionDialog({
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {taskTable.getRowModel().rows.map((row) => (
-                                        <tr key={row.id} className="hover:bg-gray-50">
+                                        <tr
+                                            key={row.id}
+                                            data-task-id={row.original.taskId}
+                                            onClick={() => setSelectedTaskId(row.original.taskId)}
+                                            onFocusCapture={() => setSelectedTaskId(row.original.taskId)}
+                                            className={`hover:bg-gray-50 ${
+                                                selectedTaskId === row.original.taskId
+                                                    ? 'bg-primary/10'
+                                                    : ''
+                                            }`}
+                                        >
                                             {row.getVisibleCells().map((cell) => (
                                                 <td
                                                     key={cell.id}
@@ -622,10 +775,14 @@ function PmExecutionDialog({
                                 </tbody>
                             </table>
                         </div>
+
+                        <div className="text-xs text-gray-500 px-1">
+                            Showing {taskTable.getRowModel().rows.length} of {taskRows.length} tasks
+                        </div>
                     </div>
                 )}
 
-                <DialogFooter>
+                <DialogFooter className="pt-2 border-t border-gray-100 mt-2 shrink-0">
                     <span className="mr-auto text-xs text-gray-500">
                         {completedTasks}/{taskRows.length} tasks with status
                     </span>
