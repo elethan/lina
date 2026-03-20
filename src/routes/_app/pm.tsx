@@ -38,6 +38,7 @@ import {
     fetchPmExecutionData,
     savePmTaskResult,
     updatePmEngineers,
+    updatePmPhysicsHandOver,
     completePmInstance,
     type PmExecutionTaskRow,
     type PmRow,
@@ -336,6 +337,7 @@ function PmExecutionDialog({
     const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
     const [selectedEngineerId, setSelectedEngineerId] = useState<number | null>(null)
     const [taskColumnFilters, setTaskColumnFilters] = useState<any[]>([])
+    const [physicsHandOverText, setPhysicsHandOverText] = useState('')
 
     const { data, isLoading, refetch } = useQuery({
         queryKey: ['pm-execution', pmId],
@@ -425,6 +427,19 @@ function PmExecutionDialog({
             await queryClient.invalidateQueries({ queryKey: ['pm-execution', pmId] })
             await onSaved()
             await refetch()
+        },
+    })
+
+    const updatePhysicsHandOverMutation = useMutation({
+        mutationFn: async (value: string) => {
+            if (!pmId) throw new Error('PM record is required')
+            return updatePmPhysicsHandOver({
+                data: { pmId, physicsHandOver: value },
+            })
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['pm-execution', pmId] })
+            await onSaved()
         },
     })
 
@@ -580,6 +595,7 @@ function PmExecutionDialog({
     useEffect(() => {
         if (data) {
             setAssignedEngineerIds(data.assignedEngineerIds)
+            setPhysicsHandOverText(data.physicsHandOver)
             const nextDraftStatus: Record<number, TaskStatus | ''> = {}
             for (const task of data.tasks) {
                 nextDraftStatus[task.taskId] = task.status ?? ''
@@ -612,32 +628,47 @@ function PmExecutionDialog({
                         Loading PM execution data...
                     </div>
                 ) : (
-                    <div className="flex-1 min-h-0 flex flex-col gap-3">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    <div className="flex-1 min-h-0 flex flex-col gap-2">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+                            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
                                 <div className="space-y-0.5">
-                                    <p className="text-xs text-gray-500">Asset</p>
-                                    <p className="text-xs font-semibold text-gray-800">{data.serialNumber ?? '—'}</p>
+                                    <p className="text-base text-gray-500">Asset</p>
+                                    <p className="text-base font-semibold text-gray-800">{data.serialNumber ?? '—'}</p>
                                 </div>
                                 <div className="space-y-0.5">
-                                    <p className="text-xs text-gray-500">Site</p>
-                                    <p className="text-xs font-semibold text-gray-800">{data.siteName ?? '—'}</p>
+                                    <p className="text-base text-gray-500">Site</p>
+                                    <p className="text-base font-semibold text-gray-800">{data.siteName ?? '—'}</p>
                                 </div>
                                 <div className="space-y-0.5">
-                                    <p className="text-xs text-gray-500">System</p>
-                                    <p className="text-xs font-semibold text-gray-800">{data.systemName ?? '—'}</p>
+                                    <p className="text-base text-gray-500">System</p>
+                                    <p className="text-base font-semibold text-gray-800">{data.systemName ?? '—'}</p>
                                 </div>
                                 <div className="space-y-0.5">
-                                    <p className="text-xs text-gray-500">Interval</p>
-                                    <p className="text-xs font-semibold text-gray-800">{data.intervalMonths} months</p>
+                                    <p className="text-base text-gray-500">Interval</p>
+                                    <p className="text-base font-semibold text-gray-800">{data.intervalMonths} months</p>
                                 </div>
                                 <div className="space-y-0.5">
-                                    <p className="text-xs text-gray-500">Scheduled</p>
-                                    <p className="text-xs font-semibold text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB')}</p>
+                                    <p className="text-base text-gray-500">Scheduled</p>
+                                    <p className="text-base font-semibold text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB')}</p>
                                 </div>
                                 <div className="space-y-0.5">
-                                    <p className="text-xs text-gray-500">Status</p>
-                                    <p className="text-xs font-semibold text-gray-800">{data.completedAt ? 'Completed' : 'Pending'}</p>
+                                    <p className="text-base text-gray-500">Status</p>
+                                    <p className="text-base font-semibold text-gray-800">{data.completedAt ? 'Completed' : 'Pending'}</p>
+                                </div>
+                                <div className="space-y-0.5 md:col-start-3 md:col-span-2">
+                                    <p className="text-base text-gray-500">PhysicsHandedOver</p>
+                                    <textarea
+                                        rows={1}
+                                        value={physicsHandOverText}
+                                        onChange={(e) => setPhysicsHandOverText(e.target.value)}
+                                        onBlur={() => {
+                                            const value = physicsHandOverText.trim()
+                                            if (!canManagePm || !value || value === data.physicsHandOver) return
+                                            updatePhysicsHandOverMutation.mutate(value)
+                                        }}
+                                        disabled={!canManagePm}
+                                        className="w-full min-h-[32px] bg-white border border-gray-200 rounded-md px-2 py-1 text-base leading-5 text-gray-700 focus:outline-none focus:border-primary/60 resize-none"
+                                    />
                                 </div>
                             </div>
 
@@ -645,6 +676,7 @@ function PmExecutionDialog({
                                 <div className="px-2 py-1.5 border-b border-gray-200 bg-primary-100">
                                     <p className="text-xs font-semibold text-primary-900 uppercase tracking-wider">Assigned Engineers</p>
                                 </div>
+                                <div className="max-h-32 overflow-y-auto">
                                 <table className="min-w-full">
                                     <thead>
                                         <tr>
@@ -678,6 +710,7 @@ function PmExecutionDialog({
                                         ))}
                                     </tbody>
                                 </table>
+                                </div>
                             </div>
                         </div>
 

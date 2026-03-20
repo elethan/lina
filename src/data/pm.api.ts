@@ -89,6 +89,7 @@ export type PmExecutionData = {
     siteName: string | null
     systemName: string | null
     intervalMonths: number
+    physicsHandOver: string
     startAt: string
     completedAt: string | null
     assignedEngineerIds: number[]
@@ -178,6 +179,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
                 assetId: assetPm.assetId,
                 systemId: assetPm.systemId,
                 intervalMonths: assetPm.intervalMonths,
+                physicsHandOver: assetPm.physicsHandOver,
                 startAt: assetPm.startAt,
             })
             .from(assetPm)
@@ -214,6 +216,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
                 assetId: source.assetId,
                 systemId: source.systemId,
                 intervalMonths: source.intervalMonths,
+                physicsHandOver: source.physicsHandOver,
                 startAt: startAtIso,
                 engineerId: null,
                 completedAt: null,
@@ -349,6 +352,7 @@ export const fetchPmExecutionData = authServerFn({ method: 'GET' })
                 pmId: assetPm.id,
                 systemId: assetPm.systemId,
                 intervalMonths: assetPm.intervalMonths,
+                physicsHandOver: assetPm.physicsHandOver,
                 startAt: assetPm.startAt,
                 completedAt: assetPm.completedAt,
                 serialNumber: assets.serialNumber,
@@ -437,6 +441,7 @@ export const fetchPmExecutionData = authServerFn({ method: 'GET' })
             siteName: pmRow.siteName ?? null,
             systemName: pmRow.systemName ?? null,
             intervalMonths: pmRow.intervalMonths,
+            physicsHandOver: pmRow.physicsHandOver,
             startAt: pmRow.startAt,
             completedAt: pmRow.completedAt ?? null,
             assignedEngineerIds: assignedRows
@@ -532,6 +537,33 @@ export const updatePmEngineers = authServerFn({ method: 'POST' })
                 })),
             )
         }
+
+        return { ok: true }
+    })
+
+export const updatePmPhysicsHandOver = authServerFn({ method: 'POST' })
+    .inputValidator((data: { pmId: number; physicsHandOver: string }) => {
+        if (!data.pmId) {
+            throw new Error('PM record is required')
+        }
+        if (!data.physicsHandOver?.trim()) {
+            throw new Error('Physics handover is required')
+        }
+        return {
+            pmId: data.pmId,
+            physicsHandOver: data.physicsHandOver.trim(),
+        }
+    })
+    .handler(async ({ data }) => {
+        const { db, assetPm, eq } = await getPmDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('pmInstances', 'update')
+
+        await db
+            .update(assetPm)
+            .set({ physicsHandOver: data.physicsHandOver })
+            .where(eq(assetPm.id, data.pmId))
 
         return { ok: true }
     })

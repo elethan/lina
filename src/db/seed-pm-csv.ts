@@ -190,13 +190,13 @@ async function seedAuthUsers() {
 
 async function seedEngineers() {
   const targetEngineers = [
-    { firstName: 'James', lastName: 'Hartley', userId: null },
-    { firstName: 'Sophie', lastName: 'Brennan', userId: null },
-    { firstName: 'Marcus', lastName: 'Okafor', userId: null },
-    { firstName: 'Elena', lastName: 'Vasquez', userId: null },
-    { firstName: 'Tom', lastName: 'Aldridge', userId: null },
-    { firstName: 'Priya', lastName: 'Nair', userId: null },
-    { firstName: 'Daniel', lastName: 'Kovalski', userId: null },
+    { firstName: 'Guy', lastName: 'Fielden', userId: null },
+    { firstName: 'Thanos', lastName: 'Papageorgiou', userId: null },
+    { firstName: 'Allington', lastName: 'Butau', userId: null },
+    { firstName: 'Abishek', lastName: 'Verma', userId: null },
+    { firstName: 'Jason', lastName: 'Cammish', userId: null },
+    { firstName: 'Phil', lastName: 'Yeo', userId: null },
+    { firstName: 'Hersi', lastName: 'Mohamud', userId: null },
   ]
 
   const existingRows = await db.select().from(engineers)
