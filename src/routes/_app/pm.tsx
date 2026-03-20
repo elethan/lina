@@ -11,7 +11,7 @@ import {
     type ColumnResizeMode,
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
     Calendar,
     CheckCircle2,
@@ -25,7 +25,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
 } from 'lucide-react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
@@ -35,6 +35,11 @@ import {
     savePm,
     duplicatePmInstance,
     reopenPmInstance,
+    fetchPmExecutionData,
+    savePmTaskResult,
+    updatePmEngineers,
+    completePmInstance,
+    type PmExecutionTaskRow,
     type PmRow,
 } from '../../data/pm.api'
 import {
@@ -103,7 +108,7 @@ const columns: ColumnDef<PmRow, any>[] = [
                 PM-{String(info.getValue()).padStart(4, '0')}
             </span>
         ),
-        size: 100,
+        size: 80,
         enableResizing: false,
     }),
     columnHelper.accessor('serialNumber', {
@@ -113,6 +118,7 @@ const columns: ColumnDef<PmRow, any>[] = [
                 {info.getValue() ?? '—'}
             </span>
         ),
+        size: 80,
     }),
     columnHelper.accessor('siteName', {
         header: ({ column, table }) => {
@@ -145,6 +151,7 @@ const columns: ColumnDef<PmRow, any>[] = [
             if (!filterValue) return true
             return row.getValue(columnId) === filterValue
         },
+        size: 80,
     }),
     columnHelper.accessor('systemName', {
         header: ({ column, table }) => {
@@ -275,6 +282,372 @@ function getSuggestedStartDate(source: PmRow | null): string {
     return toDateInputValue(base)
 }
 
+type TaskStatus = 'Pass' | 'Fail' | 'N/A'
+
+function PmExecutionDialog({
+    pmId,
+    open,
+    onOpenChange,
+    engineers,
+    currentUserName,
+    canManagePm,
+    onSaved,
+}: {
+    pmId: number | null
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    engineers: Array<{ id: number; label: string }>
+    currentUserName: string
+    canManagePm: boolean
+    onSaved: () => Promise<void> | void
+}) {
+    const queryClient = useQueryClient()
+    const [draftFindings, setDraftFindings] = useState<Record<number, string>>({})
+    const [draftEngineer, setDraftEngineer] = useState<Record<number, string>>({})
+    const [assignedEngineerIds, setAssignedEngineerIds] = useState<number[]>([])
+
+    const { data, isLoading, refetch } = useQuery({
+        queryKey: ['pm-execution', pmId],
+        enabled: open && !!pmId,
+        queryFn: async () =>
+            fetchPmExecutionData({
+                data: { pmId: pmId as number },
+            }),
+    })
+
+    const taskRows = data?.tasks ?? []
+
+    const completedTasks = useMemo(
+        () => taskRows.filter((row) => !!row.status).length,
+        [taskRows],
+    )
+
+    const saveTaskResultMutation = useMutation({
+        mutationFn: async (payload: {
+            pmInstanceId: number
+            taskId: number
+            status: TaskStatus
+            findings: string | null
+            engineer: string | null
+        }) => savePmTaskResult({ data: payload }),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['pm-execution', pmId] })
+            await onSaved()
+        },
+    })
+
+    const updateEngineersMutation = useMutation({
+        mutationFn: async (engineerIds: number[]) => {
+            if (!pmId) throw new Error('PM record is required')
+            return updatePmEngineers({ data: { pmId, engineerIds } })
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['pm-execution', pmId] })
+            await onSaved()
+        },
+    })
+
+    const completeMutation = useMutation({
+        mutationFn: async () => {
+            if (!pmId) throw new Error('PM record is required')
+            return completePmInstance({ data: { pmId } })
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['pm-execution', pmId] })
+            await onSaved()
+            await refetch()
+        },
+    })
+
+    const taskColumnHelper = createColumnHelper<PmExecutionTaskRow>()
+    const taskColumns = useMemo<ColumnDef<PmExecutionTaskRow, any>[]>(
+        () => [
+            taskColumnHelper.accessor('docSection', {
+                header: 'Section',
+                cell: (info) => info.getValue() ?? '—',
+                size: 130,
+            }),
+            taskColumnHelper.accessor('instruction', {
+                header: 'Task',
+                cell: (info) => (
+                    <span className="whitespace-normal break-words text-gray-800">
+                        {info.getValue()}
+                    </span>
+                ),
+                size: 420,
+            }),
+            taskColumnHelper.accessor('category', {
+                header: 'Category',
+                cell: (info) => info.getValue() ?? '—',
+                size: 140,
+            }),
+            taskColumnHelper.display({
+                id: 'status',
+                header: 'Status',
+                cell: ({ row }) => {
+                    const status = row.original.status ?? ''
+                    return (
+                        <select
+                            value={status}
+                            onChange={(e) => {
+                                const value = e.target.value as TaskStatus
+                                if (!value || !pmId) return
+                                saveTaskResultMutation.mutate({
+                                    pmInstanceId: pmId,
+                                    taskId: row.original.taskId,
+                                    status: value,
+                                    findings:
+                                        draftFindings[row.original.taskId] ??
+                                        row.original.findings ??
+                                        null,
+                                    engineer:
+                                        draftEngineer[row.original.taskId] ??
+                                        row.original.engineer ??
+                                        (currentUserName ? currentUserName : null),
+                                })
+                            }}
+                            disabled={!canManagePm}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-primary/60"
+                        >
+                            <option value="">Select</option>
+                            <option value="Pass">Pass</option>
+                            <option value="Fail">Fail</option>
+                            <option value="N/A">N/A</option>
+                        </select>
+                    )
+                },
+                size: 110,
+            }),
+            taskColumnHelper.display({
+                id: 'findings',
+                header: 'Findings',
+                cell: ({ row }) => {
+                    const value = draftFindings[row.original.taskId] ?? row.original.findings ?? ''
+                    return (
+                        <textarea
+                            value={value}
+                            onChange={(e) =>
+                                setDraftFindings((prev) => ({
+                                    ...prev,
+                                    [row.original.taskId]: e.target.value,
+                                }))
+                            }
+                            onBlur={() => {
+                                if (!pmId || !row.original.status) return
+                                saveTaskResultMutation.mutate({
+                                    pmInstanceId: pmId,
+                                    taskId: row.original.taskId,
+                                    status: row.original.status,
+                                    findings: draftFindings[row.original.taskId] ?? null,
+                                    engineer:
+                                        draftEngineer[row.original.taskId] ??
+                                        row.original.engineer ??
+                                        (currentUserName ? currentUserName : null),
+                                })
+                            }}
+                            disabled={!canManagePm}
+                            className="w-full min-h-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-primary/60 resize-y"
+                            placeholder="Add findings..."
+                        />
+                    )
+                },
+                size: 220,
+            }),
+            taskColumnHelper.display({
+                id: 'engineer',
+                header: 'Engineer',
+                cell: ({ row }) => {
+                    const value =
+                        draftEngineer[row.original.taskId] ??
+                        row.original.engineer ??
+                        currentUserName
+                    return (
+                        <input
+                            type="text"
+                            value={value}
+                            onChange={(e) =>
+                                setDraftEngineer((prev) => ({
+                                    ...prev,
+                                    [row.original.taskId]: e.target.value,
+                                }))
+                            }
+                            onBlur={() => {
+                                if (!pmId || !row.original.status) return
+                                saveTaskResultMutation.mutate({
+                                    pmInstanceId: pmId,
+                                    taskId: row.original.taskId,
+                                    status: row.original.status,
+                                    findings:
+                                        draftFindings[row.original.taskId] ??
+                                        row.original.findings ??
+                                        null,
+                                    engineer:
+                                        draftEngineer[row.original.taskId] ??
+                                        row.original.engineer ??
+                                        (currentUserName ? currentUserName : null),
+                                })
+                            }}
+                            disabled={!canManagePm}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-primary/60"
+                        />
+                    )
+                },
+                size: 160,
+            }),
+        ],
+        [
+            canManagePm,
+            currentUserName,
+            draftEngineer,
+            draftFindings,
+            pmId,
+        ],
+    )
+
+    const taskTable = useReactTable({
+        data: taskRows,
+        columns: taskColumns,
+        getCoreRowModel: getCoreRowModel(),
+    })
+
+    const toggleEngineer = (engineerId: number) => {
+        if (!canManagePm) return
+        const next = assignedEngineerIds.includes(engineerId)
+            ? assignedEngineerIds.filter((id) => id !== engineerId)
+            : [...assignedEngineerIds, engineerId]
+        setAssignedEngineerIds(next)
+        updateEngineersMutation.mutate(next)
+    }
+
+    useEffect(() => {
+        if (data) {
+            setAssignedEngineerIds(data.assignedEngineerIds)
+        }
+    }, [data])
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-7xl max-h-[88vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle className="text-base font-semibold text-gray-900">
+                        PM Execution
+                    </DialogTitle>
+                    <DialogDescription className="text-sm text-gray-500 leading-relaxed">
+                        Perform PM checks and save task results inline.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {isLoading || !data ? (
+                    <div className="py-10 text-sm text-gray-500 text-center">Loading PM execution data...</div>
+                ) : (
+                    <div className="space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500">Asset</p>
+                                <p className="text-sm font-medium text-gray-800">{data.serialNumber ?? '—'}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500">Site</p>
+                                <p className="text-sm font-medium text-gray-800">{data.siteName ?? '—'}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500">System</p>
+                                <p className="text-sm font-medium text-gray-800">{data.systemName ?? '—'}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500">Interval</p>
+                                <p className="text-sm font-medium text-gray-800">{data.intervalMonths} months</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500">Scheduled</p>
+                                <p className="text-sm font-medium text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB')}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500">Status</p>
+                                <p className="text-sm font-medium text-gray-800">{data.completedAt ? 'Completed' : 'Pending'}</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <p className="text-sm font-medium text-gray-800">Assigned Engineers</p>
+                            <div className="flex flex-wrap gap-4">
+                                {engineers.map((engineer) => (
+                                    <label key={engineer.id} className="inline-flex items-center gap-2 text-sm text-gray-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={assignedEngineerIds.includes(engineer.id)}
+                                            onChange={() => toggleEngineer(engineer.id)}
+                                            disabled={!canManagePm || updateEngineersMutation.isPending}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        />
+                                        {engineer.label}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
+                            <table className="min-w-full" style={{ width: taskTable.getTotalSize() }}>
+                                <thead>
+                                    {taskTable.getHeaderGroups().map((headerGroup) => (
+                                        <tr key={headerGroup.id}>
+                                            {headerGroup.headers.map((header) => (
+                                                <th
+                                                    key={header.id}
+                                                    className="px-3 py-2 text-left text-xs font-semibold text-primary-900 uppercase tracking-wider bg-primary-100 border-b border-primary-200/50"
+                                                    style={{ width: header.getSize() }}
+                                                >
+                                                    {header.isPlaceholder
+                                                        ? null
+                                                        : flexRender(header.column.columnDef.header, header.getContext())}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {taskTable.getRowModel().rows.map((row) => (
+                                        <tr key={row.id} className="hover:bg-gray-50">
+                                            {row.getVisibleCells().map((cell) => (
+                                                <td
+                                                    key={cell.id}
+                                                    className="px-3 py-2 text-xs text-gray-600 align-top"
+                                                    style={{ width: cell.column.getSize() }}
+                                                >
+                                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                <DialogFooter>
+                    <span className="mr-auto text-xs text-gray-500">
+                        {completedTasks}/{taskRows.length} tasks with status
+                    </span>
+                    <button
+                        onClick={() => onOpenChange(false)}
+                        className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        Close
+                    </button>
+                    <button
+                        onClick={() => completeMutation.mutate()}
+                        disabled={!canManagePm || !!data?.completedAt || completeMutation.isPending}
+                        className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {completeMutation.isPending ? 'Completing...' : data?.completedAt ? 'Completed' : 'Complete PM'}
+                    </button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
 function PreventiveMaintenancePage() {
     const { rows, options } = Route.useLoaderData()
     const navigate = useNavigate({ from: '/pm' })
@@ -338,6 +711,7 @@ function PreventiveMaintenancePage() {
     const [newPmError, setNewPmError] = useState<string | null>(null)
     const [editPmError, setEditPmError] = useState<string | null>(null)
     const [showReopenDialog, setShowReopenDialog] = useState(false)
+    const [showExecutionDialog, setShowExecutionDialog] = useState(false)
     const [newAssetId, setNewAssetId] = useState<number | ''>('')
     const [newSystemId, setNewSystemId] = useState<number | ''>('')
     const [newIntervalMonths, setNewIntervalMonths] = useState<number | ''>('')
@@ -372,27 +746,35 @@ function PreventiveMaintenancePage() {
         initialState: { pagination: { pageSize: 20 } },
         onGlobalFilterChange: setGlobalFilter,
         onColumnFiltersChange: (updater) => {
-            setColumnFilters(updater)
-            const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
-            const newCompletedAt = newFilters.find((f: any) => f.id === 'completedAt')?.value as
-                | 'pending'
-                | 'completed'
-                | 'all'
-                | undefined
-            const newSiteName = newFilters.find((f: any) => f.id === 'siteName')?.value as
-                | string
-                | undefined
-            const newSystemName = newFilters.find((f: any) => f.id === 'systemName')?.value as
-                | string
-                | undefined
+            setColumnFilters((prev) => {
+                const next = typeof updater === 'function' ? updater(prev) : updater
 
-            navigate({
-                search: (prev: PmSearchParams) => ({
-                    ...prev,
-                    completedAt: newCompletedAt,
-                    siteName: newSiteName,
-                    systemName: newSystemName,
-                }),
+                const rawCompletedAt = next.find((f: any) => f.id === 'completedAt')?.value as
+                    | 'pending'
+                    | 'completed'
+                    | 'all'
+                    | undefined
+                const rawSiteName = next.find((f: any) => f.id === 'siteName')?.value as
+                    | string
+                    | undefined
+                const rawSystemName = next.find((f: any) => f.id === 'systemName')?.value as
+                    | string
+                    | undefined
+
+                const newCompletedAt = rawCompletedAt && rawCompletedAt !== 'all' ? rawCompletedAt : undefined
+                const newSiteName = rawSiteName?.trim() ? rawSiteName : undefined
+                const newSystemName = rawSystemName?.trim() ? rawSystemName : undefined
+
+                navigate({
+                    search: (searchPrev: PmSearchParams) => ({
+                        ...searchPrev,
+                        completedAt: newCompletedAt,
+                        siteName: newSiteName,
+                        systemName: newSystemName,
+                    }),
+                })
+
+                return next
             })
         },
         globalFilterFn: (row, _columnId, filterValue) => {
@@ -631,6 +1013,15 @@ function PreventiveMaintenancePage() {
                         New
                     </button>
                     <button
+                        id="btn-execute-pm"
+                        disabled={!hasSelection || !canManagePm}
+                        onClick={() => setShowExecutionDialog(true)}
+                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                    >
+                        <CheckCircle2 size={16} />
+                        Execute
+                    </button>
+                    <button
                         id="btn-edit-pm"
                         disabled={!hasSelection || !canManagePm}
                         onClick={handleEdit}
@@ -666,6 +1057,18 @@ function PreventiveMaintenancePage() {
 
     return (
         <>
+            <PmExecutionDialog
+                pmId={selectedPmId}
+                open={showExecutionDialog}
+                onOpenChange={setShowExecutionDialog}
+                engineers={options.engineers}
+                currentUserName={user?.name ?? ''}
+                canManagePm={canManagePm}
+                onSaved={async () => {
+                    await router.invalidate()
+                }}
+            />
+
             <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>

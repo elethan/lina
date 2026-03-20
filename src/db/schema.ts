@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // --- A. HELPER COLUMNS (Sync & Soft Delete) ---
@@ -165,7 +165,16 @@ export const assetPmResults = sqliteTable('asset_pm_results', {
   findings: text('findings'),
   engineer: text('engineer'),
   ...commonCols,
-});
+}, (t) => ({
+  pmTaskUnique: uniqueIndex('asset_pm_results_pm_task_unique').on(t.pmInstanceId, t.taskId),
+}));
+
+export const pmEngineers = sqliteTable('pm_engineers', {
+  pmInstanceId: integer('pm_instance_id').references(() => assetPm.id),
+  engineerId: integer('engineer_id').references(() => engineers.id),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.pmInstanceId, t.engineerId] }),
+}));
 
 // --- G. CORRECTIVE MAINTENANCE ---
 export const userRequests = sqliteTable('user_requests', {

@@ -8,8 +8,17 @@ async function getPmDbDeps() {
     ])
 
     const { db } = dbMod
-    const { assetPm, assets, sites, systems, engineers } = schemaMod
-    const { eq, and, desc, isNull, sql } = ormMod
+    const {
+        assetPm,
+        assets,
+        sites,
+        systems,
+        engineers,
+        pmTasks,
+        assetPmResults,
+        pmEngineers,
+    } = schemaMod
+    const { eq, and, desc, isNull, sql, lte, inArray } = ormMod
 
     return {
         db,
@@ -18,11 +27,16 @@ async function getPmDbDeps() {
         sites,
         systems,
         engineers,
+        pmTasks,
+        assetPmResults,
+        pmEngineers,
         eq,
         and,
         desc,
         isNull,
         sql,
+        lte,
+        inArray,
     }
 }
 
@@ -55,6 +69,30 @@ export type PmFormOptions = {
     assets: Array<{ id: number; label: string }>
     systems: Array<{ id: number; label: string }>
     engineers: Array<{ id: number; label: string }>
+}
+
+export type PmExecutionTaskRow = {
+    taskId: number
+    docSection: string | null
+    instruction: string
+    category: string | null
+    intervalMonths: number
+    resultId: number | null
+    status: 'Pass' | 'Fail' | 'N/A' | null
+    findings: string | null
+    engineer: string | null
+}
+
+export type PmExecutionData = {
+    pmId: number
+    serialNumber: string | null
+    siteName: string | null
+    systemName: string | null
+    intervalMonths: number
+    startAt: string
+    completedAt: string | null
+    assignedEngineerIds: number[]
+    tasks: PmExecutionTaskRow[]
 }
 
 export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
@@ -278,6 +316,246 @@ export const fetchPmFormOptions = authServerFn({ method: 'GET' }).handler(
         }
     },
 )
+
+export const fetchPmExecutionData = authServerFn({ method: 'GET' })
+    .inputValidator((data: { pmId: number }) => {
+        if (!data.pmId) {
+            throw new Error('PM record is required')
+        }
+        return data
+    })
+    .handler(async ({ data }): Promise<PmExecutionData> => {
+        const {
+            db,
+            assetPm,
+            assets,
+            sites,
+            systems,
+            engineers,
+            pmTasks,
+            assetPmResults,
+            pmEngineers,
+            eq,
+            and,
+            isNull,
+            lte,
+        } = await getPmDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('pmInstances', 'read')
+
+        const [pmRow] = await db
+            .select({
+                pmId: assetPm.id,
+                systemId: assetPm.systemId,
+                intervalMonths: assetPm.intervalMonths,
+                startAt: assetPm.startAt,
+                completedAt: assetPm.completedAt,
+                serialNumber: assets.serialNumber,
+                siteName: sites.name,
+                systemName: systems.name,
+            })
+            .from(assetPm)
+            .leftJoin(assets, eq(assetPm.assetId, assets.id))
+            .leftJoin(sites, eq(assets.siteId, sites.id))
+            .leftJoin(systems, eq(assetPm.systemId, systems.id))
+            .where(and(eq(assetPm.id, data.pmId), isNull(assetPm.deletedAt)))
+
+        if (!pmRow || !pmRow.systemId || !pmRow.intervalMonths || !pmRow.startAt) {
+            throw new Error('PM record not found or incomplete')
+        }
+
+        const taskRows = await db
+            .select({
+                taskId: pmTasks.id,
+                docSection: pmTasks.docSection,
+                instruction: pmTasks.instruction,
+                category: pmTasks.category,
+                intervalMonths: pmTasks.intervalMonths,
+            })
+            .from(pmTasks)
+            .where(
+                and(
+                    eq(pmTasks.systemId, pmRow.systemId),
+                    lte(pmTasks.intervalMonths, pmRow.intervalMonths),
+                    isNull(pmTasks.deletedAt),
+                ),
+            )
+
+        const taskIds = taskRows.map((task) => task.taskId)
+        const resultRows = taskIds.length === 0
+            ? []
+            : await db
+                .select({
+                    resultId: assetPmResults.id,
+                    taskId: assetPmResults.taskId,
+                    status: assetPmResults.status,
+                    findings: assetPmResults.findings,
+                    engineer: assetPmResults.engineer,
+                })
+                .from(assetPmResults)
+                .where(
+                    and(
+                        eq(assetPmResults.pmInstanceId, data.pmId),
+                        isNull(assetPmResults.deletedAt),
+                    ),
+                )
+
+        const resultByTaskId = new Map(
+            resultRows
+                .filter((row) => row.taskId !== null)
+                .map((row) => [row.taskId as number, row]),
+        )
+
+        const assignedRows = await db
+            .select({ engineerId: pmEngineers.engineerId })
+            .from(pmEngineers)
+            .where(eq(pmEngineers.pmInstanceId, data.pmId))
+
+        const tasks: PmExecutionTaskRow[] = taskRows.map((task) => {
+            const result = resultByTaskId.get(task.taskId)
+            const status = result?.status === 'Pass' || result?.status === 'Fail' || result?.status === 'N/A'
+                ? result.status
+                : null
+
+            return {
+                taskId: task.taskId,
+                docSection: task.docSection ?? null,
+                instruction: task.instruction,
+                category: task.category ?? null,
+                intervalMonths: task.intervalMonths,
+                resultId: result?.resultId ?? null,
+                status,
+                findings: result?.findings ?? null,
+                engineer: result?.engineer ?? null,
+            }
+        })
+
+        return {
+            pmId: pmRow.pmId,
+            serialNumber: pmRow.serialNumber ?? null,
+            siteName: pmRow.siteName ?? null,
+            systemName: pmRow.systemName ?? null,
+            intervalMonths: pmRow.intervalMonths,
+            startAt: pmRow.startAt,
+            completedAt: pmRow.completedAt ?? null,
+            assignedEngineerIds: assignedRows
+                .map((row) => row.engineerId)
+                .filter((id): id is number => id !== null),
+            tasks,
+        }
+    })
+
+export const savePmTaskResult = authServerFn({ method: 'POST' })
+    .inputValidator((data: {
+        pmInstanceId: number
+        taskId: number
+        status: 'Pass' | 'Fail' | 'N/A'
+        findings?: string | null
+        engineer?: string | null
+    }) => {
+        if (!data.pmInstanceId || !data.taskId) {
+            throw new Error('PM record and task are required')
+        }
+        if (!['Pass', 'Fail', 'N/A'].includes(data.status)) {
+            throw new Error('Status must be Pass, Fail, or N/A')
+        }
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { db, assetPmResults, eq, and, isNull } = await getPmDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('pmInstances', 'update')
+
+        const [existing] = await db
+            .select({ id: assetPmResults.id })
+            .from(assetPmResults)
+            .where(
+                and(
+                    eq(assetPmResults.pmInstanceId, data.pmInstanceId),
+                    eq(assetPmResults.taskId, data.taskId),
+                    isNull(assetPmResults.deletedAt),
+                ),
+            )
+            .limit(1)
+
+        if (existing) {
+            await db
+                .update(assetPmResults)
+                .set({
+                    status: data.status,
+                    findings: data.findings ?? null,
+                    engineer: data.engineer ?? null,
+                })
+                .where(eq(assetPmResults.id, existing.id))
+            return { id: existing.id }
+        }
+
+        const [created] = await db
+            .insert(assetPmResults)
+            .values({
+                pmInstanceId: data.pmInstanceId,
+                taskId: data.taskId,
+                status: data.status,
+                findings: data.findings ?? null,
+                engineer: data.engineer ?? null,
+            })
+            .returning({ id: assetPmResults.id })
+
+        return { id: created.id }
+    })
+
+export const updatePmEngineers = authServerFn({ method: 'POST' })
+    .inputValidator((data: { pmId: number; engineerIds: number[] }) => {
+        if (!data.pmId) {
+            throw new Error('PM record is required')
+        }
+        return {
+            pmId: data.pmId,
+            engineerIds: Array.from(new Set(data.engineerIds.filter((id) => Number.isInteger(id) && id > 0))),
+        }
+    })
+    .handler(async ({ data }) => {
+        const { db, pmEngineers, eq } = await getPmDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('pmInstances', 'update')
+
+        await db.delete(pmEngineers).where(eq(pmEngineers.pmInstanceId, data.pmId))
+
+        if (data.engineerIds.length > 0) {
+            await db.insert(pmEngineers).values(
+                data.engineerIds.map((engineerId) => ({
+                    pmInstanceId: data.pmId,
+                    engineerId,
+                })),
+            )
+        }
+
+        return { ok: true }
+    })
+
+export const completePmInstance = authServerFn({ method: 'POST' })
+    .inputValidator((data: { pmId: number }) => {
+        if (!data.pmId) {
+            throw new Error('PM record is required')
+        }
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { db, assetPm, eq } = await getPmDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        await requirePermission('pmInstances', 'update')
+
+        await db
+            .update(assetPm)
+            .set({ completedAt: new Date().toISOString() })
+            .where(eq(assetPm.id, data.pmId))
+
+        return { completed: true }
+    })
 
 export const savePm = authServerFn({ method: 'POST' })
     .inputValidator((data: {

@@ -9,7 +9,7 @@ import { resolve } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { auth } from '../lib/auth'
 import { db } from './client'
-import { assetPm, assetSystems, assets, pmTasks, sites, systems, user, userRequests, workOrders } from './schema'
+import { assetPm, assetSystems, assets, engineers, pmTasks, sites, systems, user, userRequests, workOrders } from './schema'
 
 type CsvTaskRow = {
   sectionId: string
@@ -188,9 +188,46 @@ async function seedAuthUsers() {
   console.log(`Auth users ensured: ${seedUsers.length}`)
 }
 
+async function seedEngineers() {
+  const [adminUser] = await db
+    .select({ id: user.id, email: user.email })
+    .from(user)
+    .where(eq(user.email, 'admin@lina.com'))
+    .limit(1)
+
+  const [scientistUser] = await db
+    .select({ id: user.id, email: user.email })
+    .from(user)
+    .where(eq(user.email, 'scientist@lina.com'))
+    .limit(1)
+
+  const [therapistUser] = await db
+    .select({ id: user.id, email: user.email })
+    .from(user)
+    .where(eq(user.email, 'therapist@lina.com'))
+    .limit(1)
+
+  const targetEngineers = [
+    { firstName: 'Lina', lastName: 'Admin', userId: adminUser?.id ?? null },
+    { firstName: 'Lina', lastName: 'Scientist', userId: scientistUser?.id ?? null },
+    { firstName: 'Lina', lastName: 'Therapist', userId: therapistUser?.id ?? null },
+  ]
+
+  const existingRows = await db.select().from(engineers)
+  const existingKeys = new Set(existingRows.map((row) => `${row.firstName}|${row.lastName}`))
+  const inserts = targetEngineers.filter((eng) => !existingKeys.has(`${eng.firstName}|${eng.lastName}`))
+
+  if (inserts.length > 0) {
+    await db.insert(engineers).values(inserts)
+  }
+
+  console.log(`Engineers ensured: ${targetEngineers.length}`)
+}
+
 async function seedFromCsv() {
   console.log('Starting CSV seed...')
   await seedAuthUsers()
+  await seedEngineers()
 
   const csvRows = loadCsvRows()
   console.log(`CSV rows loaded: ${csvRows.length}`)
