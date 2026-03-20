@@ -6,8 +6,10 @@
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { eq } from 'drizzle-orm'
+import { auth } from '../lib/auth'
 import { db } from './client'
-import { assetSystems, assets, pmTasks, sites, systems } from './schema'
+import { assetPm, assetSystems, assets, pmTasks, sites, systems, user, userRequests, workOrders } from './schema'
 
 type CsvTaskRow = {
   sectionId: string
@@ -17,6 +19,8 @@ type CsvTaskRow = {
   intervalMonthsRaw: string
   rowNumber: number
 }
+
+type SeedRole = 'admin' | 'user' | 'scientist'
 
 const REQUIRED_HEADERS = [
   'Section ID',
@@ -126,8 +130,67 @@ function assertLinacSerialPattern(seedAssets: Array<{ serialNumber: string }>) {
   }
 }
 
+function pickDefaultSystemId(systemRows: Array<{ id: number; name: string }>): number | undefined {
+  const linac = systemRows.find((row) => normalizeKey(row.name) === 'linac')
+  return linac?.id ?? systemRows[0]?.id
+}
+
+async function seedAuthUsers() {
+  const seedUsers: Array<{
+    email: string
+    password: string
+    name: string
+    role: SeedRole
+  }> = [
+    {
+      email: 'admin@lina.com',
+      password: 'linaAdmin',
+      name: 'Lina Admin',
+      role: 'admin',
+    },
+    {
+      email: 'therapist@lina.com',
+      password: 'therapist',
+      name: 'Lina Therapist',
+      role: 'user',
+    },
+    {
+      email: 'scientist@lina.com',
+      password: 'scientist',
+      name: 'Lina Scientist',
+      role: 'scientist',
+    },
+  ]
+
+  for (const seedUser of seedUsers) {
+    const existing = await db
+      .select()
+      .from(user)
+      .where(eq(user.email, seedUser.email))
+      .limit(1)
+
+    if (existing.length === 0) {
+      await auth.api.signUpEmail({
+        body: {
+          email: seedUser.email,
+          password: seedUser.password,
+          name: seedUser.name,
+        },
+      })
+    }
+
+    await db
+      .update(user)
+      .set({ role: seedUser.role })
+      .where(eq(user.email, seedUser.email))
+  }
+
+  console.log(`Auth users ensured: ${seedUsers.length}`)
+}
+
 async function seedFromCsv() {
   console.log('Starting CSV seed...')
+  await seedAuthUsers()
 
   const csvRows = loadCsvRows()
   console.log(`CSV rows loaded: ${csvRows.length}`)
@@ -145,7 +208,18 @@ async function seedFromCsv() {
   const allSiteRows = siteRows.length > 0 ? siteRows : await db.select().from(sites)
   console.log(`Sites available: ${allSiteRows.length}`)
 
-  const uniqueSystemNames = Array.from(new Set(csvRows.map((row) => row.system).filter((value) => value.length > 0)))
+  // Dedupe systems case/whitespace-insensitively so CSV inconsistencies do not create duplicate system rows.
+  const csvSystemNameByKey = new Map<string, string>()
+  for (const row of csvRows) {
+    if (!row.system) {
+      continue
+    }
+    const key = normalizeKey(row.system)
+    if (!csvSystemNameByKey.has(key)) {
+      csvSystemNameByKey.set(key, row.system)
+    }
+  }
+  const uniqueSystemNames = Array.from(csvSystemNameByKey.values())
 
   await db
     .insert(systems)
@@ -197,6 +271,72 @@ async function seedFromCsv() {
     await db.insert(assetSystems).values(assetSystemRows).onConflictDoNothing()
   }
   console.log(`Asset-system links attempted: ${assetSystemRows.length}`)
+
+  const requestPayloads = allAssets.flatMap((asset, assetIndex) => {
+    const defaultSystemId = pickDefaultSystemId(csvSystemRows)
+    return [
+      {
+        assetId: asset.id,
+        systemId: defaultSystemId,
+        reportedBy: 'RTT Duty Lead',
+        commentText: `Intermittent console warning observed on asset ${asset.serialNumber}.`,
+        status: 'Open',
+      },
+      {
+        assetId: asset.id,
+        systemId: defaultSystemId,
+        reportedBy: 'Clinical Physicist',
+        commentText: `Output trend drift check requested for asset ${asset.serialNumber}.`,
+        status: assetIndex % 2 === 0 ? 'Open' : 'Closed',
+      },
+      {
+        assetId: asset.id,
+        systemId: defaultSystemId,
+        reportedBy: 'Radiotherapy Supervisor',
+        commentText: `Routine pre-treatment readiness concern logged for ${asset.serialNumber}.`,
+        status: 'Open',
+      },
+    ]
+  })
+
+  await db.insert(userRequests).values(requestPayloads)
+  console.log(`Requests inserted: ${requestPayloads.length}`)
+
+  const workOrderPayloads = allAssets.flatMap((asset) => {
+    const defaultSystemId = pickDefaultSystemId(csvSystemRows)
+    return [
+      {
+        assetId: asset.id,
+        systemId: defaultSystemId,
+        description: `Investigate reported operational issue on ${asset.serialNumber}.`,
+        status: 'Open',
+      },
+      {
+        assetId: asset.id,
+        systemId: defaultSystemId,
+        description: `Perform corrective and verification checks on ${asset.serialNumber}.`,
+        status: 'Open',
+      },
+    ]
+  })
+
+  await db.insert(workOrders).values(workOrderPayloads)
+  console.log(`Work orders inserted: ${workOrderPayloads.length}`)
+
+  const pmIntervals = [6, 12, 24, 36]
+  const pmInstancePayloads = allAssets.flatMap((asset) =>
+    csvSystemRows.flatMap((systemRow) =>
+      pmIntervals.map((intervalMonths) => ({
+        assetId: asset.id,
+        systemId: systemRow.id,
+        intervalMonths,
+        startAt: new Date().toISOString(),
+      })),
+    ),
+  )
+
+  await db.insert(assetPm).values(pmInstancePayloads)
+  console.log(`Asset PM instances inserted: ${pmInstancePayloads.length}`)
 
   const errors: string[] = []
   const dedupe = new Set<string>()

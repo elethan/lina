@@ -2,6 +2,45 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-20
+
+- **PM Tasks Schema Update (`src/db/schema.ts`)**
+  - Added nullable `category` column to `pm_tasks` to support the CSV source taxonomy (`RELIABILITY`, `SAFETY`, `PERFORMANCE`, etc.).
+
+- **CSV-Driven Seed Pipeline (`src/db/seed-pm-csv.ts`, `package.json`, `pm-tasks.csv`)**
+  - Added new seed entrypoint: `npm run seed:pm-csv`.
+  - Implemented PM-task import from project-root `pm-tasks.csv` with required header validation:
+    - `Section ID`
+    - `Task Title`
+    - `System`
+    - `Category`
+    - `Check Interval (months)`
+  - CSV mapping:
+    - `Section ID` -> `pm_tasks.doc_section`
+    - `Task Title` -> `pm_tasks.instruction`
+    - `System` -> `systems.system_name` (derived from CSV as source of truth)
+    - `Category` -> `pm_tasks.category`
+    - `Check Interval (months)` -> `pm_tasks.interval_months`
+  - Added CSV parser + normalization + row-level validation + in-file dedupe before insert.
+
+- **Seed Taxonomy Reset + Asset Rules (`src/db/seed-pm-csv.ts`)**
+  - Seed now creates/uses sites: `Oxford`, `Chelmsford`, `Bristol`.
+  - Systems are seeded from unique CSV system values (current demo systems are not preserved).
+  - Replaced demo asset seed list with cleaned Elekta assets and enforced constraints:
+    - Asset names must not include `genesiscare`.
+    - Elekta linac serial numbers must match `15xxxx` (six digits).
+  - Seed links all seeded assets to CSV-derived systems through `asset_systems`.
+
+- **Auth User Bootstrap in CSV Seed (`src/db/seed-pm-csv.ts`)**
+  - Added seeded credential users in the same seed flow:
+    - `admin@lina.com` / `linaAdmin` -> role `admin`
+    - `therapist@lina.com` / `therapist` -> role `user`
+    - `scientist@lina.com` / `scientist` -> role `scientist`
+  - Role assignment is enforced after user creation to ensure requested roles are set explicitly.
+
+- **Legacy Seed Retirement (`src/db/seed-dev.ts`)**
+  - Retired old seed script and replaced it with a fail-fast shim that exits with guidance to use `npm run seed:pm-csv`.
+
 ## 2026-03-19 (session 2)
 
 - **Auto Work Order Creation from Downtime Requests (`src/data/requests.api.ts`, `src/db/schema.ts`, `src/routes/_app/index.tsx`)**
