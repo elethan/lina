@@ -69,7 +69,7 @@ export const auth = betterAuth({
         },
     },
 
-    // 3. Email + Password (enabled for dev/testing)
+    // 3. Email + Password sign-in is enabled; account creation is gated in databaseHooks.user.create
     emailAndPassword: {
         enabled: true,
     },
@@ -121,14 +121,11 @@ export const auth = betterAuth({
                         assignedRole = "user";
                     }
 
-                    // In production (bootstrap emails configured): deny unprovisioned users.
-                    // In dev (no bootstrap emails set): fall back to the user's default role.
+                    // Provisioning policy:
+                    // - Only emails in bootstrap allowlists can create accounts.
+                    // - If allowlists are empty, no new account creation is allowed.
                     if (!assignedRole) {
-                        if (bootstrapAdminEmails.size === 0 && bootstrapUserEmails.size === 0) {
-                            assignedRole = (user.role as AppRole) ?? "user";
-                        } else {
-                            throw new Error("User is not provisioned for Lina access");
-                        }
+                        throw new Error("User is not provisioned for Lina access");
                     }
 
                     return {

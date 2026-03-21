@@ -35,14 +35,14 @@ if (msSet.length > 0 && msSet.length < MS_VARS.length) {
     )
 }
 
-// 3. Production guardrails
+// 3. Provisioning visibility
 if (process.env.NODE_ENV === 'production') {
     const hasBootstrap =
         !!process.env.BOOTSTRAP_ADMIN_EMAILS || !!process.env.BOOTSTRAP_USER_EMAILS
     if (!hasBootstrap) {
         process.stderr.write(
             '[STARTUP_WARN] Neither BOOTSTRAP_ADMIN_EMAILS nor BOOTSTRAP_USER_EMAILS is set. ' +
-            'In production all new accounts will use the default role — set these lists to restrict sign-up.\n',
+            'New account creation is disabled until at least one bootstrap allowlist is configured.\n',
         )
     }
 }

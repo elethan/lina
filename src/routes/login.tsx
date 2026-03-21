@@ -12,8 +12,6 @@ function LoginPage() {
     const router = useRouter()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
-    const [name, setName] = useState('')
-    const [isSignUp, setIsSignUp] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
 
@@ -23,27 +21,14 @@ function LoginPage() {
         setLoading(true)
 
         try {
-            if (isSignUp) {
-                const { error } = await authClient.signUp.email({
-                    email,
-                    password,
-                    name,
-                })
-                if (error) {
-                    setError(error.message ?? 'Sign up failed')
-                    setLoading(false)
-                    return
-                }
-            } else {
-                const { error } = await authClient.signIn.email({
-                    email,
-                    password,
-                })
-                if (error) {
-                    setError(error.message ?? 'Sign in failed')
-                    setLoading(false)
-                    return
-                }
+            const { error } = await authClient.signIn.email({
+                email,
+                password,
+            })
+            if (error) {
+                setError(error.message ?? 'Sign in failed')
+                setLoading(false)
+                return
             }
             router.navigate({ to: '/' })
         } catch (err) {
@@ -100,24 +85,8 @@ function LoginPage() {
                         </>
                     )}
 
-                    {/* Email/Password Form */}
+                    {/* Email/Password Sign-In */}
                     <form onSubmit={handleEmailAuth} className="space-y-4">
-                        {isSignUp && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                                    Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-colors"
-                                    placeholder="Your name"
-                                    required
-                                />
-                            </div>
-                        )}
-
                         <div>
                             <label className="block text-sm font-medium text-slate-300 mb-1.5">
                                 Email
@@ -157,27 +126,9 @@ function LoginPage() {
                             disabled={loading}
                             className="w-full px-4 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/20"
                         >
-                            {loading
-                                ? 'Please wait...'
-                                : isSignUp
-                                    ? 'Create Account'
-                                    : 'Sign In'}
+                            {loading ? 'Please wait...' : 'Sign In'}
                         </button>
                     </form>
-
-                    {/* Toggle Sign Up / Sign In */}
-                    <p className="text-center text-sm text-slate-400">
-                        {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
-                        <button
-                            onClick={() => {
-                                setIsSignUp(!isSignUp)
-                                setError('')
-                            }}
-                            className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
-                        >
-                            {isSignUp ? 'Sign in' : 'Sign up'}
-                        </button>
-                    </p>
                 </div>
 
                 {/* Footer hint */}
