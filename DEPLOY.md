@@ -43,6 +43,8 @@ When deploying a new version to the VM, you will transfer:
 
 Set these on the VM/container runtime:
 
+- `BETTER_AUTH_SECRET` **(required)** — session signing key (generate with `openssl rand -hex 32`)
+- `DB_PATH` — path to SQLite file (defaults to `lina-local.db`; Docker uses `/app/shared-lina-db-vol/lina_prod.db`)
 - `MICROSOFT_CLIENT_ID`
 - `MICROSOFT_CLIENT_SECRET`
 - `MICROSOFT_TENANT_ID`
@@ -99,9 +101,9 @@ If company policy requires data to be encrypted at rest, IT can enable Full Disk
 
 ---
 
-## 6. Alternative: Docker Deployment
+## 6. Docker Compose Deployment (Recommended)
 
-If the IT department prefers containerized workloads, Lina can be deployed as a Docker container. This simplifies the host VM requirements (only Docker is needed, not Node.js or PM2).
+If the IT department prefers containerized workloads, Lina should be deployed with Docker Compose. This keeps deployment configuration in a single versioned file and avoids pasting secrets directly into shell commands.
 
 ### The Docker Image
 
@@ -109,60 +111,100 @@ A `Dockerfile` is included in the root of the repository. It:
 
 1. Installs build tools for `better-sqlite3`.
 2. Packages the built TanStack Start application.
-3. Automatically maps application ports and environment variables.
+3. Sets production defaults (`NODE_ENV`, `PORT`, and `DB_PATH`).
 4. Switches to a secure, unprivileged `node` user to run the server.
 
 ### Critical: Persistent Named Volumes for SQLite
 
-Docker containers instances are **ephemeral**; this means if the container restarts, updates, or crashes, anything written inside the container is permanently lost.
+Docker containers are **ephemeral**. If a container is replaced during updates, files inside the container are lost.
 
-To prevent the `.db` file from being wiped, we use a **Managed Docker Volume**. Unlike a raw bind-mount to a host directory, a named volume is fully managed by the Docker engine, ensuring correct file permissions and making it easier to back up.
+To prevent the `.db` file from being wiped, Lina uses a **Managed Docker Volume** (`docker-lina-vol`). This preserves data across container restarts and recreations.
 
-### Two-Layer Security in Docker
+### Deployment Steps (Docker Compose)
 
-Using Docker introduces a two-layer security model for protecting the SQLite database:
+**Step 1. Build the Docker Image**
 
-1. **Inside the Container (`node` user):**
-   The application runs inside the isolated container as an unprivileged, built-in `node` user (typically UID 1000). If the Node app is somehow compromised, the attacker is trapped inside the container as a limited user without root privileges to the underlying VM.
+```bash
+docker build -t lina-app:latest .
+```
 
-2. **On the Host VM (Docker Engine):**
-   Because we use a managed Docker Volume (`docker-lina-vol`), the physical location of the data is tucked away inside Docker's internal data directory (usually `/var/lib/docker/volumes`). General IT staff traversing the host VM are less likely to stumble upon and accidentally delete or modify the active database file compared to a raw `/var/lib/` mount. Standard OS protections of the Docker daemon directory prevent unauthorized access.
+**Step 2. Generate the Session Secret**
 
-### Deployment Steps (Docker)
+```bash
+openssl rand -hex 32
+```
 
-**Step 1. Create the Named Volume**
-Execute this once on the host VM before running the container:
+Save this output securely. It is required by `BETTER_AUTH_SECRET` in production.
+
+**Step 3. Create the Runtime Environment File on the Host VM**
+
+Create a host-only environment file (do not commit it to git), for example `/etc/lina/lina.env`:
+
+```ini
+BETTER_AUTH_SECRET=<paste-output-from-step-2>
+VITE_APP_URL=https://lina.company.com
+
+# Optional Microsoft Entra SSO (set all three or none)
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_TENANT_ID=
+VITE_ENABLE_MICROSOFT_SSO=true
+
+# Optional Group Mapping
+MICROSOFT_GROUP_ADMIN_IDS=
+MICROSOFT_GROUP_ENGINEER_IDS=
+MICROSOFT_GROUP_SCIENTIST_IDS=
+MICROSOFT_GROUP_USER_IDS=
+
+# Optional Bootstrap Provisioning
+BOOTSTRAP_ADMIN_EMAILS=
+BOOTSTRAP_USER_EMAILS=
+```
+
+**Step 4. Ensure the Database Volume Exists**
 
 ```bash
 docker volume create docker-lina-vol
 ```
 
-**Step 2. Run the Container**
-Start the application, attaching the volume to the container's designated data folder (`/app/shared-lina-db-vol`):
+**Step 5. Copy the Seeded Database into the Volume (first deployment only)**
 
 ```bash
-docker run -d \
-  -p 3000:3000 \
-  -e DB_PATH=/app/shared-lina-db-vol/lina_prod.db \
-  -e NODE_ENV=production \
-  -v docker-lina-vol:/app/shared-lina-db-vol \
-  --name lina-container \
-  --restart always \
-  lina-app:latest
+docker run --rm \
+  -v docker-lina-vol:/vol \
+  -v "$(pwd):/src" \
+  alpine cp /src/lina-local.db /vol/lina_prod.db
 ```
 
-- **`-v docker-lina-vol:/app/shared-lina-db-vol`**: This is the most crucial part. It tells Docker to mount the managed named volume into the container where the DB lives.
-- **`-p 3000:3000`**: Exposes the Node app to the VM. The reverse proxy (Nginx) still sits in front of this, listening on `80/443` and forwarding to `3000`.
-- **`--restart always`**: Tells Docker to act like PM2, automatically starting the container if the VM reboots.
-
-### Special Note on Database Backups with Named Volumes
-
-Because the data lives inside a managed Docker Volume rather than a standard folder, your automated cron backups will use a temporary Docker container to perform the backup:
+**Step 6. Start the Application with Compose**
 
 ```bash
-# Example Cron task: Mount the data volume and a host backup folder, create a tarball, then destroy the temp container
+docker compose up -d
+```
+
+Useful commands:
+
+```bash
+docker compose logs -f
+docker compose restart
+docker compose down
+```
+
+### Updating to a New Version
+
+```bash
+docker build -t lina-app:latest .
+docker compose up -d --force-recreate
+```
+
+### Database Backups with Named Volumes
+
+Because the database lives inside a managed Docker volume, backup jobs should mount that volume into a temporary container:
+
+```bash
+# Example Cron task: archive the named volume contents daily
 docker run --rm \
   -v docker-lina-vol:/db \
   -v /var/backups/lina:/backup \
-  ubuntu tar cvf /backup/db-backup-$(date +%Y%m%d).tar /db
+  alpine tar czf /backup/db-backup-$(date +%Y%m%d).tar.gz /db
 ```

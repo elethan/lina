@@ -1,0 +1,15 @@
+services:
+  lina:
+    image: lina-app:latest
+    container_name: lina-container
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - docker-lina-vol:/app/shared-lina-db-vol
+    env_file:
+      - /etc/lina/lina.env
+
+volumes:
+  docker-lina-vol:
+    name: docker-lina-vol

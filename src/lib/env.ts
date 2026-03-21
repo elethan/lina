@@ -7,14 +7,20 @@ function fail(message: string): never {
     process.exit(1)
 }
 
-// 1. BETTER_AUTH_SECRET must always be present; without it sessions cannot be signed
-//    securely and will be regenerated on every restart.
+// 1. BETTER_AUTH_SECRET must be present in production; without it sessions cannot be
+//    signed securely.  In dev Better Auth auto-generates one, so we only warn.
 const secret = process.env.BETTER_AUTH_SECRET
 if (!secret || secret.length < 32) {
-    fail(
-        'BETTER_AUTH_SECRET is missing or too short (minimum 32 chars). ' +
-        'Generate one with: openssl rand -hex 32',
-    )
+    if (process.env.NODE_ENV === 'production') {
+        fail(
+            'BETTER_AUTH_SECRET is missing or too short (minimum 32 chars). ' +
+            'Generate one with: openssl rand -hex 32',
+        )
+    } else {
+        process.stderr.write(
+            '[STARTUP_WARN] BETTER_AUTH_SECRET is not set — using auto-generated secret (sessions reset on restart).\n',
+        )
+    }
 }
 
 // 2. Microsoft SSO: all-or-nothing.
