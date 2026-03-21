@@ -336,7 +336,7 @@ VITE_ENABLE_MICROSOFT_SSO=true
 
 **Dev default (no `.env` file needed)**
 
-The app starts, and the hardwired admin (`super@lina.com` / `genesiscare`) can log in with email/password.
+The app starts with local email/password auth enabled.
 
 ---
 
@@ -374,15 +374,6 @@ Custom shades available as Tailwind classes:
 - `text-primary-dark` → `#16A668`
 - `text-primary-darker` → `#008169`
 - `bg-primary-50` through `bg-primary-900`
-
----
-
-## Dev Credentials
-
-| User | Email | Password | Role |
-|------|-------|----------|------|
-| Super Admin | `super@lina.com` | `genesiscare` | `admin` |
-| Test Radiographer | `radiographer@lina.com` | `linaradio1` | `user` |
 
 ---
 

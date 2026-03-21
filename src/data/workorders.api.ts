@@ -65,6 +65,8 @@ export type WorkOrderRow = {
 // ── Fetch all work orders ─────────────────────────────────────
 export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
     async (): Promise<WorkOrderRow[]> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const {
             db,
             workOrders,
@@ -165,7 +167,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'create')
+        const user = await requirePermission('workOrders', 'create')
         const { requestIds } = data
 
         // Fetch the selected requests to get asset/system info
@@ -228,6 +230,8 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             })
         }
 
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_CREATED', { woId: wo.id, userId: user.id, requestIds })
         return { woId: wo.id }
     })
 
@@ -251,7 +255,7 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'delete')
+        const user = await requirePermission('workOrders', 'delete')
         const { woIds, requestAction } = data
 
         // 1. Find all associated requests
@@ -282,7 +286,8 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
 
         // 4. Finally, delete the work orders
         await db.delete(workOrders).where(inArray(workOrders.id, woIds))
-
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_DELETED', { woIds, userId: user.id, requestAction })
         return { success: true }
     })
 
@@ -294,6 +299,8 @@ export const fetchWorkOrderNotes = authServerFn({ method: 'GET' })
         return data
     })
     .handler(async ({ data }) => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db, workOrderNotes, engineers, eq, sql, desc } = await getWorkOrderDbDeps()
 
         return await db
@@ -364,7 +371,7 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         // Check for open downtime events (endAt is null) — block close if any exist
         const { downtimeEvents, and, isNull } = await getWorkOrderDbDeps()
         const openDowntime = await db
@@ -398,6 +405,8 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
                 .where(inArray(userRequests.id, requestIds))
         }
 
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_CLOSED', { woId: data.woId, userId: user.id })
         return { success: true, endAt: new Date().toISOString() }
     })
 
@@ -436,6 +445,8 @@ export const fetchDowntimeByWoId = authServerFn({ method: 'GET' })
         return data
     })
     .handler(async ({ data }): Promise<DowntimeEventRow[]> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db, downtimeEvents, eq, sql } = await getWorkOrderDbDeps()
 
         return await db

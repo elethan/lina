@@ -48,6 +48,8 @@ export type RequestRow = {
 
 export const fetchRequests = authServerFn({ method: 'GET' }).handler(
     async (): Promise<RequestRow[]> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db, userRequests, assets, sites, systems, engineers, eq, sql, desc } = await getRequestDbDeps()
 
         const rows = await db
@@ -106,11 +108,12 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         const { db, userRequests, inArray } = await getRequestDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('requests', 'delete')
+        const user = await requirePermission('requests', 'delete')
         const { requestIds } = data
 
         await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
-
+        const { logger } = await import('../lib/logger')
+        logger.info('REQUEST_DELETED', { requestIds, userId: user.id, count: requestIds.length })
         return { success: true }
     })
 
@@ -132,7 +135,7 @@ export const createRequest = authServerFn({ method: 'POST' })
         } = await getRequestDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('requests', 'create')
+        const user = await requirePermission('requests', 'create')
 
         // Insert the request
         const [request] = await db.insert(userRequests).values({
@@ -143,6 +146,9 @@ export const createRequest = authServerFn({ method: 'POST' })
             downtimeStartAt: data.downtimeStartAt,
             status: 'Open',
         }).returning({ id: userRequests.id })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('REQUEST_CREATED', { requestId: request.id, userId: user.id, assetId: data.assetId ?? null })
 
         // Auto-WO workflow: only when downtime + asset + system are all present
         if (data.downtimeStartAt && data.assetId && data.systemId) {

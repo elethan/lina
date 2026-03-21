@@ -98,6 +98,8 @@ export type PmExecutionData = {
 
 export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
     async (): Promise<PmRow[]> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const {
             db,
             assetPm,
@@ -271,6 +273,8 @@ export const fetchPmById = authServerFn({ method: 'GET' })
         return data
     })
     .handler(async ({ data }): Promise<PmFormData> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db, assetPm, eq, and, isNull, sql } = await getPmDbDeps()
 
         const [row] = await db
@@ -303,6 +307,8 @@ export const fetchPmById = authServerFn({ method: 'GET' })
 
 export const fetchPmFormOptions = authServerFn({ method: 'GET' }).handler(
     async (): Promise<PmFormOptions> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db } = await import('../db/client')
         const { assets, systems, engineers } = await import('../db/schema')
 

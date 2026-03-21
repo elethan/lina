@@ -1,4 +1,5 @@
 // src/lib/auth.ts
+import './env'
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db/client";
@@ -72,6 +73,18 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true,
     },
+
+    // Session expiry and cookie security (Check 7)
+    session: {
+        expiresIn: 60 * 60 * 8,  // 8 hours
+        updateAge: 60 * 60,       // extend token on activity after 1 hour
+    },
+    advanced: {
+        useSecureCookies: process.env.NODE_ENV === 'production',
+    },
+    ...(process.env.VITE_APP_URL
+        ? { trustedOrigins: [process.env.VITE_APP_URL] }
+        : {}),
 
     // 4. Microsoft Entra ID SSO — only enabled when all three env vars are present.
     //    Without them the app starts normally and falls back to email/password login.

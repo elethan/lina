@@ -21,6 +21,8 @@ export type EngineerOption = {
 
 export const fetchEngineers = authServerFn({ method: 'GET' }).handler(
     async (): Promise<EngineerOption[]> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db, engineers } = await getEngineerDbDeps()
 
         const rows = await db

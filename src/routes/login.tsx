@@ -10,9 +10,9 @@ const microsoftSsoEnabled = !!import.meta.env.VITE_ENABLE_MICROSOFT_SSO
 
 function LoginPage() {
     const router = useRouter()
-    const [email, setEmail] = useState('super@lina.com')
-    const [password, setPassword] = useState('genesiscare')
-    const [name, setName] = useState('Admin')
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [name, setName] = useState('')
     const [isSignUp, setIsSignUp] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)

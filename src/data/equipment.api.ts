@@ -15,6 +15,8 @@ async function getEquipmentDbDeps() {
 }
 
 export const fetchSites = authServerFn({ method: 'GET' }).handler(async () => {
+    const { requireSessionUser } = await import('../lib/auth-guards.server')
+    await requireSessionUser()
     const { db, sites, asc } = await getEquipmentDbDeps()
 
     const rows = await db
@@ -34,6 +36,8 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
         return data
     })
     .handler(async ({ data }) => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
         const { db, systems, assets, assetSystems, eq, inArray } = await getEquipmentDbDeps()
 
         const { siteId } = data

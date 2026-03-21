@@ -207,7 +207,7 @@
   - `auth.ts`: All env var reads (`MICROSOFT_GROUP_*`, `BOOTSTRAP_*`) are now lazy (read inside functions at call time). `socialProviders.microsoft` is conditionally spread — omitted entirely when the three MS client vars are absent so `better-auth` never initialises the provider.
   - `login.tsx`: The "Sign in with Microsoft" button and its `or` divider are gated on the `VITE_ENABLE_MICROSOFT_SSO` Vite env var. Without it the login page renders the email/password form only.
   - `databaseHooks.user.create.before`: When `BOOTSTRAP_ADMIN_EMAILS` / `BOOTSTRAP_USER_EMAILS` are not set (dev), falls back gracefully to the user's default role instead of throwing. When they are set (production), the strict deny behaviour is preserved.
-  - **Dev default**: no `.env` file required — the app starts cleanly and the hardwired admin (`super@lina.com` / `genesiscare`) can log in via email/password immediately.
+  - **Dev default**: no `.env` file required — the app starts cleanly with local email/password auth enabled.
   - **Production / SSO**: set `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, and `VITE_ENABLE_MICROSOFT_SSO=true` (see `.env.example`).
   - Added `.env.example` documenting all environment variables; MS SSO block commented out by default.
 
