@@ -31,6 +31,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
     const roleMenuRef = useRef<HTMLDivElement | null>(null)
 
     const roleLabel = formatRoleLabel(userRole)
+    const currentPath = router.state.location.pathname
 
     useEffect(() => {
         if (!showRoleMenu) return
@@ -61,6 +62,14 @@ export default function Sidebar({ userRole }: SidebarProps) {
     const handleSignOut = async () => {
         await authClient.signOut()
         router.navigate({ to: '/login' as string })
+    }
+
+    const isNavItemActive = (to: string) => {
+        if (to === '/') {
+            return currentPath === '/'
+        }
+
+        return currentPath === to || currentPath.startsWith(`${to}/`)
     }
 
     return (
@@ -142,11 +151,10 @@ export default function Sidebar({ userRole }: SidebarProps) {
                     <Link
                         key={item.label}
                         to={item.to}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors group"
-                        activeProps={{
-                            className:
-                                'flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary-darker font-semibold hover:bg-primary/15 transition-colors',
-                        }}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isNavItemActive(item.to)
+                            ? 'bg-primary/10 text-primary-darker font-semibold'
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                            }`}
                         activeOptions={{ exact: true }}
                     >
                         <item.icon size={20} className="shrink-0" />
