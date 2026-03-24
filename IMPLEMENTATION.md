@@ -2,6 +2,25 @@
 
 > A record of recent changes and implemented features.
 
+## 2026-03-23
+
+- **Database Environment Variable Standardization (`.env.local`, `.env.example`, `drizzle.config.ts`, `src/db/client.ts`, `DEPLOY.md`)**
+  - Standardized database configuration on `DB_PATH` as the single canonical variable for runtime and tooling.
+  - Updated local/env examples and deployment documentation to use `DB_PATH` consistently.
+  - Removed legacy fallback handling (`DATABASE_URL`, `DB_FILE_NAME`) from active runtime/tooling paths.
+  - Deleted unused duplicate DB entrypoint (`src/db/index.ts`) after confirming no imports referenced it.
+
+- **Visible Default Date Window in Requests + Work Orders (`src/routes/_app/index.tsx`, `src/routes/_app/work-orders.tsx`)**
+  - Added shared route-level behavior to default `dateFrom` search params to six months ago when not present.
+  - Result: the From date input now visibly reflects the same six-month default window users are already working within.
+  - Applied to both Requests and Work Orders pages for consistent filter UX.
+
+- **Toolbar First-Load UX + Navigation Progress (`src/components/ToolbarContext.tsx`, `src/components/Toolbar.tsx`)**
+  - Reworked toolbar sync in `useSetToolbar` to use an isomorphic layout effect (`useLayoutEffect` on client, `useEffect` on server), reducing first-paint empty-toolbar flicker.
+  - Added a lightweight top pending indicator in the toolbar driven by TanStack Router navigation status.
+  - Added a small skeleton fallback when toolbar content is temporarily empty, preventing blank header flashes during initial load/transitions.
+  - Build validated successfully after changes (`npm run build`).
+
 ## 2026-03-20 (session 2)
 
 - **`PhysicsHandOver` Field — Schema + API + UI (`src/db/schema.ts`, `src/data/pm.api.ts`, `src/data/workorders.api.ts`, `src/data/requests.api.ts`, `src/routes/_app/pm.tsx`, `src/db/seed-pm-csv.ts`)**

@@ -1,0 +1,3 @@
+46.101.53.201 {
+    reverse_proxy lina:3000
+}

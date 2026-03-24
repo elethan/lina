@@ -34,11 +34,17 @@ type WoSearchParams = {
   newWoId?: number
 }
 
+const getDefaultDateFrom = () => {
+  const date = new Date()
+  date.setMonth(date.getMonth() - 6)
+  return date.toISOString().slice(0, 10)
+}
+
 // ── Route ─────────────────────────────────────────────────────
 export const Route = createFileRoute('/_app/work-orders')({
   validateSearch: (search: Record<string, unknown>): WoSearchParams => ({
     search: typeof search.search === 'string' ? search.search : undefined,
-    dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
+    dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : getDefaultDateFrom(),
     dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
     status: typeof search.status === 'string' ? search.status : 'Open',
     engineerId: search.engineerId ? Number(search.engineerId) : undefined,

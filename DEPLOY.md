@@ -44,7 +44,7 @@ When deploying a new version to the VM, you will transfer:
 Set these on the VM/container runtime:
 
 - `BETTER_AUTH_SECRET` **(required)** — session signing key (generate with `openssl rand -hex 32`)
-- `DB_PATH` — path to SQLite file (defaults to `lina-local.db`; Docker uses `/app/shared-lina-db-vol/lina_prod.db`)
+- `DB_PATH` — canonical path to the SQLite file used by the running app (defaults to `lina-local.db`; Docker image default is `/app/shared-lina-db-vol/lina_prod.db`)
 - `MICROSOFT_CLIENT_ID`
 - `MICROSOFT_CLIENT_SECRET`
 - `MICROSOFT_TENANT_ID`
@@ -144,6 +144,10 @@ Create a host-only environment file (do not commit it to git), for example `/etc
 BETTER_AUTH_SECRET=<paste-output-from-step-2>
 VITE_APP_URL=https://lina.company.com
 
+# Canonical runtime DB path. For Docker this matches the mounted named volume.
+# If omitted, the Docker image already defaults this to /app/shared-lina-db-vol/lina_prod.db.
+DB_PATH=/app/shared-lina-db-vol/lina_prod.db
+
 # Optional Microsoft Entra SSO (set all three or none)
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
@@ -168,6 +172,8 @@ docker volume create docker-lina-vol
 ```
 
 **Step 5. Copy the Seeded Database into the Volume (first deployment only)**
+
+This step assumes you already created a local `lina-local.db` file by running migrations and any seed steps on the host or another build machine. The application runtime uses `DB_PATH`, but the file you copy here can have any source name as long as it ends up in the Docker volume as `lina_prod.db`.
 
 ```bash
 docker run --rm \

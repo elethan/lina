@@ -1,15 +1,26 @@
 services:
   lina:
-    image: lina-app:latest
+    build: .
     container_name: lina-container
     restart: always
-    ports:
-      - "3000:3000"
     volumes:
-      - docker-lina-vol:/app/shared-lina-db-vol
+      # BIND MOUNT: [Droplet Path] : [Container Path]
+      - ./shared-lina-db-vol:/app/shared-lina-db-vol
     env_file:
-      - /etc/lina/lina.env
+      - ./lina.env
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy-container
+    restart: always
+    ports:
+      - "80:80"   # HTTP
+      - "443:443" # HTTPS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
-  docker-lina-vol:
-    name: docker-lina-vol
+  caddy_data:
+  caddy_config:

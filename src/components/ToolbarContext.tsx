@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────
 export type ToolbarState = {
@@ -14,6 +14,7 @@ type ToolbarContextValue = ToolbarState & {
 }
 
 const EMPTY_TOOLBAR: ToolbarState = { title: '', leftContent: null, rightContent: null }
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 // ── Context ───────────────────────────────────────────────────
 const ToolbarContext = createContext<ToolbarContextValue | null>(null)
@@ -38,23 +39,16 @@ export function useToolbar() {
     return ctx
 }
 
-// ── Synchronous toolbar setter (SSR-safe) ─────────────────────
+// ── Pre-paint toolbar setter (SSR-safe) ───────────────────────
 /**
- * Sets toolbar content during render so it's available on the very
- * first frame — including SSR.  Accepts a *memoised* ToolbarState
- * (callers should wrap their config in useMemo) and syncs it into
- * the context only when the reference changes, preventing infinite
- * re-render loops.
+ * Sets toolbar content before paint on the client to avoid a visible
+ * empty-toolbar frame while preserving SSR compatibility.
  */
 export function useSetToolbar(config: ToolbarState) {
     const { setToolbar } = useToolbar()
-    const configRef = useRef<ToolbarState>(config)
 
-    // Keep the ref pointing at the latest config for the cleanup closure
-    configRef.current = config
-
-    // Sync config into context whenever the memoised reference changes
-    useEffect(() => {
+    // Sync config into context whenever the memoised reference changes.
+    useIsomorphicLayoutEffect(() => {
         setToolbar(config)
     }, [config, setToolbar])
 

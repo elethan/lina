@@ -2,14 +2,15 @@ import { config } from 'dotenv'
 import { defineConfig } from 'drizzle-kit'
 
 config({ path: ['.env.local', '.env'] })
-// const dbUrl = process.env.DATABASE_URL
+
+// Canonical SQLite variable for tooling and runtime.
 
 export default defineConfig({
   out: './drizzle',
   schema: './src/db/schema.ts',
   dialect: 'sqlite',
   dbCredentials: {
-    url: process.env.DATABASE_URL || process.env.DB_PATH || 'lina-local.db',
+    url: process.env.DB_PATH || 'lina-local.db',
   }
 })
 
