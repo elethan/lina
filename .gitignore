@@ -2,6 +2,7 @@ node_modules
 .DS_Store
 dist
 dist-ssr
+local-md
 *.local
 *.env
 .nitro
@@ -12,7 +13,5 @@ dist-ssr
 __unconfig*
 todos.json
 *.db
-*.csv
-*.md
-*.prd
 src/db/seed-pm-csv.ts
+local-md/
