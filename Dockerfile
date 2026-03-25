@@ -21,7 +21,7 @@ RUN npm run build
 RUN mkdir -p /app/shared-lina-db-vol && chown -R node:node /app/shared-lina-db-vol
 
 # Declare the volume to document that it expects a mounted external volume
-#VOLUME ["/app/shared-lina-db-vol"]
+VOLUME ["/app/shared-lina-db-vol"]
 
 # Set environment variables
 ENV NODE_ENV=production
