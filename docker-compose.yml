@@ -1,11 +1,11 @@
 services:
   lina:
-    build: .
+    image: ghcr.io/elethan/lina:latest
+    build: .                          # used by: docker compose up --build
     container_name: lina-container
     restart: always
     volumes:
-      # BIND MOUNT: [Droplet Path] : [Container Path]
-      - ./shared-lina-db-vol:/app/shared-lina-db-vol
+      - lina_data:/app/shared-lina-db-vol
     env_file:
       - ./lina.env
 
@@ -14,13 +14,14 @@ services:
     container_name: caddy-container
     restart: always
     ports:
-      - "80:80"   # HTTP
-      - "443:443" # HTTPS
+      - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
 
 volumes:
+  lina_data:
   caddy_data:
   caddy_config:

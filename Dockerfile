@@ -16,19 +16,15 @@ COPY . .
 # Build the TanStack Start application for production
 RUN npm run build
 
-# Create a directory specifically for the SQLite database
-# Change ownership to the built-in non-root 'node' user for security
-RUN mkdir -p /app/shared-lina-db-vol && chown -R node:node /app/shared-lina-db-vol
-
-# Declare the volume to document that it expects a mounted external volume
-VOLUME ["/app/shared-lina-db-vol"]
+# Create the SQLite database directory and give the non-root 'node' user
+# ownership of the entire /app tree (build output, node_modules, db dir).
+# Without this, vite preview runs as 'node' but can't read root-owned files.
+RUN mkdir -p /app/shared-lina-db-vol \
+    && chown -R node:node /app
 
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
-
-# WARNING: You must configure your Drizzle/SQLite client (e.g., in src/db/client.ts) 
-# to read the database path from an environment variable like process.env.DB_PATH
 ENV DB_PATH=/app/shared-lina-db-vol/lina_prod.db
 
 # Switch to the non-root user
