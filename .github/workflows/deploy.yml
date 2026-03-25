@@ -45,7 +45,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "docker-compose.yml,Caddyfile"
-          target: /opt/lina
+          target: /lina_app
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -54,7 +54,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /opt/lina
+            cd /lina_app
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull lina
             docker compose up -d
