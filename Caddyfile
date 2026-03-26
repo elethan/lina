@@ -1,8 +1,4 @@
 46.101.53.201 {
-    tls {
-        issuer acme {
-            profile shortlived
-        }
-    }
+    tls internal
     reverse_proxy lina:3000
 }
