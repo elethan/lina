@@ -22,7 +22,7 @@ services:
       - caddy_config:/config
 
 volumes:
-lina_data:
-  name: lina_data      
-caddy_data:
-caddy_config:
+  lina_data:
+    name: lina_data      
+  caddy_data:
+  caddy_config:
