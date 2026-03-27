@@ -52,6 +52,14 @@ const resolveRoleFromEntraProfile = (profile: Record<string, unknown>): AppRole 
 };
 
 export const auth = betterAuth({
+    // 1. Explicitly trust your magic domain
+  trustedOrigins: ['https://46.101.53.201.sslip.io'], 
+  
+  advanced: {
+    // 2. Tell Better Auth to trust Caddy's X-Forwarded-* headers
+    trustedProxyHeaders: true 
+  },
+
     // 1. Tell Better-Auth to use our SQLite database and schema
     database: drizzleAdapter(db, {
         provider: "sqlite",
