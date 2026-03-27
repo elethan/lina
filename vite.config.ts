@@ -17,10 +17,12 @@ const config = defineConfig(({ command }) => ({
   ],
   // added this to try to test site in DigitakOcean, adjust or remove when internal
   preview: {
-    allowedHosts: ['46.101.53.201.sslip.io'], // explicitly allows your magic domain
+    //allowedHosts: ['46.101.53.201.sslip.io'], // explicitly allows your magic domain
+ allowedHosts: true, // Disables Vite's internal host check completely
   },
   server: {
-    allowedHosts: ['46.101.53.201.sslip.io'], // good practice to add here too
+  //  allowedHosts: ['46.101.53.201.sslip.io'], // good practice to add here too
+  allowedHosts: true, // Disables Vite's internal host check completely
   },
   build: {
     chunkSizeWarningLimit: 700,
