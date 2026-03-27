@@ -15,6 +15,13 @@ const config = defineConfig(({ command }) => ({
     tanstackStart(),
     viteReact(),
   ],
+  // added this to try to test site in DigitakOcean, adjust or remove when internal
+  preview: {
+    allowedHosts: ['46.101.53.201.sslip.io'], // explicitly allows your magic domain
+  },
+  server: {
+    allowedHosts: ['46.101.53.201.sslip.io'], // good practice to add here too
+  },
   build: {
     chunkSizeWarningLimit: 700,
     rollupOptions: {
