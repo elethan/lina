@@ -57,7 +57,8 @@ export const auth = betterAuth({
   
   advanced: {
     // 2. Tell Better Auth to trust Caddy's X-Forwarded-* headers
-    trustedProxyHeaders: true 
+    trustedProxyHeaders: true,
+    useSecureCookies: process.env.NODE_ENV === 'production',
   },
 
     // 1. Tell Better-Auth to use our SQLite database and schema
@@ -86,9 +87,6 @@ export const auth = betterAuth({
     session: {
         expiresIn: 60 * 60 * 8,  // 8 hours
         updateAge: 60 * 60,       // extend token on activity after 1 hour
-    },
-    advanced: {
-        useSecureCookies: process.env.NODE_ENV === 'production',
     },
     ...(process.env.VITE_APP_URL
         ? { trustedOrigins: [process.env.VITE_APP_URL] }

@@ -205,6 +205,7 @@ const columns: ColumnDef<PmRow, any>[] = [
                         day: '2-digit',
                         month: 'short',
                         year: 'numeric',
+                        timeZone: 'UTC',
                     })}
                 </span>
             )
@@ -247,6 +248,7 @@ const columns: ColumnDef<PmRow, any>[] = [
                         day: '2-digit',
                         month: 'short',
                         year: 'numeric',
+                        timeZone: 'UTC',
                     })}
                 </span>
             )
@@ -640,7 +642,7 @@ function PmExecutionDialog({
                                 </div>
                                 <div className="space-y-0.5">
                                     <p className="text-base text-gray-500">Scheduled</p>
-                                    <p className="text-base font-semibold text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB')}</p>
+                                    <p className="text-base font-semibold text-gray-800">{new Date(data.startAt).toLocaleDateString('en-GB', { timeZone: 'UTC' })}</p>
                                 </div>
                                 <div className="space-y-0.5">
                                     <p className="text-base text-gray-500">Status</p>

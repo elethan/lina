@@ -145,6 +145,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
                 day: '2-digit',
                 month: 'short',
                 year: 'numeric',
+                timeZone: 'UTC',
             })
         },
     }),
