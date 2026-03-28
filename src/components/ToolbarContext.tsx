@@ -48,12 +48,9 @@ export function useSetToolbar(config: ToolbarState) {
     const { setToolbar } = useToolbar()
 
     // Sync config into context whenever the memoised reference changes.
+    // Cleanup ensures the toolbar is reset on unmount before the next page's effect fires
     useIsomorphicLayoutEffect(() => {
         setToolbar(config)
-    }, [config, setToolbar])
-
-    // Cleanup on unmount — reset toolbar to empty
-    useEffect(() => {
         return () => setToolbar(EMPTY_TOOLBAR)
-    }, [setToolbar])
+    }, [config, setToolbar])
 }

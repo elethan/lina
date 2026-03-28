@@ -23,6 +23,7 @@ services:
 
 volumes:
   lina_data:
-    name: lina_data      
+    name: lina_data
+    external: true     
   caddy_data:
   caddy_config:
