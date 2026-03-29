@@ -15,6 +15,7 @@ import {
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo, useEffect } from 'react'
+import { useDynamicPageSize } from '../../hooks/useDynamicPageSize'
 import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react'
 import {
     Dialog,
@@ -310,13 +311,18 @@ function RequestsPage() {
     }, [data, dateFrom, dateTo, siteId])
 
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
+    const { containerRef, pageSize } = useDynamicPageSize()
+    const [pageIndex, setPageIndex] = useState(0)
 
     const table = useReactTable({
         data: filteredData,
         columns,
-        state: { globalFilter, rowSelection, columnFilters },
-        initialState: { pagination: { pageSize: 20 } },
+        state: { globalFilter, rowSelection, columnFilters, pagination: { pageIndex, pageSize } },
         onGlobalFilterChange: setGlobalFilter,
+        onPaginationChange: (updater) => {
+            const next = typeof updater === 'function' ? updater({ pageIndex, pageSize }) : updater
+            setPageIndex(next.pageIndex)
+        },
         onRowSelectionChange: setRowSelection,
         onColumnFiltersChange: (updater) => {
             setColumnFilters(updater)
@@ -577,7 +583,7 @@ function RequestsPage() {
                 </DialogContent>
             </Dialog>
             {/* ─── Table ─── */}
-            <div className="flex-1 overflow-auto px-6 py-4">
+            <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
                     <table className="min-w-full" style={{ width: table.getTotalSize() }}>
                         <thead>
