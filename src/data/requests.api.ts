@@ -39,6 +39,7 @@ export type RequestRow = {
     systemName: string | null
     reportedBy: string
     commentText: string
+    engineerComment: string | null
     status: string
     createdAt: string | null
     downtimeStartAt: string | null
@@ -63,6 +64,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
                 systemId: userRequests.systemId,
                 reportedBy: userRequests.reportedBy,
                 commentText: userRequests.commentText,
+                engineerComment: userRequests.engineerComment,
                 status: userRequests.status,
                 createdAt: sql<string>`${userRequests.createdAt}`,
                 downtimeStartAt: sql<string>`${userRequests.downtimeStartAt}`,
@@ -85,6 +87,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
             systemName: r.systemName ?? null,
             reportedBy: r.reportedBy,
             commentText: r.commentText,
+            engineerComment: r.engineerComment ?? null,
             status: r.status,
             createdAt: r.createdAt ?? null,
             downtimeStartAt: r.downtimeStartAt ?? null,
@@ -95,7 +98,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
 )
 
 export const deleteRequests = authServerFn({ method: 'POST' })
-    .inputValidator((data: { requestIds: number[] }) => {
+    .inputValidator((data: { requestIds: number[], engineerComment?: string }) => {
         if (!data.requestIds || data.requestIds.length === 0) {
             throw new Error('At least one request must be selected')
         }
@@ -106,11 +109,19 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         const user = await requirePermission('requests', 'delete')
-        const { requestIds } = data
-
-        await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
+        const { requestIds, engineerComment } = data
         const { logger } = await import('../lib/logger')
-        logger.info('REQUEST_DELETED', { requestIds, userId: user.id, count: requestIds.length })
+
+        if (engineerComment && engineerComment.trim().length > 0) {
+            await db.update(userRequests)
+                .set({ status: 'Closed', engineerComment: engineerComment.trim() })
+                .where(inArray(userRequests.id, requestIds))
+            logger.info('REQUEST_CLOSED_WITH_COMMENT', { requestIds, userId: user.id, count: requestIds.length })
+        } else {
+            await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
+            logger.info('REQUEST_DELETED', { requestIds, userId: user.id, count: requestIds.length })
+        }
+        
         return { success: true }
     })
 

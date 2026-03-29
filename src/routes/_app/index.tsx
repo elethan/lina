@@ -204,6 +204,20 @@ const columns: ColumnDef<RequestRow, any>[] = [
         ),
         filterFn: fuzzyFilter,
     }),
+    columnHelper.accessor('engineerComment', {
+        header: 'Engineer Note',
+        cell: (info) => {
+            const text = info.getValue()
+            if (!text) return <span className="text-gray-400 italic">—</span>
+            return (
+                <div className="text-gray-600 whitespace-pre-wrap break-words min-h-[40px] italic">
+                    {text}
+                </div>
+            )
+        },
+        size: 300,
+        enableResizing: false,
+    }),
 ]
 
 // ── Page ──────────────────────────────────────────────────────
@@ -225,6 +239,7 @@ function RequestsPage() {
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
     const [showCreateWODialog, setShowCreateWODialog] = useState(false)
     const [showCloseDialog, setShowCloseDialog] = useState(false)
+    const [closeComment, setCloseComment] = useState('')
     const [showNewRequestDialog, setShowNewRequestDialog] = useState(false)
     const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
     const [columnFilters, setColumnFilters] = useState<any[]>([
@@ -244,7 +259,7 @@ function RequestsPage() {
     })
 
     const { mutate: mutateDeleteRequests } = useMutation({
-        mutationFn: async (data: { requestIds: number[] }) => {
+        mutationFn: async (data: { requestIds: number[], engineerComment?: string }) => {
             const result = await deleteRequests({ data })
             return result
         },
@@ -252,6 +267,7 @@ function RequestsPage() {
             router.invalidate()
             setRowSelection({})
             setShowCloseDialog(false)
+            setCloseComment('')
         },
     })
 
@@ -436,34 +452,50 @@ function RequestsPage() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <div className="flex items-center gap-3 mb-1">
-                            <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${hasAttachedRequests ? 'bg-red-100' : 'bg-primary/10'}`}>
-                                <XCircle size={20} className={hasAttachedRequests ? 'text-red-600' : 'text-primary'} />
+                            <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${hasAttachedRequests || isMultipleAssets ? 'bg-red-100' : 'bg-primary/10'}`}>
+                                <XCircle size={20} className={hasAttachedRequests || isMultipleAssets ? 'text-red-600' : 'text-primary'} />
                             </div>
                             <DialogTitle className="text-base font-semibold text-gray-900">
-                                {hasAttachedRequests ? 'Cannot Delete Requests' : 'Delete Requests'}
+                                {hasAttachedRequests || isMultipleAssets ? 'Cannot Close Requests' : 'Close Requests'}
                             </DialogTitle>
                         </div>
-                        <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
+                        <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]" asChild>
                             {hasAttachedRequests ? (
-                                <>
+                                <div>
                                     One or more of the selected requests are currently <span className="font-semibold text-gray-700">Active</span> or <span className="font-semibold text-gray-700">Closed</span>.
                                     <br /><br />
                                     You cannot delete requests that are already attached to a Work Order.
-                                </>
-                            ) : (
-                                <>
-                                    Are you sure you want to permanently delete{' '}
-                                    <span className="font-semibold text-gray-700">
-                                        {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
-                                    </span>?
+                                </div>
+                            ) : isMultipleAssets ? (
+                                <div>
+                                    You have selected requests from <span className="font-semibold text-gray-700">multiple different assets/systems</span>.
                                     <br /><br />
-                                    This action cannot be undone.
-                                </>
+                                    Selected requests must belong to the <span className="font-semibold text-gray-700">same asset</span>. Please adjust your selection and try again.
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <p>
+                                        Are you sure you want to close{' '}
+                                        <span className="font-semibold text-gray-700">
+                                            {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
+                                        </span>?
+                                    </p>
+                                    <textarea
+                                        placeholder="Add an engineer note (optional)"
+                                        value={closeComment}
+                                        onChange={(e) => setCloseComment(e.target.value)}
+                                        rows={3}
+                                        className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary resize-none mt-2"
+                                    />
+                                    <p className="text-xs text-gray-400">
+                                        If you leave a note, the request will be maintained and marked 'Closed'. If left empty, the request will be permanently deleted.
+                                    </p>
+                                </div>
                             )}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter className="mt-2 flex gap-2 sm:gap-2">
-                        {hasAttachedRequests ? (
+                        {hasAttachedRequests || isMultipleAssets ? (
                             <button
                                 onClick={() => setShowCloseDialog(false)}
                                 className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-800 transition-colors"
@@ -482,12 +514,12 @@ function RequestsPage() {
                                     autoFocus
                                     onClick={() => {
                                         const ids = selectedRequests.map((r) => r.id)
-                                        mutateDeleteRequests({ requestIds: ids })
+                                        mutateDeleteRequests({ requestIds: ids, engineerComment: closeComment })
                                     }}
                                     className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 text-white shadow-sm hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:ring-offset-1"
                                 >
                                     <XCircle size={15} />
-                                    Delete
+                                    {closeComment.trim() ? 'Close' : 'Delete'}
                                 </button>
                             </>
                         )}

@@ -184,6 +184,7 @@ export const userRequests = sqliteTable('user_requests', {
   systemId: integer('system_id').references(() => systems.id),
   reportedBy: text('reported_by').notNull(), // Clinical staff name [cite: 25]
   commentText: text('comment_text').notNull(),
+  engineerComment: text('engineer_comment'),
   status: text('status').notNull().default('Open'),
   downtimeStartAt: text('downtime_start_at'), // Optional: when the system went down (ISO 8601)
   downtimeEndAt: text('downtime_end_at'), // Optional: when the system came back up (ISO 8601)
