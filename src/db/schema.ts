@@ -185,8 +185,9 @@ export const userRequests = sqliteTable('user_requests', {
   reportedBy: text('reported_by').notNull(), // Clinical staff name [cite: 25]
   commentText: text('comment_text').notNull(),
   status: text('status').notNull().default('Open'),
-  engineerId: integer('engineer_id').references(() => engineers.id), // Null implies "not assigned"
   downtimeStartAt: text('downtime_start_at'), // Optional: when the system went down (ISO 8601)
+  downtimeEndAt: text('downtime_end_at'), // Optional: when the system came back up (ISO 8601)
+  woId: integer('wo_id').references(() => workOrders.id), // The linked Work Order
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   ...commonCols,
 });
@@ -200,6 +201,7 @@ export const workOrders = sqliteTable('work_orders', {
   createdAt: text('created_at'),
   startAt: text('start_at'),
   endAt: text('end_at'),
+  engineerId: integer('engineer_id').references(() => engineers.id),
   status: text('status').notNull().default('Open'),
   ...commonCols,
 });
@@ -212,21 +214,6 @@ export const workOrderNotes = sqliteTable('work_order_notes', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
-// Link Requests to Work Orders [cite: 27]
-export const workOrderRequests = sqliteTable('work_order_requests', {
-  woId: integer('wo_id').references(() => workOrders.id),
-  requestId: integer('request_id').references(() => userRequests.id),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.woId, t.requestId] }),
-}));
-
-// Many-to-Many: Work Orders <-> Engineers
-export const workOrderEngineers = sqliteTable('work_order_engineers', {
-  woId: integer('wo_id').references(() => workOrders.id),
-  engineerId: integer('engineer_id').references(() => engineers.id),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.woId, t.engineerId] }),
-}));
 
 // --- H. DOWNTIME TRACKING ---
 export const downtimeEvents = sqliteTable('downtime_events', {

@@ -13,6 +13,9 @@ local-md
 __unconfig*
 todos.json
 *.db
+*.db-journal
+*.csv
+*.log
 src/db/seed-pm-csv.ts
 local-md/
 deploy_key

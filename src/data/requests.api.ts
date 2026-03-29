@@ -8,7 +8,7 @@ async function getRequestDbDeps() {
     ])
 
     const { db } = dbMod
-    const { userRequests, assets, sites, systems, engineers, workOrders, workOrderRequests, downtimeEvents } = schemaMod
+    const { userRequests, assets, sites, systems, engineers, workOrders, downtimeEvents } = schemaMod
     const { eq, sql, desc, inArray, and, ne, isNull } = ormMod
 
     return {
@@ -19,7 +19,6 @@ async function getRequestDbDeps() {
         systems,
         engineers,
         workOrders,
-        workOrderRequests,
         downtimeEvents,
         eq,
         sql,
@@ -41,16 +40,17 @@ export type RequestRow = {
     reportedBy: string
     commentText: string
     status: string
-    engineerId: number | null
-    engineerName: string | null
     createdAt: string | null
+    downtimeStartAt: string | null
+    downtimeEndAt: string | null
+    woId: number | null
 }
 
 export const fetchRequests = authServerFn({ method: 'GET' }).handler(
     async (): Promise<RequestRow[]> => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
-        const { db, userRequests, assets, sites, systems, engineers, eq, sql, desc } = await getRequestDbDeps()
+        const { db, userRequests, assets, sites, systems, eq, sql, desc } = await getRequestDbDeps()
 
         const rows = await db
             .select({
@@ -61,19 +61,18 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
                 siteName: sites.name,
                 systemName: systems.name,
                 systemId: userRequests.systemId,
-                engineerId: userRequests.engineerId,
                 reportedBy: userRequests.reportedBy,
                 commentText: userRequests.commentText,
                 status: userRequests.status,
-                engineerFirstName: engineers.firstName,
-                engineerLastName: engineers.lastName,
                 createdAt: sql<string>`${userRequests.createdAt}`,
+                downtimeStartAt: sql<string>`${userRequests.downtimeStartAt}`,
+                downtimeEndAt: sql<string>`${userRequests.downtimeEndAt}`,
+                woId: userRequests.woId,
             })
             .from(userRequests)
             .leftJoin(assets, eq(userRequests.assetId, assets.id))
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(userRequests.systemId, systems.id))
-            .leftJoin(engineers, eq(userRequests.engineerId, engineers.id))
             .where(sql`${userRequests.createdAt} >= datetime('now', '-6 months')`)
             .orderBy(desc(userRequests.createdAt))
 
@@ -87,12 +86,10 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
             reportedBy: r.reportedBy,
             commentText: r.commentText,
             status: r.status,
-            engineerId: r.engineerId ?? null,
-            engineerName:
-                r.engineerFirstName && r.engineerLastName
-                    ? `${r.engineerFirstName} ${r.engineerLastName}`
-                    : null,
             createdAt: r.createdAt ?? null,
+            downtimeStartAt: r.downtimeStartAt ?? null,
+            downtimeEndAt: r.downtimeEndAt ?? null,
+            woId: r.woId ?? null,
         }))
     },
 )
@@ -124,13 +121,14 @@ export const createRequest = authServerFn({ method: 'POST' })
         reportedBy: string,
         commentText: string,
         downtimeStartAt?: string,
+        downtimeEndAt?: string,
     }) => {
         if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
         return data
     })
     .handler(async ({ data }): Promise<{ id: number; linkedWoId?: number; woIsNew?: boolean }> => {
         const {
-            db, userRequests, workOrders, workOrderRequests, downtimeEvents,
+            db, userRequests, workOrders, downtimeEvents,
             eq, and, ne, isNull,
         } = await getRequestDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
@@ -144,6 +142,7 @@ export const createRequest = authServerFn({ method: 'POST' })
             reportedBy: data.reportedBy,
             commentText: data.commentText,
             downtimeStartAt: data.downtimeStartAt,
+            downtimeEndAt: data.downtimeEndAt,
             status: 'Open',
         }).returning({ id: userRequests.id })
 
@@ -171,9 +170,6 @@ export const createRequest = authServerFn({ method: 'POST' })
                 woId = existingWos[0].id
                 woIsNew = false
 
-                // Link request to WO
-                await db.insert(workOrderRequests).values({ woId, requestId: request.id })
-
                 // Only create a downtime event if there is not already an open one for this WO
                 const openDowntime = await db
                     .select({ id: downtimeEvents.id })
@@ -190,6 +186,7 @@ export const createRequest = authServerFn({ method: 'POST' })
                         systemId: data.systemId,
                         woId,
                         startAt: data.downtimeStartAt,
+                        endAt: data.downtimeEndAt,
                     })
                 }
             } else {
@@ -206,21 +203,19 @@ export const createRequest = authServerFn({ method: 'POST' })
                 woId = wo.id
                 woIsNew = true
 
-                // Link request to new WO
-                await db.insert(workOrderRequests).values({ woId, requestId: request.id })
-
                 // Create downtime event linked to new WO
                 await db.insert(downtimeEvents).values({
                     assetId: data.assetId,
                     systemId: data.systemId,
                     woId,
                     startAt: data.downtimeStartAt,
+                    endAt: data.downtimeEndAt,
                 })
             }
 
             // Mark request Active (it now belongs to a WO)
             await db.update(userRequests)
-                .set({ status: 'Active' })
+                .set({ status: 'Active', woId: woId })
                 .where(eq(userRequests.id, request.id))
 
             return { id: request.id, linkedWoId: woId, woIsNew }

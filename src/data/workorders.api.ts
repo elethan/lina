@@ -10,8 +10,7 @@ async function getWorkOrderDbDeps() {
     const { db } = dbMod
     const {
         workOrders,
-        workOrderRequests,
-        workOrderEngineers,
+
         workOrderParts,
         workOrderNotes,
         userRequests,
@@ -26,8 +25,7 @@ async function getWorkOrderDbDeps() {
     return {
         db,
         workOrders,
-        workOrderRequests,
-        workOrderEngineers,
+
         workOrderParts,
         workOrderNotes,
         userRequests,
@@ -59,7 +57,8 @@ export type WorkOrderRow = {
     startAt: string | null
     endAt: string | null
     requestCount: number
-    engineerNames: string[]
+    engineerId: number | null
+    engineerName: string | null
 }
 
 // ── Fetch all work orders ─────────────────────────────────────
@@ -70,8 +69,7 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
         const {
             db,
             workOrders,
-            workOrderRequests,
-            workOrderEngineers,
+            userRequests,
             assets,
             sites,
             systems,
@@ -95,42 +93,28 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
                 createdAt: sql<string>`${workOrders.createdAt}`,
                 startAt: sql<string>`${workOrders.startAt}`,
                 endAt: sql<string>`${workOrders.endAt}`,
+                engineerId: workOrders.engineerId,
+                engineerFirstName: engineers.firstName,
+                engineerLastName: engineers.lastName,
             })
             .from(workOrders)
             .leftJoin(assets, eq(workOrders.assetId, assets.id))
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(workOrders.systemId, systems.id))
+            .leftJoin(engineers, eq(workOrders.engineerId, engineers.id))
             .orderBy(desc(workOrders.startAt), desc(workOrders.id))
 
         // Fetch linked request counts
         const requestCounts = await db
             .select({
-                woId: workOrderRequests.woId,
+                woId: userRequests.woId,
                 count: sql<number>`COUNT(*)`,
             })
-            .from(workOrderRequests)
-            .groupBy(workOrderRequests.woId)
+            .from(userRequests)
+            .where(sql`${userRequests.woId} IS NOT NULL`)
+            .groupBy(userRequests.woId)
 
         const countMap = new Map(requestCounts.map((r) => [r.woId, r.count]))
-
-        // Fetch linked engineers
-        const woEngineers = await db
-            .select({
-                woId: workOrderEngineers.woId,
-                firstName: engineers.firstName,
-                lastName: engineers.lastName,
-            })
-            .from(workOrderEngineers)
-            .leftJoin(engineers, eq(workOrderEngineers.engineerId, engineers.id))
-
-        const engineerMap = new Map<number | null, string[]>()
-        for (const row of woEngineers) {
-            const names = engineerMap.get(row.woId) ?? []
-            if (row.firstName && row.lastName) {
-                names.push(`${row.firstName} ${row.lastName}`)
-            }
-            engineerMap.set(row.woId, names)
-        }
 
         return rows.map((r) => ({
             id: r.id,
@@ -145,7 +129,10 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
             startAt: r.startAt ?? null,
             endAt: r.endAt ?? null,
             requestCount: countMap.get(r.id) ?? 0,
-            engineerNames: engineerMap.get(r.id) ?? [],
+            engineerId: r.engineerId ?? null,
+            engineerName: r.engineerFirstName && r.engineerLastName
+                ? `${r.engineerFirstName} ${r.engineerLastName}`
+                : null,
         }))
     },
 )
@@ -161,8 +148,9 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         const {
             db,
             workOrders,
-            workOrderRequests,
             userRequests,
+            engineers,
+            eq,
             inArray,
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
@@ -192,6 +180,13 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             .map((r) => r.commentText)
             .join(' | ')
 
+        const userStaff = await db
+            .select({ id: engineers.id })
+            .from(engineers)
+            .where(eq(engineers.userId, user.id))
+            .limit(1)
+        const authorEngineerId = userStaff.length > 0 ? userStaff[0].id : null
+
         // Create the work order
         const [wo] = await db
             .insert(workOrders)
@@ -201,22 +196,15 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 description,
                 physicsHandOver: 'Pending',
                 status: 'Open',
+                engineerId: authorEngineerId,
                 createdAt: new Date().toISOString(),
             })
             .returning({ id: workOrders.id })
 
-        // Link all selected requests to the new WO
-        await db.insert(workOrderRequests).values(
-            requestIds.map((requestId) => ({
-                woId: wo.id,
-                requestId,
-            })),
-        )
-
-        // Update the source requests to 'Active' since they are now part of a WO
+        // Link all selected requests to the new WO and update their status to 'Active'
         await db
             .update(userRequests)
-            .set({ status: 'Active' })
+            .set({ status: 'Active', woId: wo.id })
             .where(inArray(userRequests.id, requestIds))
 
         // Auto-create downtime event if first request has downtimeStartAt
@@ -246,8 +234,6 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         const {
             db,
             workOrders,
-            workOrderRequests,
-            workOrderEngineers,
             workOrderParts,
             workOrderNotes,
             userRequests,
@@ -260,9 +246,9 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
 
         // 1. Find all associated requests
         const linkedRequests = await db
-            .select({ requestId: workOrderRequests.requestId })
-            .from(workOrderRequests)
-            .where(inArray(workOrderRequests.woId, woIds))
+            .select({ requestId: userRequests.id })
+            .from(userRequests)
+            .where(inArray(userRequests.woId, woIds))
 
         const requestIds = linkedRequests.map((r) => r.requestId).filter((id): id is number => id !== null)
 
@@ -273,14 +259,12 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
             } else if (requestAction === 'keep') {
                 await db
                     .update(userRequests)
-                    .set({ status: 'Open' })
+                    .set({ status: 'Open', woId: null })
                     .where(inArray(userRequests.id, requestIds))
             }
         }
 
         // 3. Clean up associated junction tables and notes
-        await db.delete(workOrderRequests).where(inArray(workOrderRequests.woId, woIds))
-        await db.delete(workOrderEngineers).where(inArray(workOrderEngineers.woId, woIds))
         await db.delete(workOrderParts).where(inArray(workOrderParts.woId, woIds))
         await db.delete(workOrderNotes).where(inArray(workOrderNotes.woId, woIds))
 
@@ -363,7 +347,6 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         const {
             db,
             workOrders,
-            workOrderRequests,
             userRequests,
             eq,
             sql,
@@ -393,9 +376,9 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
 
         // 2. Cascade "Closed" status to linked User Requests
         const linked = await db
-            .select({ requestId: workOrderRequests.requestId })
-            .from(workOrderRequests)
-            .where(eq(workOrderRequests.woId, data.woId))
+            .select({ requestId: userRequests.id })
+            .from(userRequests)
+            .where(eq(userRequests.woId, data.woId))
 
         const requestIds = linked.map(l => l.requestId).filter(Boolean) as number[]
         if (requestIds.length > 0) {

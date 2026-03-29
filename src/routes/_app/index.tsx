@@ -29,7 +29,7 @@ import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder } from '../../data/workorders.api'
-import { fetchEngineers } from '../../data/engineers.api'
+
 import { fetchSiteEquipment, fetchSites } from '../../data/equipment.api'
 import { useQuery } from '@tanstack/react-query'
 
@@ -38,7 +38,6 @@ type RequestSearchParams = {
     dateFrom?: string
     dateTo?: string
     status?: string
-    engineerId?: number
     siteId?: number
 }
 
@@ -63,15 +62,13 @@ export const Route = createFileRoute('/_app/')({
                 : search.status === 'OpenActive'
                     ? 'Open'
                     : 'Open',
-        engineerId: search.engineerId ? Number(search.engineerId) : undefined,
         siteId: search.siteId ? Number(search.siteId) : undefined,
     }),
     loader: async () => {
-        const [requests, engineers] = await Promise.all([
+        const [requests] = await Promise.all([
             fetchRequests(),
-            fetchEngineers(),
         ])
-        return { requests, engineers }
+        return { requests }
     },
     component: RequestsPage,
 })
@@ -117,6 +114,19 @@ const columns: ColumnDef<RequestRow, any>[] = [
         ),
         size: 60,
         enableResizing: false,
+    }),
+    columnHelper.accessor('woId', {
+        header: 'WO #',
+        cell: (info) => {
+            const woId = info.getValue()
+            if (!woId) return <span className="text-gray-400 italic font-mono text-xs">—</span>
+            return (
+                <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono text-xs font-semibold border border-blue-100">
+                    WO-{woId}
+                </span>
+            )
+        },
+        size: 80,
     }),
     columnHelper.accessor('siteName', {
         header: 'Site',
@@ -190,39 +200,21 @@ const columns: ColumnDef<RequestRow, any>[] = [
         },
         size: 100,
      }),
-    columnHelper.accessor('engineerId', {
-        header: ({ column, table }) => {
-            const engineers = (table.options.meta as any)?.engineersList ?? []
+    columnHelper.accessor('downtimeStartAt', {
+        header: 'Downtime',
+        cell: (info) => {
+            const start = info.getValue()
+            const end = info.row.original.downtimeEndAt
+            if (!start) return <span className="text-gray-400">—</span>
+            
+            const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+            
             return (
-                <div className="flex flex-col gap-1">
-                    <span>Engineer</span>
-                    <select
-                        value={(column.getFilterValue() ?? '') as string}
-                        onChange={(e) => column.setFilterValue(e.target.value ? Number(e.target.value) : undefined)}
-                        className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
-                    >
-                        <option value="">All</option>
-                        {engineers.map((eng: { id: number; name: string }) => (
-                            <option key={eng.id} value={eng.id}>
-                                {eng.name}
-                            </option>
-                        ))}
-                    </select>
+                <div className="flex flex-col text-[11px] space-y-0.5">
+                    <span className="text-red-600 font-medium">Down: {formatDate(start)}</span>
+                    {end ? <span className="text-green-600 font-medium">Up: {formatDate(end)}</span> : <span className="text-gray-400 italic">Ongoing</span>}
                 </div>
             )
-        },
-        cell: (info) => {
-            const id = info.getValue()
-            const name = info.row.original.engineerName
-            return id ? (
-                <span className="text-gray-700">{name}</span>
-            ) : (
-                <span className="text-gray-400 italic text-xs">Unassigned</span>
-            )
-        },
-        filterFn: (row, columnId, filterValue) => {
-            if (filterValue === undefined || filterValue === null || filterValue === '') return true
-            return row.getValue(columnId) === filterValue || row.getValue(columnId) === null
         },
     }),
 
@@ -243,13 +235,12 @@ const columns: ColumnDef<RequestRow, any>[] = [
 
 // ── Page ──────────────────────────────────────────────────────
 function RequestsPage() {
-    const { requests: data, engineers: engineersList } = Route.useLoaderData()
+    const { requests: data } = Route.useLoaderData()
     const router = useRouter()
     const navigate = useNavigate({ from: '/' })
     const { user } = useRouteContext({ from: '/_app/' })
     const userRole = user?.role ?? 'user'
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId, siteId } = Route.useSearch()
-    const selectedEngineerId = engineerId ?? null
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', siteId } = Route.useSearch()
 
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
@@ -265,7 +256,6 @@ function RequestsPage() {
     const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
     const [columnFilters, setColumnFilters] = useState<any[]>([
         ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
-        ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
     ])
 
     const { mutate: mutateCreateWO } = useMutation({
@@ -332,13 +322,11 @@ function RequestsPage() {
             setColumnFilters(updater)
             const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
             const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
-            const newEngineerId = newFilters.find((f: any) => f.id === 'engineerId')?.value as number | undefined
 
             navigate({
                 search: (prev: RequestSearchParams) => ({
                     ...prev,
                     status: newStatus,
-                    engineerId: newEngineerId,
                 })
             })
         },
@@ -354,7 +342,6 @@ function RequestsPage() {
         enableRowSelection: true,
         columnResizeMode,
         enableColumnResizing: true,
-        meta: { engineersList },
     })
 
     const selectedCount = Object.keys(rowSelection).length
@@ -767,7 +754,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
     })
 
     const { mutateAsync: mutateCreateRequest } = useMutation({
-        mutationFn: async (data: { assetId?: number, systemId?: number, reportedBy: string, commentText: string, downtimeStartAt?: string }) => {
+        mutationFn: async (data: { assetId?: number, systemId?: number, reportedBy: string, commentText: string, downtimeStartAt?: string, downtimeEndAt?: string }) => {
             return await createRequest({ data })
         },
         onSuccess: (result) => {
@@ -787,6 +774,8 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
             commentText: '',
             downtimeDate: getTodayDateValue(),
             downtimeTime: '',
+            downtimeEndDate: getTodayDateValue(),
+            downtimeEndTime: '',
         },
         onSubmit: async ({ value }) => {
             // Validation step
@@ -814,12 +803,24 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
                 downtimeStartAt = parsedDowntime.toISOString()
             }
 
+            const hasDowntimeEndTime = value.downtimeEndTime.trim().length > 0
+            let downtimeEndAt: string | undefined
+            if (hasDowntimeEndTime) {
+                const parsedDowntimeEnd = new Date(`${value.downtimeEndDate}T${value.downtimeEndTime}`)
+                if (Number.isNaN(parsedDowntimeEnd.getTime())) {
+                    showFormError('Downtime end date/time is invalid')
+                    return
+                }
+                downtimeEndAt = parsedDowntimeEnd.toISOString()
+            }
+
             await mutateCreateRequest({
                 systemId: parsed.data.systemId,
                 assetId: parsed.data.assetId,
                 reportedBy: parsed.data.reportedBy,
                 commentText: parsed.data.commentText,
                 downtimeStartAt,
+                downtimeEndAt,
             })
         }
     })
@@ -834,6 +835,8 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
         form.setFieldValue('commentText', '')
         form.setFieldValue('downtimeDate', getTodayDateValue())
         form.setFieldValue('downtimeTime', '')
+        form.setFieldValue('downtimeEndDate', getTodayDateValue())
+        form.setFieldValue('downtimeEndTime', '')
         setFormErrorToast(null)
     }, [open, siteLocked, initialSiteId])
 
@@ -1029,7 +1032,37 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
                                     )}
                                 </form.Field>
                             </div>
-                            <p className="text-xs text-gray-500">Date defaults to today. Enter a time only if the system is currently down.</p>
+                        </div>
+
+                        {/* System Restored At (optional) */}
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-gray-700">System Restored At <span className="text-gray-400 font-normal">(optional)</span></label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <form.Field name="downtimeEndDate">
+                                    {(field) => (
+                                        <input
+                                            id={field.name}
+                                            type="date"
+                                            value={field.state.value}
+                                            onChange={(e) => field.handleChange(e.target.value)}
+                                            className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                        />
+                                    )}
+                                </form.Field>
+                                <form.Field name="downtimeEndTime">
+                                    {(field) => (
+                                        <input
+                                            id={field.name}
+                                            type="time"
+                                            step={60}
+                                            value={field.state.value}
+                                            onChange={(e) => field.handleChange(e.target.value)}
+                                            className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                                        />
+                                    )}
+                                </form.Field>
+                            </div>
+                            <p className="text-xs text-gray-500">Dates default to today. Enter a time only if system downtime needs to be recorded.</p>
                         </div>
 
                         <DialogFooter className="pt-2">

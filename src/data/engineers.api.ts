@@ -8,10 +8,10 @@ async function getEngineerDbDeps() {
     ])
 
     const { db } = dbMod
-    const { engineers, userRequests } = schemaMod
+    const { engineers, workOrders } = schemaMod
     const { inArray } = ormMod
 
-    return { db, engineers, userRequests, inArray }
+    return { db, engineers, workOrders, inArray }
 }
 
 export type EngineerOption = {
@@ -41,10 +41,10 @@ export const fetchEngineers = authServerFn({ method: 'GET' }).handler(
     },
 )
 
-export const assignRequestsToEngineer = authServerFn({ method: 'POST' })
-    .inputValidator((data: { requestIds: number[]; engineerId: number }) => {
-        if (!data.requestIds || data.requestIds.length === 0) {
-            throw new Error('At least one request must be selected')
+export const assignWorkOrdersToEngineer = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woIds: number[]; engineerId: number }) => {
+        if (!data.woIds || data.woIds.length === 0) {
+            throw new Error('At least one work order must be selected')
         }
         if (!data.engineerId) {
             throw new Error('An engineer must be selected')
@@ -52,16 +52,16 @@ export const assignRequestsToEngineer = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data }) => {
-        const { db, userRequests, inArray } = await getEngineerDbDeps()
+        const { db, workOrders, inArray } = await getEngineerDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('requests', 'assign')
-        const { requestIds, engineerId } = data
+        await requirePermission('workOrders', 'update')
+        const { woIds, engineerId } = data
 
         await db
-            .update(userRequests)
+            .update(workOrders)
             .set({ engineerId })
-            .where(inArray(userRequests.id, requestIds))
+            .where(inArray(workOrders.id, woIds))
 
-        return { success: true, assignedCount: requestIds.length }
+        return { success: true, assignedCount: woIds.length }
     })

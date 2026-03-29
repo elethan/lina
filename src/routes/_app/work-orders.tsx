@@ -17,7 +17,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus, Clock } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
-import { fetchEngineers } from '../../data/engineers.api'
+import { fetchEngineers, assignWorkOrdersToEngineer } from '../../data/engineers.api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog'
 import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, updateWorkOrderNote, startWorkOrder, fetchDowntimeByWoId, createDowntimeEvent, updateDowntimeEvent } from '../../data/workorders.api'
@@ -173,12 +173,12 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
     size: 90,
     enableResizing: false,
   }),
-  columnHelper.accessor('engineerNames', {
+  columnHelper.accessor('engineerId', {
     header: ({ column, table }) => {
       const engineers = (table.options.meta as any)?.engineersList ?? []
       return (
         <div className="flex flex-col gap-1">
-          <span>Engineers</span>
+          <span>Engineer</span>
           <select
             value={(column.getFilterValue() ?? '') as string}
             onChange={(e) => column.setFilterValue(e.target.value ? Number(e.target.value) : undefined)}
@@ -195,27 +195,22 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
       )
     },
     cell: (info) => {
-      const names = info.getValue()
-      if (!names || names.length === 0) {
-        return <span className="text-gray-400 italic text-xs">None</span>
+      const id = info.getValue()
+      const name = info.row.original.engineerName
+      if (!id || !name) {
+        return <span className="text-gray-400 italic text-xs">Unassigned</span>
       }
       return (
         <div className="flex flex-wrap gap-1">
-          {names.map((name: string, i: number) => (
-            <span
-              key={i}
-              className="inline-flex px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-xs font-medium"
-            >
-              {name}
-            </span>
-          ))}
+          <span className="inline-flex px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-xs font-medium">
+            {name}
+          </span>
         </div>
       )
     },
-    filterFn: (_row, _columnId, filterValue) => {
+    filterFn: (row, columnId, filterValue) => {
       if (filterValue === undefined || filterValue === null || filterValue === '') return true
-      // TODO: WO engineerNames is an array of strings; filtering by engineer ID requires a different approach.
-      return true
+      return row.getValue(columnId) === filterValue
     },
   }),
   columnHelper.accessor('startAt', {
@@ -309,6 +304,7 @@ function WorkOrdersPage() {
 
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showAssignDialog, setShowAssignDialog] = useState(false)
   const selectedCount = Object.keys(rowSelection).length
 
   // Execution Dialog State
@@ -332,6 +328,23 @@ function WorkOrdersPage() {
     },
   })
 
+  // Assign Mutation
+  const { mutate: mutateAssign } = useMutation({
+    mutationFn: async (targetEngineerId: number) => {
+      const woIds = Object.keys(rowSelection)
+        .filter((k) => rowSelection[k])
+        .map((k) => filteredData[parseInt(k)]?.id)
+        .filter((id): id is number => id !== undefined)
+
+      return await assignWorkOrdersToEngineer({ data: { woIds, engineerId: targetEngineerId } })
+    },
+    onSuccess: () => {
+      router.invalidate()
+      setRowSelection({})
+      setShowAssignDialog(false)
+    },
+  })
+
   // Auto-select the newly created WO when navigated from the Requests page
   useEffect(() => {
     if (!newWoId) return
@@ -346,7 +359,7 @@ function WorkOrdersPage() {
   // Read initial columns filter state from URL search parameters
   const [columnFilters, setColumnFilters] = useState<any[]>([
     ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
-    ...(selectedEngineerId !== null ? [{ id: 'engineerNames', value: selectedEngineerId }] : []),
+    ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
   ])
 
   // Filtered data
@@ -384,7 +397,7 @@ function WorkOrdersPage() {
       setColumnFilters(updater)
       const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
       const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
-      const newEngineerId = newFilters.find((f: any) => f.id === 'engineerNames')?.value as number | undefined
+      const newEngineerId = newFilters.find((f: any) => f.id === 'engineerId')?.value as number | undefined
 
       navigate({
         search: (prev: WoSearchParams) => ({
@@ -479,6 +492,7 @@ function WorkOrdersPage() {
         <button
           id="btn-assign-wo"
           disabled={selectedCount === 0}
+          onClick={() => setShowAssignDialog(true)}
           className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
         >
           <UserPlus size={16} />
@@ -533,6 +547,47 @@ function WorkOrdersPage() {
             </button>
             <button
               onClick={() => setShowDeleteDialog(false)}
+              className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
+            >
+              Cancel
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 shrink-0">
+                <UserPlus size={20} className="text-primary" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-gray-900">
+                Assign Work Orders
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
+              Select an engineer to assign to the {selectedCount} selected Work Order{selectedCount !== 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 mt-4 pl-[52px]">
+            <select
+              id="assign-engineer-select"
+              className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary mb-2"
+              defaultValue=""
+              onChange={(e) => {
+                const val = e.target.value
+                if (val) {
+                  mutateAssign(Number(val))
+                }
+              }}
+            >
+              <option value="" disabled>Select Engineer</option>
+              {engineersList.map((e) => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowAssignDialog(false)}
               className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
             >
               Cancel

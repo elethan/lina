@@ -20,7 +20,7 @@ type CsvTaskRow = {
   rowNumber: number
 }
 
-type SeedRole = 'admin' | 'user' | 'scientist'
+type SeedRole = 'admin' | 'user' | 'scientist' | 'engineer'
 
 const REQUIRED_HEADERS = [
   'Section ID',
@@ -159,6 +159,12 @@ async function seedAuthUsers() {
       password: 'scientist',
       name: 'Lina Scientist',
       role: 'scientist',
+    },
+    {
+      email: 'engineer@lina.com',
+      password: 'engineer',
+      name: 'Lina Engineer',
+      role: 'engineer',
     },
   ]
 
@@ -325,7 +331,10 @@ async function seedFromCsv() {
   await db.insert(userRequests).values(requestPayloads)
   console.log(`Requests inserted: ${requestPayloads.length}`)
 
-  const workOrderPayloads = allAssets.flatMap((asset) => {
+  const allEngineers = await db.select().from(engineers)
+  const defaultEngineerId = allEngineers[0]?.id
+
+  const workOrderPayloads = allAssets.flatMap((asset, index) => {
     const defaultSystemId = pickDefaultSystemId(csvSystemRows)
     return [
       {
@@ -334,6 +343,7 @@ async function seedFromCsv() {
         description: `Investigate reported operational issue on ${asset.serialNumber}.`,
         physicsHandOver: 'Pending',
         status: 'Open',
+        engineerId: index % 2 === 0 ? defaultEngineerId : null,
       },
       {
         assetId: asset.id,
@@ -341,6 +351,7 @@ async function seedFromCsv() {
         description: `Perform corrective and verification checks on ${asset.serialNumber}.`,
         physicsHandOver: 'Pending',
         status: 'Open',
+        engineerId: null,
       },
     ]
   })
