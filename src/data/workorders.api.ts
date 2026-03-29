@@ -20,7 +20,7 @@ async function getWorkOrderDbDeps() {
         engineers,
         downtimeEvents,
     } = schemaMod
-    const { eq, sql, inArray, desc, and, isNull } = ormMod
+    const { eq, sql, inArray, desc, and, isNull, ne } = ormMod
 
     return {
         db,
@@ -40,6 +40,7 @@ async function getWorkOrderDbDeps() {
         desc,
         and,
         isNull,
+        ne,
     }
 }
 
@@ -221,6 +222,58 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         const { logger } = await import('../lib/logger')
         logger.info('WORK_ORDER_CREATED', { woId: wo.id, userId: user.id, requestIds })
         return { woId: wo.id }
+    })
+
+export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
+    .inputValidator((data: { assetId: number }) => {
+        if (!data.assetId) throw new Error('Asset ID is required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
+        const { db, workOrders, systems, eq, and, sql, desc, ne } = await getWorkOrderDbDeps()
+
+        const rows = await db
+            .select({
+                id: workOrders.id,
+                description: workOrders.description,
+                createdAt: sql<string>`${workOrders.createdAt}`,
+                systemName: systems.name,
+            })
+            .from(workOrders)
+            .leftJoin(systems, eq(workOrders.systemId, systems.id))
+            .where(
+                and(
+                    eq(workOrders.assetId, data.assetId),
+                    ne(workOrders.status, 'Closed')
+                )
+            )
+            .orderBy(desc(workOrders.createdAt))
+
+        return rows
+    })
+
+export const mergeRequestsToWo = authServerFn({ method: 'POST' })
+    .inputValidator((data: { requestIds: number[]; woId: number }) => {
+        if (!data.requestIds || data.requestIds.length === 0) throw new Error('At least one request must be selected')
+        if (!data.woId) throw new Error('Work Order ID is required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { db, userRequests, inArray } = await getWorkOrderDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        const user = await requirePermission('workOrders', 'update')
+        const { requestIds, woId } = data
+
+        await db.update(userRequests)
+            .set({ status: 'Active', woId: woId })
+            .where(inArray(userRequests.id, requestIds))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('REQUESTS_MERGED_TO_WO', { woId, userId: user.id, requestIds })
+        return { success: true }
     })
 
 export const deleteWorkOrders = authServerFn({ method: 'POST' })

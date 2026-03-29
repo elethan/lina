@@ -29,7 +29,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
-import { createWorkOrder } from '../../data/workorders.api'
+import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 
 import { fetchSiteEquipment, fetchSites } from '../../data/equipment.api'
 import { useQuery } from '@tanstack/react-query'
@@ -240,6 +240,8 @@ function RequestsPage() {
     const [showCreateWODialog, setShowCreateWODialog] = useState(false)
     const [showCloseDialog, setShowCloseDialog] = useState(false)
     const [closeComment, setCloseComment] = useState('')
+    const [showMergeDialog, setShowMergeDialog] = useState(false)
+    const [selectedMergeWoId, setSelectedMergeWoId] = useState<number | null>(null)
     const [showNewRequestDialog, setShowNewRequestDialog] = useState(false)
     const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
     const [columnFilters, setColumnFilters] = useState<any[]>([
@@ -268,6 +270,19 @@ function RequestsPage() {
             setRowSelection({})
             setShowCloseDialog(false)
             setCloseComment('')
+        },
+    })
+
+    const { mutate: mutateMergeRequests } = useMutation({
+        mutationFn: async (data: { requestIds: number[], woId: number }) => {
+            const result = await mergeRequestsToWo({ data })
+            return result
+        },
+        onSuccess: () => {
+            router.invalidate()
+            setRowSelection({})
+            setShowMergeDialog(false)
+            setSelectedMergeWoId(null)
         },
     })
 
@@ -414,7 +429,8 @@ function RequestsPage() {
                 </button>
                 <button
                     id="btn-merge"
-                    disabled={selectedCount < 2 || userRole === 'user'}
+                    disabled={selectedCount === 0 || userRole === 'user'}
+                    onClick={() => setShowMergeDialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
                     <Merge size={16} />
@@ -445,8 +461,118 @@ function RequestsPage() {
     const isMultipleAssets = uniqueAssetIds.size > 1
     const hasAttachedRequests = selectedRequests.some((req) => req.status !== 'Open')
 
+    const mergeQuery = useQuery({
+        queryKey: ['openWosForAsset', uniqueAssetIds.size === 1 ? Array.from(uniqueAssetIds)[0] : null],
+        queryFn: async () => fetchOpenWorkOrdersByAsset({ data: { assetId: Array.from(uniqueAssetIds)[0] as number } }),
+        enabled: showMergeDialog && !isMultipleAssets && uniqueAssetIds.size === 1,
+    })
+    const openWosForMerge = mergeQuery.data ?? []
+
     return (
         <>
+            {/* ─── Merge Requests Dialog ─── */}
+            <Dialog open={showMergeDialog} onOpenChange={(val) => {
+                setShowMergeDialog(val)
+                if (!val) setSelectedMergeWoId(null)
+            }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${hasAttachedRequests || isMultipleAssets ? 'bg-red-100' : 'bg-primary/10'}`}>
+                                {hasAttachedRequests || isMultipleAssets ? <AlertCircle size={20} className="text-red-600" /> : <Merge size={20} className="text-primary" />}
+                            </div>
+                            <DialogTitle className="text-base font-semibold text-gray-900">
+                                {hasAttachedRequests || isMultipleAssets ? 'Cannot Merge Requests' : 'Merge to Open Work Order'}
+                            </DialogTitle>
+                        </div>
+                        <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]" asChild>
+                            {hasAttachedRequests ? (
+                                <div>
+                                    One or more of the selected requests are currently <span className="font-semibold text-gray-700">Active</span> or <span className="font-semibold text-gray-700">Closed</span>.
+                                    <br /><br />
+                                    You cannot merge requests that are already attached to a Work Order.
+                                </div>
+                            ) : isMultipleAssets ? (
+                                <div>
+                                    You have selected requests from <span className="font-semibold text-gray-700">multiple different assets/systems</span>.
+                                    <br /><br />
+                                    Selected requests must belong to the <span className="font-semibold text-gray-700">same asset</span>. Please adjust your selection and try again.
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <p>
+                                        Select an open Work Order to append the{' '}
+                                        <span className="font-semibold text-gray-700">
+                                            {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
+                                        </span>{' '}
+                                        to.
+                                    </p>
+                                    
+                                    <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100 mt-2">
+                                        {mergeQuery.isLoading ? (
+                                            <div className="p-4 text-center text-sm text-gray-400">Loading Work Orders...</div>
+                                        ) : openWosForMerge.length === 0 ? (
+                                            <div className="p-4 text-center text-sm text-gray-400">No open Work Orders found for this asset.</div>
+                                        ) : (
+                                            openWosForMerge.map(wo => (
+                                                <div 
+                                                    key={wo.id} 
+                                                    onClick={() => setSelectedMergeWoId(wo.id)}
+                                                    className={`p-3 text-sm cursor-pointer hover:bg-gray-50 flex items-start gap-2 ${selectedMergeWoId === wo.id ? 'bg-primary/5' : ''}`}
+                                                >
+                                                    <input 
+                                                        type="radio" 
+                                                        checked={selectedMergeWoId === wo.id} 
+                                                        onChange={() => setSelectedMergeWoId(wo.id)}
+                                                        className="mt-0.5 accent-primary" 
+                                                    />
+                                                    <div className="flex-1 min-w-0 flex flex-col">
+                                                        <span className="font-medium text-gray-900">WO #{wo.id} — {wo.systemName ?? 'No System'}</span>
+                                                        <span className="text-gray-500 truncate" title={wo.description}>{wo.description}</span>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-2 flex gap-2 sm:gap-2">
+                        {hasAttachedRequests || isMultipleAssets ? (
+                            <button
+                                onClick={() => setShowMergeDialog(false)}
+                                className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-800 transition-colors"
+                            >
+                                Got it
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    onClick={() => setShowMergeDialog(false)}
+                                    className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    disabled={!selectedMergeWoId}
+                                    onClick={() => {
+                                        if (selectedMergeWoId) {
+                                            const ids = selectedRequests.map((r) => r.id)
+                                            mutateMergeRequests({ requestIds: ids, woId: selectedMergeWoId })
+                                        }
+                                    }}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Merge size={15} />
+                                    Merge
+                                </button>
+                            </>
+                        )}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* ─── Close Requests Dialog ─── */}
             <Dialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
                 <DialogContent className="sm:max-w-md">
