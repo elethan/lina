@@ -152,12 +152,13 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
     cell: (info) => {
       const text = info.getValue()
       return (
-        <span className="text-gray-500 whitespace-pre-wrap break-words line-clamp-2">
+        <div className="text-gray-500 whitespace-pre-wrap break-words min-h-[40px]">
           {text}
-        </span>
+        </div>
       )
     },
     size: 300,
+    enableResizing: false,
   }),
   columnHelper.accessor('requestCount', {
     header: 'Requests',

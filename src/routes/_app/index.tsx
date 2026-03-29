@@ -56,9 +56,9 @@ export const Route = createFileRoute('/_app/')({
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
         status:
             search.status === 'Open' ||
-            search.status === 'Active' ||
-            search.status === 'Closed' ||
-            search.status === 'All'
+                search.status === 'Active' ||
+                search.status === 'Closed' ||
+                search.status === 'All'
                 ? search.status
                 : search.status === 'OpenActive'
                     ? 'Open'
@@ -116,36 +116,30 @@ const columns: ColumnDef<RequestRow, any>[] = [
         size: 60,
         enableResizing: false,
     }),
-    columnHelper.accessor('woId', {
-        header: 'WO #',
-        cell: (info) => {
-            const woId = info.getValue()
-            if (!woId) return <span className="text-gray-400 italic font-mono text-xs">—</span>
-            return (
-                <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono text-xs font-semibold border border-blue-100">
-                    WO-{woId}
-                </span>
-            )
-        },
-        size: 80,
-    }),
     columnHelper.accessor('siteName', {
         header: 'Site',
         cell: (info) => info.getValue() ?? '—',
         filterFn: fuzzyFilter,
         size: 120
     }),
+    columnHelper.accessor('systemName', {
+        header: 'System',
+        cell: (info) => info.getValue() ?? '—',
+        size: 70,
+        //        enableResizing: false,
+    }),
     columnHelper.accessor('commentText', {
         header: 'Comment',
         cell: (info) => {
             const text = info.getValue()
             return (
-                <span className="text-gray-500 whitespace-pre-wrap break-words">
+                <div className="text-gray-500 whitespace-pre-wrap break-words min-h-[40px]">
                     {text}
-                </span>
+                </div>
             )
         },
-        size:400
+        size: 300,
+        enableResizing: false,
     }),
     columnHelper.accessor('createdAt', {
         header: 'Date Created',
@@ -159,10 +153,6 @@ const columns: ColumnDef<RequestRow, any>[] = [
                 timeZone: 'UTC',
             })
         },
-    }),
-    columnHelper.accessor('reportedBy', {
-        header: 'Reported By',
-        cell: (info) => info.getValue(),
     }),
     columnHelper.accessor('status', {
         header: ({ column }) => (
@@ -200,25 +190,11 @@ const columns: ColumnDef<RequestRow, any>[] = [
             return row.getValue(columnId) === filterValue
         },
         size: 100,
-     }),
-    columnHelper.accessor('downtimeStartAt', {
-        header: 'Downtime',
-        cell: (info) => {
-            const start = info.getValue()
-            const end = info.row.original.downtimeEndAt
-            if (!start) return <span className="text-gray-400">—</span>
-            
-            const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-            
-            return (
-                <div className="flex flex-col text-[11px] space-y-0.5">
-                    <span className="text-red-600 font-medium">Down: {formatDate(start)}</span>
-                    {end ? <span className="text-green-600 font-medium">Up: {formatDate(end)}</span> : <span className="text-gray-400 italic">Ongoing</span>}
-                </div>
-            )
-        },
     }),
-
+    columnHelper.accessor('reportedBy', {
+        header: 'Reported By',
+        cell: (info) => info.getValue(),
+    }),
     columnHelper.accessor('serialNumber', {
         header: 'Serial Number',
         cell: (info) => (
@@ -227,10 +203,6 @@ const columns: ColumnDef<RequestRow, any>[] = [
             </span>
         ),
         filterFn: fuzzyFilter,
-    }),
-    columnHelper.accessor('systemName', {
-        header: 'System',
-        cell: (info) => info.getValue() ?? '—',
     }),
 ]
 
