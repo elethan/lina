@@ -311,7 +311,6 @@ function WorkOrdersPage() {
 
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [showAssignDialog, setShowAssignDialog] = useState(false)
   const selectedCount = Object.keys(rowSelection).length
 
   // Execution Dialog State
@@ -332,23 +331,6 @@ function WorkOrdersPage() {
       router.invalidate()
       setRowSelection({})
       setShowDeleteDialog(false)
-    },
-  })
-
-  // Assign Mutation
-  const { mutate: mutateAssign } = useMutation({
-    mutationFn: async (targetEngineerId: number) => {
-      const woIds = Object.keys(rowSelection)
-        .filter((k) => rowSelection[k])
-        .map((k) => filteredData[parseInt(k)]?.id)
-        .filter((id): id is number => id !== undefined)
-
-      return await assignWorkOrdersToEngineer({ data: { woIds, engineerId: targetEngineerId } })
-    },
-    onSuccess: () => {
-      router.invalidate()
-      setRowSelection({})
-      setShowAssignDialog(false)
     },
   })
 
@@ -483,15 +465,6 @@ function WorkOrdersPage() {
           {isStarted ? 'Continue' : 'Start'}
         </button>
         <button
-          id="btn-assign-wo"
-          disabled={selectedCount === 0}
-          onClick={() => setShowAssignDialog(true)}
-          className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
-        >
-          <UserPlus size={16} />
-          Assign
-        </button>
-        <button
           id="btn-close-wo"
           disabled={selectedCount === 0}
           onClick={() => setShowDeleteDialog(true)}
@@ -540,47 +513,6 @@ function WorkOrdersPage() {
             </button>
             <button
               onClick={() => setShowDeleteDialog(false)}
-              className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
-            >
-              Cancel
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 shrink-0">
-                <UserPlus size={20} className="text-primary" />
-              </div>
-              <DialogTitle className="text-base font-semibold text-gray-900">
-                Assign Work Orders
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
-              Select an engineer to assign to the {selectedCount} selected Work Order{selectedCount !== 1 ? 's' : ''}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-2 mt-4 pl-[52px]">
-            <select
-              id="assign-engineer-select"
-              className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary mb-2"
-              defaultValue=""
-              onChange={(e) => {
-                const val = e.target.value
-                if (val) {
-                  mutateAssign(Number(val))
-                }
-              }}
-            >
-              <option value="" disabled>Select Engineer</option>
-              {engineersList.map((e) => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => setShowAssignDialog(false)}
               className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
             >
               Cancel
@@ -806,12 +738,18 @@ function WorkOrderExecutionDialog({
   const [displayStartAt, setDisplayStartAt] = useState<string | null>(wo?.startAt ?? null)
   const [displayEndAt, setDisplayEndAt] = useState<string | null>(wo?.endAt ?? null)
   const [displayStatus, setDisplayStatus] = useState<string>(wo?.status ?? 'Open')
+  const [showStartAssignDialog, setShowStartAssignDialog] = useState(false)
+  const [startEngineerId, setStartEngineerId] = useState<number>(
+    defaultEngineerId > 0 ? defaultEngineerId : (engineers[0]?.id ?? 0),
+  )
 
   // Reset local state when the WO prop changes (e.g. user selects a different WO)
   useEffect(() => {
     setDisplayStartAt(wo?.startAt ?? null)
     setDisplayEndAt(wo?.endAt ?? null)
     setDisplayStatus(wo?.status ?? 'Open')
+    setShowStartAssignDialog(false)
+    setStartEngineerId(defaultEngineerId > 0 ? defaultEngineerId : (engineers[0]?.id ?? 0))
   }, [wo?.id])
 
   // Mutation to start the WO
@@ -824,17 +762,40 @@ function WorkOrderExecutionDialog({
     },
   })
 
+  const startWithEngineerMutation = useMutation({
+    mutationFn: async (engineerId: number) => {
+      await assignWorkOrdersToEngineer({ data: { woIds: [wo!.id], engineerId } })
+      return await startWorkOrder({ data: { woId: wo!.id } })
+    },
+    onSuccess: (result) => {
+      setDisplayStartAt(result.startAt)
+      setShowStartAssignDialog(false)
+      router.invalidate()
+    },
+    onError: (err: Error) => {
+      alert(err.message || 'Failed to assign engineer and start work order')
+    },
+  })
+
+  const requiresStartEngineerSelection = !!(open && wo && !wo.startAt && !displayStartAt && !wo.engineerId)
+
+  useEffect(() => {
+    if (requiresStartEngineerSelection) {
+      setShowStartAssignDialog(true)
+    }
+  }, [requiresStartEngineerSelection])
+
   // Auto-start: set startAt if the WO hasn't been started yet
   const autoStartedRef = useRef(false)
   useEffect(() => {
-    if (open && wo && !wo.startAt && !displayStartAt && !autoStartedRef.current) {
+    if (open && wo && !wo.startAt && !displayStartAt && !requiresStartEngineerSelection && !autoStartedRef.current) {
       autoStartedRef.current = true
       startWoMutation.mutate()
     }
     if (!open) {
       autoStartedRef.current = false
     }
-  }, [open, wo?.id, displayStartAt])
+  }, [open, wo?.id, displayStartAt, requiresStartEngineerSelection])
 
   // Fetch the chronologically ordered notes
   const { data: notes, refetch } = useQuery({
@@ -1153,6 +1114,61 @@ function WorkOrderExecutionDialog({
                 </button>
               )}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showStartAssignDialog}
+        onOpenChange={(val) => {
+          setShowStartAssignDialog(val)
+          if (!val) {
+            onOpenChange(false)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Select Engineer Before Start</DialogTitle>
+            <DialogDescription>
+              This Work Order has not started and has no assigned engineer. Choose an engineer to continue.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 flex flex-col gap-3">
+            <select
+              value={startEngineerId}
+              onChange={(e) => setStartEngineerId(Number(e.target.value))}
+              className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+            >
+              <option value={0} disabled>Select Engineer</option>
+              {engineers.map((eng) => (
+                <option key={eng.id} value={eng.id}>{eng.name}</option>
+              ))}
+            </select>
+            <DialogFooter className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStartAssignDialog(false)
+                  onOpenChange(false)
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={startEngineerId <= 0 || startWithEngineerMutation.isPending}
+                onClick={() => {
+                  if (startEngineerId > 0) {
+                    startWithEngineerMutation.mutate(startEngineerId)
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-dark rounded-md transition-colors disabled:opacity-50"
+              >
+                {startWithEngineerMutation.isPending ? 'Starting...' : 'Assign & Start'}
+              </button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
