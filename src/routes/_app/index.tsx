@@ -195,15 +195,7 @@ const columns: ColumnDef<RequestRow, any>[] = [
         header: 'Reported By',
         cell: (info) => info.getValue(),
     }),
-    columnHelper.accessor('serialNumber', {
-        header: 'Serial Number',
-        cell: (info) => (
-            <span className="font-medium text-gray-900">
-                {info.getValue() ?? '—'}
-            </span>
-        ),
-        filterFn: fuzzyFilter,
-    }),
+
     columnHelper.accessor('engineerComment', {
         header: 'Engineer Note',
         cell: (info) => {
@@ -215,8 +207,30 @@ const columns: ColumnDef<RequestRow, any>[] = [
                 </div>
             )
         },
-        size: 300,
+        size: 150,
         enableResizing: false,
+    }),
+    columnHelper.accessor('woId', {
+        header: 'WO #',
+        cell: (info) => {
+            const val = info.getValue()
+            if (!val) return <span className="text-gray-400">—</span>
+            return (
+                <span className="font-mono text-xs font-semibold px-2 py-1 bg-gray-100 text-gray-700/80 rounded border border-gray-200/50">
+                    #{val}
+                </span>
+            )
+        },
+        size: 100,
+    }),
+    columnHelper.accessor('serialNumber', {
+        header: 'Serial Number',
+        cell: (info) => (
+            <span className="font-medium text-gray-900">
+                {info.getValue() ?? '—'}
+            </span>
+        ),
+        filterFn: fuzzyFilter,
     }),
 ]
 
@@ -507,7 +521,7 @@ function RequestsPage() {
                                         </span>{' '}
                                         to.
                                     </p>
-                                    
+
                                     <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100 mt-2">
                                         {mergeQuery.isLoading ? (
                                             <div className="p-4 text-center text-sm text-gray-400">Loading Work Orders...</div>
@@ -515,16 +529,16 @@ function RequestsPage() {
                                             <div className="p-4 text-center text-sm text-gray-400">No open Work Orders found for this asset.</div>
                                         ) : (
                                             openWosForMerge.map(wo => (
-                                                <div 
-                                                    key={wo.id} 
+                                                <div
+                                                    key={wo.id}
                                                     onClick={() => setSelectedMergeWoId(wo.id)}
                                                     className={`p-3 text-sm cursor-pointer hover:bg-gray-50 flex items-start gap-2 ${selectedMergeWoId === wo.id ? 'bg-primary/5' : ''}`}
                                                 >
-                                                    <input 
-                                                        type="radio" 
-                                                        checked={selectedMergeWoId === wo.id} 
+                                                    <input
+                                                        type="radio"
+                                                        checked={selectedMergeWoId === wo.id}
                                                         onChange={() => setSelectedMergeWoId(wo.id)}
-                                                        className="mt-0.5 accent-primary" 
+                                                        className="mt-0.5 accent-primary"
                                                     />
                                                     <div className="flex-1 min-w-0 flex flex-col">
                                                         <span className="font-medium text-gray-900">WO #{wo.id} — {wo.systemName ?? 'No System'}</span>
@@ -866,6 +880,7 @@ function RequestsPage() {
 // ── New Request Dialog ──────────────────────────────────────────────
 
 function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }: { initialSiteId?: number, open: boolean, onOpenChange: (open: boolean) => void, onAutoWoCreated?: (info: { woId: number; isNew: boolean }) => void }) {
+    const { user } = useRouteContext({ from: '/_app/' })
     const router = useRouter()
     const siteLocked = typeof initialSiteId === 'number'
     const [selectedSiteId, setSelectedSiteId] = useState<number | undefined>(initialSiteId)
@@ -967,7 +982,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
         setSelectedSiteId(siteLocked ? initialSiteId : undefined)
         form.setFieldValue('systemId', 0)
         form.setFieldValue('assetId', 0)
-        form.setFieldValue('reportedBy', '')
+        form.setFieldValue('reportedBy', user?.name || user?.email || '')
         form.setFieldValue('commentText', '')
         form.setFieldValue('downtimeDate', getTodayDateValue())
         form.setFieldValue('downtimeTime', '')
@@ -981,6 +996,28 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
         const timer = setTimeout(() => setFormErrorToast(null), 2000)
         return () => clearTimeout(timer)
     }, [formErrorToast])
+
+    // Auto-select first asset and system when equipment loads for the site
+    useEffect(() => {
+        if (open && equipment && equipment.assets.length > 0) {
+            const currentAssetId = form.getFieldValue('assetId')
+            // Only auto-fill if not currently populated
+            if (!currentAssetId) {
+                const firstAssetId = equipment.assets[0].assetId
+                form.setFieldValue('assetId', firstAssetId)
+
+                // Try to resolve the first valid system for this asset
+                const validSystemIds = equipment.assetSystemMap
+                    .filter((m) => m.assetId === firstAssetId)
+                    .map((m) => m.systemId)
+                
+                const validSystems = equipment.systems.filter((s) => validSystemIds.includes(s.systemId))
+                if (validSystems.length > 0) {
+                    form.setFieldValue('systemId', validSystems[0].systemId)
+                }
+            }
+        }
+    }, [equipment, open, form])
 
     const selectedSiteName = sites?.find((site) => site.siteId === selectedSiteId)?.name
 

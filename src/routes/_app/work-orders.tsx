@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate, useRouter, useRouteContext } from '@tanstack/react-router'
 
 import {
   useReactTable,
@@ -293,6 +293,7 @@ function WorkOrdersPage() {
   const { workOrders: data, engineers: engineersList } = Route.useLoaderData()
   const navigate = useNavigate({ from: '/work-orders' })
   const router = useRouter()
+  const { user } = useRouteContext({ from: '/_app' })
   const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId, newWoId } = Route.useSearch()
   const selectedEngineerId = engineerId ?? null
 
@@ -721,6 +722,7 @@ function WorkOrdersPage() {
         open={showExecutionDialog}
         onOpenChange={setShowExecutionDialog}
         engineers={engineersList}
+        currentUserName={user?.name || user?.email || null}
         onCloseComplete={() => setShowExecutionDialog(false)}
       />
     </>
@@ -796,15 +798,24 @@ function WorkOrderExecutionDialog({
   open,
   onOpenChange,
   engineers,
+  currentUserName,
   onCloseComplete
 }: {
   wo: WorkOrderRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
   engineers: { id: number; name: string }[]
+  currentUserName: string | null
   onCloseComplete: () => void
 }) {
   const [showAddNote, setShowAddNote] = useState(false)
+
+  // Resolve the best default engineer: assigned WO engineer first, then logged-in user
+  const defaultEngineerId: number = (
+    wo?.engineerId ??
+    engineers.find(e => currentUserName && e.name.toLowerCase().includes(currentUserName.split(' ')[0]?.toLowerCase() ?? ''))?.id ??
+    0
+  )
 
   // Local display state for dates & status (so we can update after start/close without refetching the whole page)
   const [displayStartAt, setDisplayStartAt] = useState<string | null>(wo?.startAt ?? null)
@@ -1167,6 +1178,7 @@ function WorkOrderExecutionDialog({
         open={showAddNote}
         onOpenChange={setShowAddNote}
         engineers={engineers}
+        defaultEngineerId={defaultEngineerId}
         onSuccess={() => {
           setShowAddNote(false)
           refetch()
@@ -1177,14 +1189,14 @@ function WorkOrderExecutionDialog({
 }
 
 
-function AddNoteDialog({ wo, open, onOpenChange, engineers, onSuccess }: any) {
+function AddNoteDialog({ wo, open, onOpenChange, engineers, defaultEngineerId = 0, onSuccess }: any) {
   const mutation = useMutation({
     mutationFn: async (values: any) => await addWorkOrderNote({ data: values }),
     onSuccess
   })
 
   const form = useForm({
-    defaultValues: { noteText: '', engineerId: 0 },
+    defaultValues: { noteText: '', engineerId: defaultEngineerId },
     onSubmit: async ({ value }) => {
       const parsed = z.object({
         noteText: z.string().min(1, "Note cannot be empty"),
@@ -1198,6 +1210,14 @@ function AddNoteDialog({ wo, open, onOpenChange, engineers, onSuccess }: any) {
       mutation.mutate({ woId: wo.id, ...parsed.data })
     }
   })
+
+  // Sync the defaultEngineerId each time the dialog opens (WO may change)
+  useEffect(() => {
+    if (open) {
+      form.setFieldValue('engineerId', defaultEngineerId)
+      form.setFieldValue('noteText', '')
+    }
+  }, [open, defaultEngineerId])
 
   return (
     <Dialog open={open} onOpenChange={(val) => {
