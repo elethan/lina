@@ -65,9 +65,13 @@ export const Route = createFileRoute('/_app/')({
                     : 'Open',
         siteId: search.siteId ? Number(search.siteId) : undefined,
     }),
-    loader: async () => {
+    loaderDeps: ({ search }) => ({
+        dateFrom: search.dateFrom,
+        dateTo: search.dateTo,
+    }),
+    loader: async ({ deps }) => {
         const [requests] = await Promise.all([
-            fetchRequests(),
+            fetchRequests({ data: { dateFrom: deps.dateFrom, dateTo: deps.dateTo } }),
         ])
         return { requests }
     },
@@ -300,24 +304,9 @@ function RequestsPage() {
         },
     })
 
-    // Date-filtered + Site-filtered  data
+    // Site-filtered data (date window is server-side via loader deps)
     const filteredData = useMemo(() => {
         let result = data
-
-        // Date range filter
-        if (dateFrom || dateTo) {
-            result = result.filter((row) => {
-                if (!row.createdAt) return true
-                const d = new Date(row.createdAt)
-                if (dateFrom && d < new Date(dateFrom)) return false
-                if (dateTo) {
-                    const to = new Date(dateTo)
-                    to.setHours(23, 59, 59, 999)
-                    if (d > to) return false
-                }
-                return true
-            })
-        }
 
         // Site filter
         if (siteId) {
@@ -325,7 +314,7 @@ function RequestsPage() {
         }
 
         return result
-    }, [data, dateFrom, dateTo, siteId])
+    }, [data, siteId])
 
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const { containerRef, pageSize } = useDynamicPageSize()
@@ -489,7 +478,7 @@ function RequestsPage() {
                 setShowMergeDialog(val)
                 if (!val) setSelectedMergeWoId(null)
             }}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <div className="flex items-center gap-3 mb-1">
                             <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${hasAttachedRequests || isMultipleAssets ? 'bg-red-100' : 'bg-primary/10'}`}>

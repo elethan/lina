@@ -57,9 +57,13 @@ export const Route = createFileRoute('/_app/work-orders')({
       throw redirect({ to: '/' })
     }
   },
-  loader: async () => {
+  loaderDeps: ({ search }) => ({
+    dateFrom: search.dateFrom,
+    dateTo: search.dateTo,
+  }),
+  loader: async ({ deps }) => {
     const [workOrders, engineers] = await Promise.all([
-      fetchWorkOrders(),
+      fetchWorkOrders({ data: { dateFrom: deps.dateFrom, dateTo: deps.dateTo } }),
       fetchEngineers(),
     ])
     return { workOrders, engineers }
@@ -366,26 +370,7 @@ function WorkOrdersPage() {
   ])
 
   // Filtered data
-  const filteredData = useMemo(() => {
-    let result = data
-
-    // Date range filter (on startAt)
-    if (dateFrom || dateTo) {
-      result = result.filter((row) => {
-        if (!row.startAt) return true
-        const d = new Date(row.startAt)
-        if (dateFrom && d < new Date(dateFrom)) return false
-        if (dateTo) {
-          const to = new Date(dateTo)
-          to.setHours(23, 59, 59, 999)
-          if (d > to) return false
-        }
-        return true
-      })
-    }
-
-    return result
-  }, [data, dateFrom, dateTo])
+  const filteredData = useMemo(() => data, [data])
 
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
   const { containerRef, pageSize } = useDynamicPageSize()

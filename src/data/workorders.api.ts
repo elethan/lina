@@ -20,7 +20,7 @@ async function getWorkOrderDbDeps() {
         engineers,
         downtimeEvents,
     } = schemaMod
-    const { eq, sql, inArray, desc, and, isNull, ne } = ormMod
+    const { eq, sql, inArray, desc, and, isNull, gte, lte } = ormMod
 
     return {
         db,
@@ -40,7 +40,8 @@ async function getWorkOrderDbDeps() {
         desc,
         and,
         isNull,
-        ne,
+        gte,
+        lte,
     }
 }
 
@@ -63,8 +64,25 @@ export type WorkOrderRow = {
 }
 
 // ── Fetch all work orders ─────────────────────────────────────
-export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
-    async (): Promise<WorkOrderRow[]> => {
+export const fetchWorkOrders = authServerFn({ method: 'GET' })
+    .inputValidator((data: { dateFrom?: string; dateTo?: string }) => {
+        if (data.dateFrom) {
+            const parsedFrom = new Date(data.dateFrom)
+            if (Number.isNaN(parsedFrom.getTime())) {
+                throw new Error('Invalid dateFrom value')
+            }
+        }
+
+        if (data.dateTo) {
+            const parsedTo = new Date(data.dateTo)
+            if (Number.isNaN(parsedTo.getTime())) {
+                throw new Error('Invalid dateTo value')
+            }
+        }
+
+        return data
+    })
+    .handler(async ({ data }): Promise<WorkOrderRow[]> => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
         const {
@@ -78,10 +96,20 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
             eq,
             sql,
             desc,
+            and,
+            gte,
+            lte,
         } = await getWorkOrderDbDeps()
 
+        const dateFromIso = data.dateFrom
+            ? new Date(`${data.dateFrom}T00:00:00.000Z`).toISOString()
+            : undefined
+        const dateToIso = data.dateTo
+            ? new Date(`${data.dateTo}T23:59:59.999Z`).toISOString()
+            : undefined
+
         // Base WO data with joins
-        const rows = await db
+        let rowsQuery = db
             .select({
                 id: workOrders.id,
                 assetId: workOrders.assetId,
@@ -103,7 +131,16 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(workOrders.systemId, systems.id))
             .leftJoin(engineers, eq(workOrders.engineerId, engineers.id))
-            .orderBy(desc(workOrders.startAt), desc(workOrders.id))
+
+        if (dateFromIso && dateToIso) {
+            rowsQuery = rowsQuery.where(and(gte(workOrders.createdAt, dateFromIso), lte(workOrders.createdAt, dateToIso)))
+        } else if (dateFromIso) {
+            rowsQuery = rowsQuery.where(gte(workOrders.createdAt, dateFromIso))
+        } else if (dateToIso) {
+            rowsQuery = rowsQuery.where(lte(workOrders.createdAt, dateToIso))
+        }
+
+        const rows = await rowsQuery.orderBy(desc(workOrders.startAt), desc(workOrders.id))
 
         // Fetch linked request counts
         const requestCounts = await db
@@ -135,8 +172,7 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' }).handler(
                 ? `${r.engineerFirstName} ${r.engineerLastName}`
                 : null,
         }))
-    },
-)
+    })
 
 export const createWorkOrder = authServerFn({ method: 'POST' })
     .inputValidator((data: { requestIds: number[] }) => {
@@ -232,7 +268,10 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
     .handler(async ({ data }) => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
-        const { db, workOrders, systems, eq, and, sql, desc, ne } = await getWorkOrderDbDeps()
+        const { db, workOrders, systems, eq, and, sql, desc, inArray, gte } = await getWorkOrderDbDeps()
+        const sixMonthsAgo = new Date()
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+        const sixMonthsAgoIso = sixMonthsAgo.toISOString()
 
         const rows = await db
             .select({
@@ -246,7 +285,8 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
             .where(
                 and(
                     eq(workOrders.assetId, data.assetId),
-                    ne(workOrders.status, 'Closed')
+                    inArray(workOrders.status, ['Open', 'Active']),
+                    gte(workOrders.createdAt, sixMonthsAgoIso)
                 )
             )
             .orderBy(desc(workOrders.createdAt))

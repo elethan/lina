@@ -9,7 +9,7 @@ async function getRequestDbDeps() {
 
     const { db } = dbMod
     const { userRequests, assets, sites, systems, engineers, workOrders, downtimeEvents } = schemaMod
-    const { eq, sql, desc, inArray, and, ne, isNull } = ormMod
+    const { eq, sql, desc, inArray, and, ne, isNull, gte, lte } = ormMod
 
     return {
         db,
@@ -27,6 +27,8 @@ async function getRequestDbDeps() {
         and,
         ne,
         isNull,
+        gte,
+        lte,
     }
 }
 
@@ -47,13 +49,37 @@ export type RequestRow = {
     woId: number | null
 }
 
-export const fetchRequests = authServerFn({ method: 'GET' }).handler(
-    async (): Promise<RequestRow[]> => {
+export const fetchRequests = authServerFn({ method: 'GET' })
+    .inputValidator((data: { dateFrom?: string; dateTo?: string }) => {
+        if (data.dateFrom) {
+            const parsedFrom = new Date(data.dateFrom)
+            if (Number.isNaN(parsedFrom.getTime())) {
+                throw new Error('Invalid dateFrom value')
+            }
+        }
+
+        if (data.dateTo) {
+            const parsedTo = new Date(data.dateTo)
+            if (Number.isNaN(parsedTo.getTime())) {
+                throw new Error('Invalid dateTo value')
+            }
+        }
+
+        return data
+    })
+    .handler(async ({ data }): Promise<RequestRow[]> => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
-        const { db, userRequests, assets, sites, systems, eq, sql, desc } = await getRequestDbDeps()
+        const { db, userRequests, assets, sites, systems, eq, sql, desc, and, gte, lte } = await getRequestDbDeps()
 
-        const rows = await db
+        const dateFromIso = data.dateFrom
+            ? new Date(`${data.dateFrom}T00:00:00.000Z`).toISOString()
+            : undefined
+        const dateToIso = data.dateTo
+            ? new Date(`${data.dateTo}T23:59:59.999Z`).toISOString()
+            : undefined
+
+        let rowsQuery = db
             .select({
                 id: userRequests.id,
                 assetId: userRequests.assetId,
@@ -75,8 +101,16 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
             .leftJoin(assets, eq(userRequests.assetId, assets.id))
             .leftJoin(sites, eq(assets.siteId, sites.id))
             .leftJoin(systems, eq(userRequests.systemId, systems.id))
-            .where(sql`${userRequests.createdAt} >= datetime('now', '-6 months')`)
-            .orderBy(desc(userRequests.createdAt))
+
+        if (dateFromIso && dateToIso) {
+            rowsQuery = rowsQuery.where(and(gte(userRequests.createdAt, dateFromIso), lte(userRequests.createdAt, dateToIso)))
+        } else if (dateFromIso) {
+            rowsQuery = rowsQuery.where(gte(userRequests.createdAt, dateFromIso))
+        } else if (dateToIso) {
+            rowsQuery = rowsQuery.where(lte(userRequests.createdAt, dateToIso))
+        }
+
+        const rows = await rowsQuery.orderBy(desc(userRequests.createdAt))
 
         return rows.map((r) => ({
             id: r.id,
@@ -94,8 +128,7 @@ export const fetchRequests = authServerFn({ method: 'GET' }).handler(
             downtimeEndAt: r.downtimeEndAt ?? null,
             woId: r.woId ?? null,
         }))
-    },
-)
+    })
 
 export const deleteRequests = authServerFn({ method: 'POST' })
     .inputValidator((data: { requestIds: number[], engineerComment?: string }) => {

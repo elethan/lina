@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // --- A. HELPER COLUMNS (Sync & Soft Delete) ---
@@ -205,7 +205,9 @@ export const workOrders = sqliteTable('work_orders', {
   engineerId: integer('engineer_id').references(() => engineers.id),
   status: text('status').notNull().default('Open'),
   ...commonCols,
-});
+}, (t) => ({
+  assetCreatedAtIdx: index('work_orders_asset_created_at_idx').on(t.assetId, t.createdAt),
+}));
 
 export const workOrderNotes = sqliteTable('work_order_notes', {
   id: integer('note_id').primaryKey({ autoIncrement: true }),
