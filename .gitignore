@@ -16,6 +16,6 @@ todos.json
 *.db-journal
 *.csv
 *.log
-src/db/seed-pm-csv.ts
+src/db/seed*.ts
 local-md/
 deploy_key

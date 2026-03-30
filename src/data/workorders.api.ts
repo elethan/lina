@@ -20,7 +20,7 @@ async function getWorkOrderDbDeps() {
         engineers,
         downtimeEvents,
     } = schemaMod
-    const { eq, sql, inArray, desc, and, isNull, gte, lte } = ormMod
+    const { eq, sql, inArray, desc, and, isNull } = ormMod
 
     return {
         db,
@@ -40,8 +40,6 @@ async function getWorkOrderDbDeps() {
         desc,
         and,
         isNull,
-        gte,
-        lte,
     }
 }
 
@@ -97,8 +95,6 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
             sql,
             desc,
             and,
-            gte,
-            lte,
         } = await getWorkOrderDbDeps()
 
         const dateFromIso = data.dateFrom
@@ -107,6 +103,16 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
         const dateToIso = data.dateTo
             ? new Date(`${data.dateTo}T23:59:59.999Z`).toISOString()
             : undefined
+
+        const normalizedCreatedAt = sql<string>`
+            CASE
+                WHEN ${workOrders.createdAt} LIKE '__/__/____' THEN
+                    substr(${workOrders.createdAt}, 7, 4) || '-' || substr(${workOrders.createdAt}, 1, 2) || '-' || substr(${workOrders.createdAt}, 4, 2) || 'T00:00:00.000Z'
+                WHEN ${workOrders.createdAt} LIKE '____-__-__ __:__:__' THEN
+                    replace(${workOrders.createdAt}, ' ', 'T') || 'Z'
+                ELSE ${workOrders.createdAt}
+            END
+        `
 
         // Base WO data with joins
         let rowsQuery = db
@@ -133,11 +139,11 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
             .leftJoin(engineers, eq(workOrders.engineerId, engineers.id))
 
         if (dateFromIso && dateToIso) {
-            rowsQuery = rowsQuery.where(and(gte(workOrders.createdAt, dateFromIso), lte(workOrders.createdAt, dateToIso)))
+            rowsQuery = rowsQuery.where(sql`${normalizedCreatedAt} >= ${dateFromIso} AND ${normalizedCreatedAt} <= ${dateToIso}`)
         } else if (dateFromIso) {
-            rowsQuery = rowsQuery.where(gte(workOrders.createdAt, dateFromIso))
+            rowsQuery = rowsQuery.where(sql`${normalizedCreatedAt} >= ${dateFromIso}`)
         } else if (dateToIso) {
-            rowsQuery = rowsQuery.where(lte(workOrders.createdAt, dateToIso))
+            rowsQuery = rowsQuery.where(sql`${normalizedCreatedAt} <= ${dateToIso}`)
         }
 
         const rows = await rowsQuery.orderBy(desc(workOrders.startAt), desc(workOrders.id))
@@ -268,10 +274,20 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
     .handler(async ({ data }) => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
-        const { db, workOrders, systems, eq, and, sql, desc, inArray, gte } = await getWorkOrderDbDeps()
+        const { db, workOrders, systems, eq, and, sql, desc, inArray } = await getWorkOrderDbDeps()
         const sixMonthsAgo = new Date()
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
         const sixMonthsAgoIso = sixMonthsAgo.toISOString()
+
+        const normalizedCreatedAt = sql<string>`
+            CASE
+                WHEN ${workOrders.createdAt} LIKE '__/__/____' THEN
+                    substr(${workOrders.createdAt}, 7, 4) || '-' || substr(${workOrders.createdAt}, 1, 2) || '-' || substr(${workOrders.createdAt}, 4, 2) || 'T00:00:00.000Z'
+                WHEN ${workOrders.createdAt} LIKE '____-__-__ __:__:__' THEN
+                    replace(${workOrders.createdAt}, ' ', 'T') || 'Z'
+                ELSE ${workOrders.createdAt}
+            END
+        `
 
         const rows = await db
             .select({
@@ -286,7 +302,7 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
                 and(
                     eq(workOrders.assetId, data.assetId),
                     inArray(workOrders.status, ['Open', 'Active']),
-                    gte(workOrders.createdAt, sixMonthsAgoIso)
+                    sql`${normalizedCreatedAt} >= ${sixMonthsAgoIso}`
                 )
             )
             .orderBy(desc(workOrders.createdAt))
