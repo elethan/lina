@@ -16,7 +16,7 @@ import { rankItem } from '@tanstack/match-sorter-utils'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useDynamicPageSize } from '../../hooks/useDynamicPageSize'
 import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus, Clock } from 'lucide-react'
-import { useSetToolbar } from '../../components/ToolbarContext'
+import Toolbar from '../../components/Toolbar'
 import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
 import { fetchEngineers, assignWorkOrdersToEngineer } from '../../data/engineers.api'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -477,10 +477,10 @@ function WorkOrdersPage() {
     ),
   }), [globalFilter, dateFrom, dateTo, selectedCount, isStarted])
 
-  useSetToolbar(toolbarConfig)
-
   return (
     <>
+      <Toolbar leftContent={toolbarConfig.leftContent} rightContent={toolbarConfig.rightContent} />
+
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

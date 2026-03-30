@@ -27,7 +27,7 @@ import {
 } from '../../components/ui/dialog'
 import { useMutation } from '@tanstack/react-query'
 import { useRouteContext } from '@tanstack/react-router'
-import { useSetToolbar } from '../../components/ToolbarContext'
+import Toolbar from '../../components/Toolbar'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 
@@ -452,8 +452,6 @@ function RequestsPage() {
         ),
     }), [globalFilter, dateFrom, dateTo, selectedCount, userRole, siteId])
 
-    useSetToolbar(toolbarConfig)
-
     // Check if selected requests span multiple assets
     const selectedRequests = Object.keys(rowSelection)
         .filter((key) => rowSelection[key])
@@ -473,6 +471,8 @@ function RequestsPage() {
 
     return (
         <>
+            <Toolbar leftContent={toolbarConfig.leftContent} rightContent={toolbarConfig.rightContent} />
+
             {/* ─── Merge Requests Dialog ─── */}
             <Dialog open={showMergeDialog} onOpenChange={(val) => {
                 setShowMergeDialog(val)

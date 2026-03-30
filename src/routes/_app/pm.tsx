@@ -29,7 +29,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 import { useRouteContext } from '@tanstack/react-router'
-import { useSetToolbar } from '../../components/ToolbarContext'
+import Toolbar from '../../components/Toolbar'
 import {
     fetchPmRows,
     fetchPmFormOptions,
@@ -1240,10 +1240,10 @@ function PreventiveMaintenancePage() {
         ],
     )
 
-    useSetToolbar(toolbarConfig)
-
     return (
         <>
+            <Toolbar leftContent={toolbarConfig.leftContent} rightContent={toolbarConfig.rightContent} />
+
             <PmExecutionDialog
                 pmId={selectedPmId}
                 open={showExecutionDialog}
