@@ -28,7 +28,6 @@ import {
 import { useMutation } from '@tanstack/react-query'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
-import TableSkeleton from '../../components/TableSkeleton'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 
@@ -47,77 +46,6 @@ const getDefaultDateFrom = () => {
     const date = new Date()
     date.setMonth(date.getMonth() - 6)
     return date.toISOString().slice(0, 10)
-}
-
-// ── Pending component (toolbar + skeleton while loader runs) ────
-function RequestsPending() {
-    const { search: globalFilter = '', dateFrom = '', dateTo = '' } = Route.useSearch()
-    const { user } = useRouteContext({ from: '/_app/' })
-    const navigate = useNavigate({ from: '/' })
-
-    const setGlobalFilter = (value: string) =>
-        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
-    const setDateFrom = (value: string) =>
-        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
-    const setDateTo = (value: string) =>
-        navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateTo: value || undefined }) })
-
-    const userRole = user?.role ?? 'user'
-
-    const toolbarConfig = useMemo(
-        () => ({
-            title: 'Requests',
-            leftContent: (
-                <>
-                    <div className="relative flex-1 min-w-64 max-w-sm">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search serial number or site…"
-                            value={globalFilter}
-                            onChange={(e) => setGlobalFilter(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                        <Calendar size={16} className="text-gray-400" />
-                        <input
-                            type="date" value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
-                        />
-                        <span className="text-gray-400">to</span>
-                        <input
-                            type="date" value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
-                        />
-                    </div>
-                </>
-            ),
-            rightContent: (
-                <div className="flex items-center gap-2">
-                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm transition-all w-32 whitespace-nowrap opacity-50 cursor-not-allowed">
-                        <PlusCircle size={16} /> New
-                    </button>
-                    <div className="w-px h-8 bg-gray-200" />
-                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-32 whitespace-nowrap opacity-30 cursor-not-allowed">
-                        <ClipboardPlus size={16} /> Create WO
-                    </button>
-                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-32 whitespace-nowrap opacity-30 cursor-not-allowed">
-                        <Merge size={16} /> Merge
-                    </button>
-                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-32 whitespace-nowrap opacity-30 cursor-not-allowed">
-                        <XCircle size={16} /> Close
-                    </button>
-                </div>
-            ),
-        }),
-        [globalFilter, dateFrom, dateTo, userRole],
-    )
-
-    useSetToolbar(toolbarConfig)
-    return <TableSkeleton />
 }
 
 // ── Route ─────────────────────────────────────────────────────
@@ -147,9 +75,6 @@ export const Route = createFileRoute('/_app/')({
         ])
         return { requests }
     },
-    pendingMs: 0,
-    pendingMinMs: 0,
-    pendingComponent: RequestsPending,
     component: RequestsPage,
 })
 
