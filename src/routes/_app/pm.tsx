@@ -30,6 +30,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
+import TableSkeleton from '../../components/TableSkeleton'
 import {
     fetchPmRows,
     fetchPmFormOptions,
@@ -66,6 +67,76 @@ const getDefaultDateFrom = () => {
     const date = new Date()
     date.setMonth(date.getMonth() - 13)
     return date.toISOString().slice(0, 10)
+}
+
+// ── Pending component (toolbar + skeleton while loader runs) ────
+function PmPending() {
+    const { search: globalFilter = '', dateFrom = '', dateTo = '' } = Route.useSearch()
+    const { user } = useRouteContext({ from: '/_app' })
+    const navigate = useNavigate({ from: '/pm' })
+
+    const setGlobalFilter = (value: string) =>
+        navigate({ search: (prev: PmSearchParams) => ({ ...prev, search: value || undefined }) })
+    const setDateFrom = (value: string) =>
+        navigate({ search: (prev: PmSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
+    const setDateTo = (value: string) =>
+        navigate({ search: (prev: PmSearchParams) => ({ ...prev, dateTo: value || undefined }) })
+
+    const canManagePm = user?.role === 'admin' || user?.role === 'engineer'
+
+    const toolbarConfig = useMemo(
+        () => ({
+            title: 'Preventive Maintenance',
+            leftContent: (
+                <>
+                    <div className="relative flex-1 min-w-64 max-w-sm">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search PM, asset, site, system, engineer..."
+                            value={globalFilter}
+                            onChange={(e) => setGlobalFilter(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <Calendar size={16} className="text-gray-400" />
+                        <input
+                            type="date" value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
+                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                        />
+                        <span className="text-gray-400">to</span>
+                        <input
+                            type="date" value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+                        />
+                    </div>
+                </>
+            ),
+            rightContent: (
+                <div className="flex items-center gap-2">
+                    <button disabled={!canManagePm} className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm transition-all w-32 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed">
+                        <PlusCircle size={16} /> New
+                    </button>
+                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-32 whitespace-nowrap opacity-30 cursor-not-allowed">
+                        <CheckCircle2 size={16} /> Execute
+                    </button>
+                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-32 whitespace-nowrap opacity-30 cursor-not-allowed">
+                        <Pencil size={16} /> Edit
+                    </button>
+                    <button disabled className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-32 whitespace-nowrap opacity-30 cursor-not-allowed">
+                        <Copy size={16} /> Duplicate
+                    </button>
+                </div>
+            ),
+        }),
+        [globalFilter, dateFrom, dateTo, canManagePm],
+    )
+
+    useSetToolbar(toolbarConfig)
+    return <TableSkeleton />
 }
 
 export const Route = createFileRoute('/_app/pm')({
@@ -107,6 +178,9 @@ export const Route = createFileRoute('/_app/pm')({
         ])
         return { rows, options }
     },
+    pendingMs: 0,
+    pendingMinMs: 0,
+    pendingComponent: PmPending,
     component: PreventiveMaintenancePage,
 })
 
@@ -1184,7 +1258,7 @@ function PreventiveMaintenancePage() {
                             setNewEngineerId('')
                             setShowNewDialog(true)
                         }}
-                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                     >
                         <PlusCircle size={16} />
                         New
@@ -1193,7 +1267,7 @@ function PreventiveMaintenancePage() {
                         id="btn-execute-pm"
                         disabled={!hasSelection || !canManagePm}
                         onClick={() => setShowExecutionDialog(true)}
-                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                     >
                         <CheckCircle2 size={16} />
                         Execute
@@ -1202,7 +1276,7 @@ function PreventiveMaintenancePage() {
                         id="btn-edit-pm"
                         disabled={!hasSelection || !canManagePm}
                         onClick={handleEdit}
-                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                     >
                         <Pencil size={16} />
                         Edit
@@ -1211,7 +1285,7 @@ function PreventiveMaintenancePage() {
                         id="btn-duplicate-pm"
                         disabled={!hasSelection || !canManagePm}
                         onClick={handleOpenDuplicateDialog}
-                        className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                     >
                         <Copy size={16} />
                         Duplicate

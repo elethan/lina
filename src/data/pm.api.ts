@@ -18,7 +18,7 @@ async function getPmDbDeps() {
         assetPmResults,
         pmEngineers,
     } = schemaMod
-    const { eq, and, desc, isNull, sql, lte, inArray } = ormMod
+    const { eq, and, desc, isNull, sql, gte, lte, inArray } = ormMod
 
     return {
         db,
@@ -35,6 +35,7 @@ async function getPmDbDeps() {
         desc,
         isNull,
         sql,
+        gte,
         lte,
         inArray,
     }

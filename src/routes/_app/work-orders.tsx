@@ -17,6 +17,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useDynamicPageSize } from '../../hooks/useDynamicPageSize'
 import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus, Clock } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
+import TableSkeleton from '../../components/TableSkeleton'
 import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
 import { fetchEngineers, assignWorkOrdersToEngineer } from '../../data/engineers.api'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -39,6 +40,67 @@ const getDefaultDateFrom = () => {
   const date = new Date()
   date.setMonth(date.getMonth() - 6)
   return date.toISOString().slice(0, 10)
+}
+
+// ── Pending component (toolbar + skeleton while loader runs) ────
+function WorkOrdersPending() {
+  const { search: globalFilter = '', dateFrom = '', dateTo = '' } = Route.useSearch()
+  const navigate = useNavigate({ from: '/work-orders' })
+
+  const setGlobalFilter = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, search: value || undefined }) })
+  const setDateFrom = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
+  const setDateTo = (value: string) =>
+    navigate({ search: (prev: WoSearchParams) => ({ ...prev, dateTo: value || undefined }) })
+
+  const toolbarConfig = useMemo(
+    () => ({
+      title: 'Work Orders',
+      leftContent: (
+        <>
+          <div className="relative flex-1 min-w-64 max-w-sm">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search asset, site, or description…"
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar size={16} className="text-gray-400" />
+            <input
+              type="date" value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+            />
+            <span className="text-gray-400">to</span>
+            <input
+              type="date" value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-600 text-sm focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+            />
+          </div>
+        </>
+      ),
+      rightContent: (
+        <div className="flex items-center gap-2">
+          <button disabled className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm transition-all w-40 opacity-30 cursor-not-allowed">
+            <Play size={16} /> Start
+          </button>
+          <button disabled className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm transition-all w-40 opacity-30 cursor-not-allowed">
+            <XCircle size={16} /> Close
+          </button>
+        </div>
+      ),
+    }),
+    [globalFilter, dateFrom, dateTo],
+  )
+
+  useSetToolbar(toolbarConfig)
+  return <TableSkeleton />
 }
 
 // ── Route ─────────────────────────────────────────────────────
@@ -68,6 +130,9 @@ export const Route = createFileRoute('/_app/work-orders')({
     ])
     return { workOrders, engineers }
   },
+    pendingMs: 0,
+    pendingMinMs: 0,
+    pendingComponent: WorkOrdersPending,
   component: WorkOrdersPage,
 })
 
@@ -394,6 +459,7 @@ function WorkOrdersPage() {
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     enableRowSelection: true,
+    enableMultiRowSelection: false,
     columnResizeMode,
     enableColumnResizing: true,
     meta: { engineersList },
