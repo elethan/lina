@@ -62,10 +62,16 @@ type PmSearchParams = {
     systemName?: string
 }
 
+const getDefaultDateFrom = () => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - 13)
+    return date.toISOString().slice(0, 10)
+}
+
 export const Route = createFileRoute('/_app/pm')({
     validateSearch: (search: Record<string, unknown>): PmSearchParams => ({
         search: typeof search.search === 'string' ? search.search : undefined,
-        dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : undefined,
+        dateFrom: typeof search.dateFrom === 'string' ? search.dateFrom : getDefaultDateFrom(),
         dateTo: typeof search.dateTo === 'string' ? search.dateTo : undefined,
         completedAt:
             search.completedAt === 'completed' ||
@@ -90,9 +96,13 @@ export const Route = createFileRoute('/_app/pm')({
             throw redirect({ to: '/' })
         }
     },
-    loader: async () => {
+    loaderDeps: ({ search }) => ({
+        dateFrom: search.dateFrom,
+        dateTo: search.dateTo,
+    }),
+    loader: async ({ deps }) => {
         const [rows, options] = await Promise.all([
-            fetchPmRows(),
+            fetchPmRows({ data: { dateFrom: deps.dateFrom, dateTo: deps.dateTo } }),
             fetchPmFormOptions(),
         ])
         return { rows, options }
@@ -862,26 +872,6 @@ function PreventiveMaintenancePage() {
         ...(systemName ? [{ id: 'systemName', value: systemName }] : []),
     ])
 
-    const filteredData = useMemo(() => {
-        let result = rows
-
-        if (dateFrom || dateTo) {
-            result = result.filter((row) => {
-                if (!row.startAt) return false
-                const date = new Date(row.startAt)
-                if (dateFrom && date < new Date(dateFrom)) return false
-                if (dateTo) {
-                    const to = new Date(dateTo)
-                    to.setHours(23, 59, 59, 999)
-                    if (date > to) return false
-                }
-                return true
-            })
-        }
-
-        return result
-    }, [rows, dateFrom, dateTo])
-
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const [selectedPmId, setSelectedPmId] = useState<number | null>(null)
     const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
@@ -924,7 +914,7 @@ function PreventiveMaintenancePage() {
     const [pageIndex, setPageIndex] = useState(0)
 
     const table = useReactTable({
-        data: filteredData,
+        data: rows,
         columns,
         state: { globalFilter, columnFilters, pagination: { pageIndex, pageSize } },
         onGlobalFilterChange: setGlobalFilter,

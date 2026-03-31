@@ -96,8 +96,25 @@ export type PmExecutionData = {
     tasks: PmExecutionTaskRow[]
 }
 
-export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
-    async (): Promise<PmRow[]> => {
+export const fetchPmRows = authServerFn({ method: 'GET' })
+    .inputValidator((data: { dateFrom?: string; dateTo?: string }) => {
+        if (data.dateFrom) {
+            const parsedFrom = new Date(data.dateFrom)
+            if (Number.isNaN(parsedFrom.getTime())) {
+                throw new Error('Invalid dateFrom value')
+            }
+        }
+
+        if (data.dateTo) {
+            const parsedTo = new Date(data.dateTo)
+            if (Number.isNaN(parsedTo.getTime())) {
+                throw new Error('Invalid dateTo value')
+            }
+        }
+
+        return data
+    })
+    .handler(async ({ data }): Promise<PmRow[]> => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
         const {
@@ -111,9 +128,19 @@ export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
             desc,
             isNull,
             sql,
+            and,
+            gte,
+            lte,
         } = await getPmDbDeps()
 
-        const rows = await db
+        const dateFromIso = data.dateFrom
+            ? new Date(`${data.dateFrom}T00:00:00.000Z`).toISOString()
+            : undefined
+        const dateToIso = data.dateTo
+            ? new Date(`${data.dateTo}T23:59:59.999Z`).toISOString()
+            : undefined
+
+        let rowsQuery = db
             .select({
                 id: assetPm.id,
                 assetId: assetPm.assetId,
@@ -134,7 +161,22 @@ export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
             .leftJoin(systems, eq(assetPm.systemId, systems.id))
             .leftJoin(engineers, eq(assetPm.engineerId, engineers.id))
             .where(isNull(assetPm.deletedAt))
-            .orderBy(desc(assetPm.startAt), desc(assetPm.id))
+
+        if (dateFromIso && dateToIso) {
+            rowsQuery = rowsQuery.where(
+                and(
+                    isNull(assetPm.deletedAt),
+                    gte(assetPm.startAt, dateFromIso),
+                    lte(assetPm.startAt, dateToIso),
+                ),
+            )
+        } else if (dateFromIso) {
+            rowsQuery = rowsQuery.where(and(isNull(assetPm.deletedAt), gte(assetPm.startAt, dateFromIso)))
+        } else if (dateToIso) {
+            rowsQuery = rowsQuery.where(and(isNull(assetPm.deletedAt), lte(assetPm.startAt, dateToIso)))
+        }
+
+        const rows = await rowsQuery.orderBy(desc(assetPm.startAt), desc(assetPm.id))
 
         return rows.map((row) => ({
             id: row.id,
@@ -150,8 +192,7 @@ export const fetchPmRows = authServerFn({ method: 'GET' }).handler(
             createdAt: row.createdAt ?? null,
             engineerName: row.engineerName?.trim() || null,
         }))
-    },
-)
+    })
 
 export const duplicatePmInstance = authServerFn({ method: 'POST' })
     .inputValidator((data: { sourcePmId: number; newStartAt: string }) => {
