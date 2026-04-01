@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useRouter, useNavigate, Await } from '@tanstack/react-router'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import {
@@ -28,6 +28,7 @@ import {
 import { useMutation } from '@tanstack/react-query'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
+import TableSkeleton from '../../components/TableSkeleton'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 
@@ -69,12 +70,9 @@ export const Route = createFileRoute('/_app/')({
         dateFrom: search.dateFrom,
         dateTo: search.dateTo,
     }),
-    loader: async ({ deps }) => {
-        const [requests] = await Promise.all([
-            fetchRequests({ data: { dateFrom: deps.dateFrom, dateTo: deps.dateTo } }),
-        ])
-        return { requests }
-    },
+    loader: ({ deps }) => ({
+        requests: fetchRequests({ data: { dateFrom: deps.dateFrom, dateTo: deps.dateTo } }),
+    }),
     component: RequestsPage,
 })
 
@@ -240,12 +238,12 @@ const columns: ColumnDef<RequestRow, any>[] = [
 
 // ── Page ──────────────────────────────────────────────────────
 function RequestsPage() {
-    const { requests: data } = Route.useLoaderData()
+    const { requests: requestsPromise } = Route.useLoaderData()
     const router = useRouter()
     const navigate = useNavigate({ from: '/' })
     const { user } = useRouteContext({ from: '/_app/' })
     const userRole = user?.role ?? 'user'
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', siteId } = Route.useSearch()
+    const { search: globalFilter = '', dateFrom = '', dateTo = '', siteId } = Route.useSearch()
 
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
@@ -255,6 +253,7 @@ function RequestsPage() {
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateTo: value || undefined }) })
 
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+    const [selectedItems, setSelectedItems] = useState<RequestRow[]>([])
     const [showCreateWODialog, setShowCreateWODialog] = useState(false)
     const [showCloseDialog, setShowCloseDialog] = useState(false)
     const [closeComment, setCloseComment] = useState('')
@@ -262,9 +261,6 @@ function RequestsPage() {
     const [selectedMergeWoId, setSelectedMergeWoId] = useState<number | null>(null)
     const [showNewRequestDialog, setShowNewRequestDialog] = useState(false)
     const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
-    const [columnFilters, setColumnFilters] = useState<any[]>([
-        ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
-    ])
 
     const { mutate: mutateCreateWO } = useMutation({
         mutationFn: async (data: { requestIds: number[] }) => {
@@ -304,68 +300,11 @@ function RequestsPage() {
         },
     })
 
-    // Site-filtered data (date window is server-side via loader deps)
-    const filteredData = useMemo(() => {
-        let result = data
-
-        // Site filter
-        if (siteId) {
-            result = result.filter((row) => row.siteId === siteId)
-        }
-
-        return result
-    }, [data, siteId])
-
-    const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
-    const { containerRef, pageSize } = useDynamicPageSize()
-    const [pageIndex, setPageIndex] = useState(0)
-
-    const table = useReactTable({
-        data: filteredData,
-        columns,
-        state: { globalFilter, rowSelection, columnFilters, pagination: { pageIndex, pageSize } },
-        onGlobalFilterChange: setGlobalFilter,
-        onPaginationChange: (updater) => {
-            const next = typeof updater === 'function' ? updater({ pageIndex, pageSize }) : updater
-            setPageIndex(next.pageIndex)
-        },
-        onRowSelectionChange: setRowSelection,
-        onColumnFiltersChange: (updater) => {
-            setColumnFilters(updater)
-            const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
-            const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
-
-            navigate({
-                search: (prev: RequestSearchParams) => ({
-                    ...prev,
-                    status: newStatus,
-                })
-            })
-        },
-        globalFilterFn: (row, _columnId, filterValue) => {
-            const serial = rankItem(row.getValue('serialNumber') ?? '', filterValue)
-            const site = rankItem(row.getValue('siteName') ?? '', filterValue)
-            return serial.passed || site.passed
-        },
-        getCoreRowModel: getCoreRowModel(),
-        getFilteredRowModel: getFilteredRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
-        getSortedRowModel: getSortedRowModel(),
-        enableRowSelection: true,
-        columnResizeMode,
-        enableColumnResizing: true,
-    })
-
     const selectedCount = Object.keys(rowSelection).length
 
     const handleConfirmCreateWO = () => {
-        const selectedRequestIds = Object.keys(rowSelection)
-            .filter((key) => rowSelection[key])
-            .map((key) => filteredData[parseInt(key)]?.id)
-            .filter((id): id is number => id !== undefined)
-
         setShowCreateWODialog(false)
-        mutateCreateWO({ requestIds: selectedRequestIds })
+        mutateCreateWO({ requestIds: selectedItems.map((r) => r.id) })
     }
 
     // ── Set toolbar content (synchronous — SSR-safe) ─────────────
@@ -454,15 +393,9 @@ function RequestsPage() {
 
     useSetToolbar(toolbarConfig)
 
-    // Check if selected requests span multiple assets
-    const selectedRequests = Object.keys(rowSelection)
-        .filter((key) => rowSelection[key])
-        .map((key) => filteredData[parseInt(key)])
-        .filter((req): req is typeof filteredData[0] => req !== undefined)
-
-    const uniqueAssetIds = new Set(selectedRequests.map((req) => req.assetId))
+    const uniqueAssetIds = new Set(selectedItems.map((req) => req.assetId))
     const isMultipleAssets = uniqueAssetIds.size > 1
-    const hasAttachedRequests = selectedRequests.some((req) => req.status !== 'Open')
+    const hasAttachedRequests = selectedItems.some((req) => req.status !== 'Open')
 
     const mergeQuery = useQuery({
         queryKey: ['openWosForAsset', uniqueAssetIds.size === 1 ? Array.from(uniqueAssetIds)[0] : null],
@@ -561,7 +494,7 @@ function RequestsPage() {
                                     disabled={!selectedMergeWoId}
                                     onClick={() => {
                                         if (selectedMergeWoId) {
-                                            const ids = selectedRequests.map((r) => r.id)
+                                            const ids = selectedItems.map((r) => r.id)
                                             mutateMergeRequests({ requestIds: ids, woId: selectedMergeWoId })
                                         }
                                     }}
@@ -642,7 +575,7 @@ function RequestsPage() {
                                 <button
                                     autoFocus
                                     onClick={() => {
-                                        const ids = selectedRequests.map((r) => r.id)
+                                        const ids = selectedItems.map((r) => r.id)
                                         mutateDeleteRequests({ requestIds: ids, engineerComment: closeComment })
                                     }}
                                     className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 text-white shadow-sm hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:ring-offset-1"
@@ -715,120 +648,16 @@ function RequestsPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-            {/* ─── Table ─── */}
-            <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
-                    <table className="min-w-full" style={{ width: table.getTotalSize() }}>
-                        <thead>
-                            {table.getHeaderGroups().map((headerGroup) => (
-                                <tr key={headerGroup.id}>
-                                    {headerGroup.headers.map((header) => (
-                                        <th
-                                            key={header.id}
-                                            className="px-4 py-3 text-left text-xs font-semibold text-primary-900 uppercase tracking-wider bg-primary-100 border-b border-primary-200/50 relative"
-                                            style={{ width: header.getSize() }}
-                                        >
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                    header.column.columnDef.header,
-                                                    header.getContext(),
-                                                )}
-                                            {header.column.getCanResize() && (
-                                                <div
-                                                    onMouseDown={header.getResizeHandler()}
-                                                    onTouchStart={header.getResizeHandler()}
-                                                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-primary/40 transition-colors ${header.column.getIsResizing() ? 'bg-primary/60' : ''}`}
-                                                />
-                                            )}
-                                        </th>
-                                    ))}
-                                </tr>
-                            ))}
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {table.getRowModel().rows.length === 0 ? (
-                                <tr>
-                                    <td
-                                        colSpan={columns.length}
-                                        className="px-6 py-16 text-center text-gray-400"
-                                    >
-                                        No requests found.
-                                    </td>
-                                </tr>
-                            ) : (
-                                table.getRowModel().rows.map((row) => (
-                                    <tr
-                                        key={row.id}
-                                        className={`transition-colors cursor-pointer ${row.getIsSelected()
-                                            ? 'bg-primary/5 hover:bg-primary/8'
-                                            : 'hover:bg-gray-50'
-                                            }`}
-                                        onClick={row.getToggleSelectedHandler()}
-                                    >
-                                        {row.getVisibleCells().map((cell) => (
-                                            <td
-                                                key={cell.id}
-                                                className="px-4 py-3.5 text-sm text-gray-600"
-                                                style={{ width: cell.column.getSize() }}
-                                            >
-                                                {flexRender(
-                                                    cell.column.columnDef.cell,
-                                                    cell.getContext(),
-                                                )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Footer — Pagination */}
-                <div className="mt-3 flex items-center justify-between text-xs text-gray-500 px-1">
-                    <span>
-                        {table.getFilteredRowModel().rows.length} of{' '}
-                        {data.length} requests
-                        {selectedCount > 0 && ` · ${selectedCount} selected`}
-                    </span>
-
-                    <div className="flex items-center gap-1.5">
-                        <button
-                            onClick={() => table.firstPage()}
-                            disabled={!table.getCanPreviousPage()}
-                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronsLeft size={14} />
-                        </button>
-                        <button
-                            onClick={() => table.previousPage()}
-                            disabled={!table.getCanPreviousPage()}
-                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronLeft size={14} />
-                        </button>
-                        <span className="px-2 text-gray-600 font-medium">
-                            Page {table.getState().pagination.pageIndex + 1} of{' '}
-                            {table.getPageCount()}
-                        </span>
-                        <button
-                            onClick={() => table.nextPage()}
-                            disabled={!table.getCanNextPage()}
-                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronRight size={14} />
-                        </button>
-                        <button
-                            onClick={() => table.lastPage()}
-                            disabled={!table.getCanNextPage()}
-                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronsRight size={14} />
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <Await promise={requestsPromise} fallback={<TableSkeleton />}>
+                {(requests) => (
+                    <RequestsTableView
+                        data={requests}
+                        rowSelection={rowSelection}
+                        setRowSelection={setRowSelection}
+                        onSelectionChange={setSelectedItems}
+                    />
+                )}
+            </Await>
 
             <NewRequestDialog
                 initialSiteId={siteId}
@@ -863,6 +692,199 @@ function RequestsPage() {
                 </Dialog>
             )}
         </>
+    )
+}
+
+// ── Inner table view (renders inside <Await> once data resolves) ────
+function RequestsTableView({
+    data,
+    rowSelection,
+    setRowSelection,
+    onSelectionChange,
+}: {
+    data: RequestRow[]
+    rowSelection: Record<string, boolean>
+    setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
+    onSelectionChange: (items: RequestRow[]) => void
+}) {
+    const { siteId, search: globalFilter = '', status: statusFilter = 'Open' } = Route.useSearch()
+    const navigate = useNavigate({ from: '/' })
+    const selectedCount = Object.keys(rowSelection).length
+
+    const [columnFilters, setColumnFilters] = useState<any[]>([
+        ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
+    ])
+    const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
+    const { containerRef, pageSize } = useDynamicPageSize()
+    const [pageIndex, setPageIndex] = useState(0)
+
+    const filteredData = useMemo(() => {
+        let result = data
+        if (siteId) {
+            result = result.filter((row) => row.siteId === siteId)
+        }
+        return result
+    }, [data, siteId])
+
+    // Report selection to outer for toolbar button states / mutations
+    useEffect(() => {
+        const selected = Object.keys(rowSelection)
+            .filter((key) => rowSelection[key])
+            .map((key) => filteredData[parseInt(key)])
+            .filter((req): req is RequestRow => req !== undefined)
+        onSelectionChange(selected)
+    }, [rowSelection, filteredData, onSelectionChange])
+
+    const table = useReactTable({
+        data: filteredData,
+        columns,
+        state: { globalFilter, rowSelection, columnFilters, pagination: { pageIndex, pageSize } },
+        onGlobalFilterChange: (value: string) =>
+            navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) }),
+        onPaginationChange: (updater) => {
+            const next = typeof updater === 'function' ? updater({ pageIndex, pageSize }) : updater
+            setPageIndex(next.pageIndex)
+        },
+        onRowSelectionChange: setRowSelection,
+        onColumnFiltersChange: (updater) => {
+            setColumnFilters(updater)
+            const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
+            const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
+            navigate({
+                search: (prev: RequestSearchParams) => ({
+                    ...prev,
+                    status: newStatus,
+                })
+            })
+        },
+        globalFilterFn: (row, _columnId, filterValue) => {
+            const serial = rankItem(row.getValue('serialNumber') ?? '', filterValue)
+            const site = rankItem(row.getValue('siteName') ?? '', filterValue)
+            return serial.passed || site.passed
+        },
+        getCoreRowModel: getCoreRowModel(),
+        getFilteredRowModel: getFilteredRowModel(),
+        getPaginationRowModel: getPaginationRowModel(),
+        getSortedRowModel: getSortedRowModel(),
+        enableRowSelection: true,
+        columnResizeMode,
+        enableColumnResizing: true,
+    })
+
+    return (
+        <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+                <table className="min-w-full" style={{ width: table.getTotalSize() }}>
+                    <thead>
+                        {table.getHeaderGroups().map((headerGroup) => (
+                            <tr key={headerGroup.id}>
+                                {headerGroup.headers.map((header) => (
+                                    <th
+                                        key={header.id}
+                                        className="px-4 py-3 text-left text-xs font-semibold text-primary-900 uppercase tracking-wider bg-primary-100 border-b border-primary-200/50 relative"
+                                        style={{ width: header.getSize() }}
+                                    >
+                                        {header.isPlaceholder
+                                            ? null
+                                            : flexRender(
+                                                header.column.columnDef.header,
+                                                header.getContext(),
+                                            )}
+                                        {header.column.getCanResize() && (
+                                            <div
+                                                onMouseDown={header.getResizeHandler()}
+                                                onTouchStart={header.getResizeHandler()}
+                                                className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-primary/40 transition-colors ${header.column.getIsResizing() ? 'bg-primary/60' : ''}`}
+                                            />
+                                        )}
+                                    </th>
+                                ))}
+                            </tr>
+                        ))}
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {table.getRowModel().rows.length === 0 ? (
+                            <tr>
+                                <td
+                                    colSpan={columns.length}
+                                    className="px-6 py-16 text-center text-gray-400"
+                                >
+                                    No requests found.
+                                </td>
+                            </tr>
+                        ) : (
+                            table.getRowModel().rows.map((row) => (
+                                <tr
+                                    key={row.id}
+                                    className={`transition-colors cursor-pointer ${row.getIsSelected()
+                                        ? 'bg-primary/5 hover:bg-primary/8'
+                                        : 'hover:bg-gray-50'
+                                        }`}
+                                    onClick={row.getToggleSelectedHandler()}
+                                >
+                                    {row.getVisibleCells().map((cell) => (
+                                        <td
+                                            key={cell.id}
+                                            className="px-4 py-3.5 text-sm text-gray-600"
+                                            style={{ width: cell.column.getSize() }}
+                                        >
+                                            {flexRender(
+                                                cell.column.columnDef.cell,
+                                                cell.getContext(),
+                                            )}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Footer — Pagination */}
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-500 px-1">
+                <span>
+                    {table.getFilteredRowModel().rows.length} of{' '}
+                    {data.length} requests
+                    {selectedCount > 0 && ` · ${selectedCount} selected`}
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => table.firstPage()}
+                        disabled={!table.getCanPreviousPage()}
+                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronsLeft size={14} />
+                    </button>
+                    <button
+                        onClick={() => table.previousPage()}
+                        disabled={!table.getCanPreviousPage()}
+                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronLeft size={14} />
+                    </button>
+                    <span className="px-2 text-gray-600 font-medium">
+                        Page {table.getState().pagination.pageIndex + 1} of{' '}
+                        {table.getPageCount()}
+                    </span>
+                    <button
+                        onClick={() => table.nextPage()}
+                        disabled={!table.getCanNextPage()}
+                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronRight size={14} />
+                    </button>
+                    <button
+                        onClick={() => table.lastPage()}
+                        disabled={!table.getCanNextPage()}
+                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronsRight size={14} />
+                    </button>
+                </div>
+            </div>
+        </div>
     )
 }
 
