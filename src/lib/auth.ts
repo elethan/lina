@@ -85,7 +85,7 @@ export const auth = betterAuth({
 
     // Session expiry and cookie security (Check 7)
     session: {
-        expiresIn: 60 * 60 * 8,  // 8 hours
+        expiresIn: 60 * 60 * 2,  // 2 hours
         updateAge: 60 * 60,       // extend token on activity after 1 hour
     },
     ...(process.env.VITE_APP_URL
