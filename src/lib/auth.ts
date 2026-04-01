@@ -59,6 +59,13 @@ export const auth = betterAuth({
     // 2. Tell Better Auth to trust Caddy's X-Forwarded-* headers
     trustedProxyHeaders: true,
     useSecureCookies: process.env.NODE_ENV === 'production',
+        // Explicit hardened defaults for all auth cookies.
+        // Keep sameSite=lax for compatibility with OAuth redirect flows.
+        defaultCookieAttributes: {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
+        },
   },
 
     // 1. Tell Better-Auth to use our SQLite database and schema
