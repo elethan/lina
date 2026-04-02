@@ -313,7 +313,7 @@ function WorkOrdersPage() {
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
   const [selectedWos, setSelectedWos] = useState<WorkOrderRow[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const selectedCount = Object.keys(rowSelection).length
+  const selectedCount = selectedWos.length
 
   // Execution Dialog State
   const [showExecutionDialog, setShowExecutionDialog] = useState(false)
@@ -467,6 +467,7 @@ function WorkOrdersPage() {
         open={showExecutionDialog}
         onOpenChange={setShowExecutionDialog}
         engineers={engineersList}
+        currentUserId={user?.id || null}
         currentUserName={user?.name || user?.email || null}
         onCloseComplete={() => setShowExecutionDialog(false)}
       />
@@ -520,15 +521,6 @@ function WorkOrdersTableView({
     navigate({ search: (prev: WoSearchParams) => ({ ...prev, newWoId: undefined }), replace: true })
   }, [newWoId])
 
-  // Report selection to outer for toolbar button states / mutations
-  useEffect(() => {
-    const selected = Object.keys(rowSelection)
-      .filter((k) => rowSelection[k])
-      .map((k) => filteredData[parseInt(k)])
-      .filter((wo): wo is WorkOrderRow => wo !== undefined)
-    onSelectionChange(selected)
-  }, [rowSelection, filteredData, onSelectionChange])
-
   const table = useReactTable({
     data: filteredData,
     columns,
@@ -569,6 +561,12 @@ function WorkOrdersTableView({
     enableColumnResizing: true,
     meta: { engineersList },
   })
+
+  // Report selected rows using TanStack's selected row model to avoid index/key drift.
+  useEffect(() => {
+    const selected = table.getSelectedRowModel().rows.map((row) => row.original)
+    onSelectionChange(selected)
+  }, [table, rowSelection, filteredData, onSelectionChange])
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
@@ -755,22 +753,26 @@ function WorkOrderExecutionDialog({
   open,
   onOpenChange,
   engineers,
+  currentUserId,
   currentUserName,
   onCloseComplete
 }: {
   wo: WorkOrderRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  engineers: { id: number; name: string }[]
+  engineers: { id: number; name: string; userId: string | null }[]
+  currentUserId: string | null
   currentUserName: string | null
   onCloseComplete: () => void
 }) {
   const [showAddNote, setShowAddNote] = useState(false)
 
-  // Resolve the best default engineer: assigned WO engineer first, then logged-in user
+  // Resolve default engineer: assigned WO engineer first, then logged-in engineer profile, then first row.
   const defaultEngineerId: number = (
     wo?.engineerId ??
-    engineers.find(e => currentUserName && e.name.toLowerCase().includes(currentUserName.split(' ')[0]?.toLowerCase() ?? ''))?.id ??
+    engineers.find((e) => currentUserId && e.userId === currentUserId)?.id ??
+    engineers.find((e) => currentUserName && e.name.toLowerCase().includes(currentUserName.split(' ')[0]?.toLowerCase() ?? ''))?.id ??
+    engineers[0]?.id ??
     0
   )
 
@@ -782,14 +784,20 @@ function WorkOrderExecutionDialog({
   const [startEngineerId, setStartEngineerId] = useState<number>(
     defaultEngineerId > 0 ? defaultEngineerId : (engineers[0]?.id ?? 0),
   )
+  const [startAssignError, setStartAssignError] = useState<string | null>(null)
 
   // Reset local state when the WO prop changes (e.g. user selects a different WO)
+  // ONLY depend on wo?.id — not engineers/defaultEngineerId, because router.invalidate()
+  // re-fetches the engineer list with a new array reference, which would reset displayStartAt
+  // back to null and re-open the assign dialog even though the mutation already succeeded.
   useEffect(() => {
     setDisplayStartAt(wo?.startAt ?? null)
     setDisplayEndAt(wo?.endAt ?? null)
     setDisplayStatus(wo?.status ?? 'Open')
     setShowStartAssignDialog(false)
+    setStartAssignError(null)
     setStartEngineerId(defaultEngineerId > 0 ? defaultEngineerId : (engineers[0]?.id ?? 0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wo?.id])
 
   // Mutation to start the WO
@@ -804,16 +812,20 @@ function WorkOrderExecutionDialog({
 
   const startWithEngineerMutation = useMutation({
     mutationFn: async (engineerId: number) => {
+      if (!wo?.id) {
+        throw new Error('Work Order context was lost. Close and reopen the Work Order dialog, then try again.')
+      }
       await assignWorkOrdersToEngineer({ data: { woIds: [wo!.id], engineerId } })
       return await startWorkOrder({ data: { woId: wo!.id } })
     },
     onSuccess: (result) => {
+      setStartAssignError(null)
       setDisplayStartAt(result.startAt)
       setShowStartAssignDialog(false)
       router.invalidate()
     },
     onError: (err: Error) => {
-      alert(err.message || 'Failed to assign engineer and start work order')
+      setStartAssignError(err.message || 'Failed to assign engineer and start work order')
     },
   })
 
@@ -1177,7 +1189,10 @@ function WorkOrderExecutionDialog({
           <div className="mt-2 flex flex-col gap-3">
             <select
               value={startEngineerId}
-              onChange={(e) => setStartEngineerId(Number(e.target.value))}
+              onChange={(e) => {
+                setStartAssignError(null)
+                setStartEngineerId(Number(e.target.value))
+              }}
               className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             >
               <option value={0} disabled>Select Engineer</option>
@@ -1185,10 +1200,14 @@ function WorkOrderExecutionDialog({
                 <option key={eng.id} value={eng.id}>{eng.name}</option>
               ))}
             </select>
+            {startAssignError && (
+              <p className="text-sm text-red-600">{startAssignError}</p>
+            )}
             <DialogFooter className="pt-2">
               <button
                 type="button"
                 onClick={() => {
+                  setStartAssignError(null)
                   setShowStartAssignDialog(false)
                   onOpenChange(false)
                 }}
@@ -1198,8 +1217,9 @@ function WorkOrderExecutionDialog({
               </button>
               <button
                 type="button"
-                disabled={startEngineerId <= 0 || startWithEngineerMutation.isPending}
+                disabled={startEngineerId <= 0 || !wo?.id || startWithEngineerMutation.isPending}
                 onClick={() => {
+                  setStartAssignError(null)
                   if (startEngineerId > 0) {
                     startWithEngineerMutation.mutate(startEngineerId)
                   }

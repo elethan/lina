@@ -223,13 +223,6 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             .map((r) => r.commentText)
             .join(' | ')
 
-        const userStaff = await db
-            .select({ id: engineers.id })
-            .from(engineers)
-            .where(eq(engineers.userId, user.id))
-            .limit(1)
-        const authorEngineerId = userStaff.length > 0 ? userStaff[0].id : null
-
         // Create the work order
         const [wo] = await db
             .insert(workOrders)
@@ -239,7 +232,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 description,
                 physicsHandOver: 'Pending',
                 status: 'Open',
-                engineerId: authorEngineerId,
+                engineerId: null,
                 createdAt: new Date().toISOString(),
             })
             .returning({ id: workOrders.id })

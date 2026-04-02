@@ -17,6 +17,7 @@ async function getEngineerDbDeps() {
 export type EngineerOption = {
     id: number
     name: string
+    userId: string | null
 }
 
 export const fetchEngineers = authServerFn({ method: 'GET' }).handler(
@@ -30,13 +31,15 @@ export const fetchEngineers = authServerFn({ method: 'GET' }).handler(
                 id: engineers.id,
                 firstName: engineers.firstName,
                 lastName: engineers.lastName,
+                userId: engineers.userId,
             })
             .from(engineers)
-            .groupBy(engineers.firstName, engineers.lastName)
+            .groupBy(engineers.id, engineers.firstName, engineers.lastName, engineers.userId)
 
         return rows.map((r) => ({
             id: r.id,
             name: `${r.firstName} ${r.lastName}`,
+            userId: r.userId ?? null,
         }))
     },
 )
