@@ -17,7 +17,7 @@ function AppLayout() {
     return (
         <ToolbarProvider>
             <div className="flex h-screen bg-gray-50">
-                <Sidebar userRole={user?.role ?? 'user'} />
+                <Sidebar userRole={user?.role ?? 'therapist'} />
                 <main className="flex-1 flex flex-col overflow-hidden">
                     <Toolbar />
                     <Outlet />

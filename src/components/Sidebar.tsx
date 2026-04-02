@@ -14,7 +14,7 @@ import { authClient } from '../lib/auth-client'
 import { ROLE_DETAILS, formatRoleLabel } from '../lib/role-permissions'
 
 const navItems = [
-    { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'user'] },
+    { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'therapist'] },
     { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer'] },
     { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, allowedRoles: ['admin', 'engineer', 'scientist'] },
 ]
@@ -123,7 +123,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
 
                                     {showRoleDetails && (
                                         <div className="mt-1 mb-1 px-2 py-2 rounded-md bg-gray-50 border border-gray-100 space-y-1">
-                                            {(ROLE_DETAILS[userRole as keyof typeof ROLE_DETAILS] ?? ROLE_DETAILS.user).map((item) => (
+                                            {(ROLE_DETAILS[userRole as keyof typeof ROLE_DETAILS] ?? ROLE_DETAILS.therapist).map((item) => (
                                                 <p key={item} className="text-xs text-gray-600 leading-relaxed">
                                                     {item}
                                                 </p>

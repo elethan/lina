@@ -35,14 +35,28 @@ if (msSet.length > 0 && msSet.length < MS_VARS.length) {
     )
 }
 
+if (process.env.MICROSOFT_GROUP_USER_IDS && !process.env.MICROSOFT_GROUP_THERAPIST_IDS) {
+    process.stderr.write(
+        '[STARTUP_WARN] MICROSOFT_GROUP_USER_IDS is deprecated. Use MICROSOFT_GROUP_THERAPIST_IDS instead.\n',
+    )
+}
+
 // 3. Provisioning visibility
 if (process.env.NODE_ENV === 'production') {
     const hasBootstrap =
-        !!process.env.BOOTSTRAP_ADMIN_EMAILS || !!process.env.BOOTSTRAP_USER_EMAILS
+        !!process.env.BOOTSTRAP_ADMIN_EMAILS ||
+        !!process.env.BOOTSTRAP_THERAPIST_EMAILS ||
+        !!process.env.BOOTSTRAP_USER_EMAILS
     if (!hasBootstrap) {
         process.stderr.write(
-            '[STARTUP_WARN] Neither BOOTSTRAP_ADMIN_EMAILS nor BOOTSTRAP_USER_EMAILS is set. ' +
+            '[STARTUP_WARN] Neither BOOTSTRAP_ADMIN_EMAILS nor BOOTSTRAP_THERAPIST_EMAILS is set. ' +
             'New account creation is disabled until at least one bootstrap allowlist is configured.\n',
         )
     }
+}
+
+if (process.env.BOOTSTRAP_USER_EMAILS && !process.env.BOOTSTRAP_THERAPIST_EMAILS) {
+    process.stderr.write(
+        '[STARTUP_WARN] BOOTSTRAP_USER_EMAILS is deprecated. Use BOOTSTRAP_THERAPIST_EMAILS instead.\n',
+    )
 }

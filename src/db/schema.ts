@@ -19,8 +19,8 @@ export const user = sqliteTable('user', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
   // NEW: Strongly typed roles
-  role: text('role', { enum: ['admin', 'engineer', 'scientist', 'user'] })
-    .default('user')
+  role: text('role', { enum: ['admin', 'engineer', 'scientist', 'therapist'] })
+    .default('therapist')
     .notNull(),
 });
 // --- 2. THE NEW PERMISSIONS TABLE ---
@@ -29,12 +29,12 @@ export const rolePermissions = sqliteTable('role_permissions', {
   /* A role can only have a specific action on a specific resource once
   By creating the role_permissions table, you can seed your database with rules like this:
   Role: engineer | Resource: work_orders | Action: create
-  Role: user | Resource: assets | Action: read
+  Role: therapist | Resource: assets | Action: read
   Role: scientist | Resource: pm_tasks | Action: update
   When a user tries to do something in the app, your server function will check:
    "Does the user's role have the corresponding record in role_permissions?"*/
 
-  role: text('role', { enum: ['admin', 'engineer', 'scientist', 'user'] }).notNull(),
+  role: text('role', { enum: ['admin', 'engineer', 'scientist', 'therapist'] }).notNull(),
   resource: text('resource').notNull(), // e.g., 'assets', 'work_orders', 'pm_tasks'
   action: text('action').notNull(),     // e.g., 'create', 'read', 'update', 'delete'
 }, (t) => ({

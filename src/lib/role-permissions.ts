@@ -1,4 +1,4 @@
-export type AppRole = 'admin' | 'engineer' | 'scientist' | 'user'
+export type AppRole = 'admin' | 'engineer' | 'scientist' | 'therapist'
 
 export type PermissionResource =
     | 'requests'
@@ -39,7 +39,7 @@ export const ROLE_CAPABILITIES: Record<
         assetsSystems: ['read'],
         pmTasks: ['read'],
     },
-    user: {
+    therapist: {
         requests: ['read', 'create'],
     },
 }
@@ -56,14 +56,14 @@ export const ROLE_DETAILS: Record<AppRole, string[]> = {
         'Can view all modules',
         'Can create requests only; cannot create/edit other records',
     ],
-    user: [
+    therapist: [
         'Can create and view requests only',
         'No access to work orders, PMs, assets, systems, or PM tasks',
     ],
 }
 
 export function formatRoleLabel(role?: string | null): string {
-    if (!role) return 'User'
+    if (!role) return 'Therapist'
     return role.charAt(0).toUpperCase() + role.slice(1)
 }
 

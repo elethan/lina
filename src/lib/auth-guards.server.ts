@@ -28,7 +28,7 @@ export async function requireSessionUser(): Promise<SessionUser> {
 
 export async function requireRole(...allowedRoles: AppRole[]) {
     const user = await requireSessionUser()
-    const currentRole = (user.role ?? 'user') as AppRole
+    const currentRole = (user.role ?? 'therapist') as AppRole
 
     if (!allowedRoles.includes(currentRole)) {
         throw new Error('Forbidden')
@@ -42,7 +42,7 @@ export async function requirePermission(
     action: PermissionAction,
 ) {
     const user = await requireSessionUser()
-    const currentRole = (user.role ?? 'user') as AppRole
+    const currentRole = (user.role ?? 'therapist') as AppRole
 
     if (!canRole(currentRole, resource, action)) {
         throw new Error(`Forbidden: missing permission ${resource}.${action}`)

@@ -242,7 +242,7 @@ function RequestsPage() {
     const router = useRouter()
     const navigate = useNavigate({ from: '/' })
     const { user } = useRouteContext({ from: '/_app/' })
-    const userRole = user?.role ?? 'user'
+    const userRole = user?.role ?? 'therapist'
     const { search: globalFilter = '', dateFrom = '', dateTo = '', siteId } = Route.useSearch()
 
     const setGlobalFilter = (value: string) =>
@@ -362,7 +362,7 @@ function RequestsPage() {
                 <div className="w-px h-8 bg-gray-200" />
                 <button
                     id="btn-create-wo"
-                    disabled={selectedCount === 0 || userRole === 'user'}
+                    disabled={selectedCount === 0 || userRole === 'therapist'}
                     onClick={() => setShowCreateWODialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
@@ -371,7 +371,7 @@ function RequestsPage() {
                 </button>
                 <button
                     id="btn-merge"
-                    disabled={selectedCount === 0 || userRole === 'user'}
+                    disabled={selectedCount === 0 || userRole === 'therapist'}
                     onClick={() => setShowMergeDialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >

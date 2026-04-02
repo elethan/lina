@@ -54,7 +54,7 @@ export const Route = createFileRoute('/_app/work-orders')({
   }),
   beforeLoad: ({ context }) => {
     const user = (context as any).user
-    if (user?.role === 'user' || user?.role === 'scientist') {
+    if (user?.role === 'therapist' || user?.role === 'scientist') {
       throw redirect({ to: '/' })
     }
   },

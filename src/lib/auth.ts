@@ -6,7 +6,7 @@ import { db } from "../db/client";
 import * as schema from "../db/schema";
 import { logger } from "./logger";
 
-type AppRole = "admin" | "engineer" | "scientist" | "user";
+type AppRole = "admin" | "engineer" | "scientist" | "therapist";
 
 const parseCsvSet = (value?: string) => {
     return new Set(
@@ -36,17 +36,19 @@ const resolveRoleFromEntraProfile = (profile: Record<string, unknown>): AppRole 
     const groups = normalizeGroups(profile.groups);
 
     // Group maps are read lazily (inside the function) to avoid startup crash when env vars absent
-    const groupRoleMap: Record<Exclude<AppRole, "user">, Set<string>> = {
+    const groupRoleMap: Record<Exclude<AppRole, "therapist">, Set<string>> = {
         admin: parseCsvSet(process.env.MICROSOFT_GROUP_ADMIN_IDS),
         engineer: parseCsvSet(process.env.MICROSOFT_GROUP_ENGINEER_IDS),
         scientist: parseCsvSet(process.env.MICROSOFT_GROUP_SCIENTIST_IDS),
     };
-    const microsoftUserGroup = parseCsvSet(process.env.MICROSOFT_GROUP_USER_IDS);
+    const microsoftTherapistGroup = parseCsvSet(
+        process.env.MICROSOFT_GROUP_THERAPIST_IDS ?? process.env.MICROSOFT_GROUP_USER_IDS,
+    );
 
     if (groups.some((groupId) => groupRoleMap.admin.has(groupId))) return "admin";
     if (groups.some((groupId) => groupRoleMap.engineer.has(groupId))) return "engineer";
     if (groups.some((groupId) => groupRoleMap.scientist.has(groupId))) return "scientist";
-    if (groups.some((groupId) => microsoftUserGroup.has(groupId))) return "user";
+    if (groups.some((groupId) => microsoftTherapistGroup.has(groupId))) return "therapist";
 
     throw new Error("User is not in an authorized Entra group");
 };
@@ -79,7 +81,7 @@ export const auth = betterAuth({
         additionalFields: {
             role: {
                 type: "string",
-                defaultValue: "user",
+                defaultValue: "therapist",
                 input: false, // not settable via sign-up
             },
         },
@@ -126,12 +128,14 @@ export const auth = betterAuth({
 
                     // Bootstrap email lists are read lazily to avoid startup crash when not set
                     const bootstrapAdminEmails = parseCsvSet(process.env.BOOTSTRAP_ADMIN_EMAILS);
-                    const bootstrapUserEmails = parseCsvSet(process.env.BOOTSTRAP_USER_EMAILS);
+                    const bootstrapTherapistEmails = parseCsvSet(
+                        process.env.BOOTSTRAP_THERAPIST_EMAILS ?? process.env.BOOTSTRAP_USER_EMAILS,
+                    );
 
                     if (user.email && bootstrapAdminEmails.has(user.email)) {
                         assignedRole = "admin";
-                    } else if (user.email && bootstrapUserEmails.has(user.email)) {
-                        assignedRole = "user";
+                    } else if (user.email && bootstrapTherapistEmails.has(user.email)) {
+                        assignedRole = "therapist";
                     }
 
                     // Provisioning policy:
