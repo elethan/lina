@@ -105,10 +105,12 @@ export const engineers = sqliteTable('engineers', {
 // --- E. CORE DOMAIN: ASSETS ---
 export const assetInfo = sqliteTable('asset_info', {
   id: integer('info_id').primaryKey({ autoIncrement: true }),
+  gunDate: text('gun_date'),
+  mirrorDate: text('mirror_date'),
+  ionDate: text('ion_date'),
   magnetronDate: text('magnetron_date'),
   thyratronDate: text('thyratron_date'),
   htHours: real('ht_hours'),
-  daysSinceBreakdown: integer('days_since_breakdown').default(0),
   ...commonCols,
 });
 
@@ -130,6 +132,7 @@ export const assets = sqliteTable('assets', {
 export const assetSystems = sqliteTable('asset_systems', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
+  serialNumber: text('serial_number').notNull(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.assetId, t.systemId] }),
 }));

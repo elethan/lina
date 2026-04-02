@@ -10,7 +10,7 @@
     "build": "vite build",
     "start": "vite preview --port 3000 --host",
     "test": "vitest run",
-    "seed:pm-csv": "tsx src/db/seed-pm-csv.ts",
+    "seed:demo": "tsx src/db/seed-pm-csv.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
