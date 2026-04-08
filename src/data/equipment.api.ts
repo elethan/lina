@@ -9,9 +9,9 @@ async function getEquipmentDbDeps() {
 
     const { db } = dbMod
     const { systems, assets, assetSystems, sites } = schemaMod
-    const { eq, inArray, asc } = ormMod
+    const { eq, inArray, asc, and } = ormMod
 
-    return { db, systems, assets, assetSystems, sites, eq, inArray, asc }
+    return { db, systems, assets, assetSystems, sites, eq, inArray, asc, and }
 }
 
 export const fetchSites = authServerFn({ method: 'GET' }).handler(async () => {
@@ -38,7 +38,7 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
     .handler(async ({ data }) => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
-        const { db, systems, assets, assetSystems, eq, inArray } = await getEquipmentDbDeps()
+        const { db, systems, assets, assetSystems, eq, inArray, and } = await getEquipmentDbDeps()
 
         const { siteId } = data
 
@@ -50,7 +50,7 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
                 modelName: assets.modelName,
             })
             .from(assets)
-            .where(eq(assets.siteId, siteId))
+            .where(and(eq(assets.siteId, siteId), eq(assets.status, 'Operational')))
 
         const assetIds = siteAssets.map(a => a.assetId)
 
@@ -64,7 +64,7 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
                 })
                 .from(assetSystems)
                 .leftJoin(systems, eq(assetSystems.systemId, systems.id))
-                .where(inArray(assetSystems.assetId, assetIds))
+                .where(and(inArray(assetSystems.assetId, assetIds), eq(assetSystems.status, 'Operational')))
 
             siteSystems = linkedSystems.filter((s): s is { systemId: number, name: string } => s.systemId !== null && s.name !== null)
         }
@@ -78,7 +78,8 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
                     systemId: assetSystems.systemId,
                 })
                 .from(assetSystems)
-                .where(inArray(assetSystems.assetId, assetIds))
+                .leftJoin(systems, eq(assetSystems.systemId, systems.id))
+                .where(and(inArray(assetSystems.assetId, assetIds), eq(assetSystems.status, 'Operational')))
 
             assetSystemMap = mappings.filter((m): m is { assetId: number, systemId: number } => m.assetId !== null && m.systemId !== null)
         }

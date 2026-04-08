@@ -58,3 +58,4 @@ jobs:
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull lina
             docker compose up -d
+            docker image prune -af

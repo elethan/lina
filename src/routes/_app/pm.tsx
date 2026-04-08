@@ -193,6 +193,8 @@ const columns: ColumnDef<PmRow, any>[] = [
             if (!filterValue) return true
             return row.getValue(columnId) === filterValue
         },
+        size: 100,
+        enableResizing: false,
     }),
     columnHelper.accessor('intervalMonths', {
         header: 'Interval',
@@ -200,7 +202,7 @@ const columns: ColumnDef<PmRow, any>[] = [
             const months = info.getValue()
             return months ? `${months} month${months > 1 ? 's' : ''}` : '—'
         },
-        size: 120,
+        size: 80,
     }),
     columnHelper.accessor('engineerName', {
         header: 'Engineer',

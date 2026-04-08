@@ -4,6 +4,7 @@ import {
     MessageSquareText,
     ClipboardList,
     CalendarCheck2,
+    Boxes,
     ShieldCheck,
     ChevronDown,
     ChevronLeft,
@@ -17,6 +18,7 @@ const navItems = [
     { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'therapist'] },
     { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer'] },
     { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, allowedRoles: ['admin', 'engineer', 'scientist'] },
+    { to: '/assets' as string, label: 'Assets', icon: Boxes, allowedRoles: ['admin', 'engineer'] },
 ]
 
 type SidebarProps = {

@@ -132,7 +132,11 @@ export const assets = sqliteTable('assets', {
 export const assetSystems = sqliteTable('asset_systems', {
   assetId: integer('asset_id').references(() => assets.id),
   systemId: integer('system_id').references(() => systems.id),
-  serialNumber: text('serial_number').notNull(),
+  serialNumber: text('serial_number'),
+  swVersion: text('sw_version'),
+  userCredentials: text('user_credentials'),
+  adminCredentials: text('admin_credentials'),
+  status: text('status').notNull().default('Operational'),
 }, (t) => ({
   pk: primaryKey({ columns: [t.assetId, t.systemId] }),
 }));

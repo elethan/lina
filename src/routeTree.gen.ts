@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkOrdersRouteImport } from './routes/_app/work-orders'
 import { Route as AppPmRouteImport } from './routes/_app/pm'
+import { Route as AppAssetsRouteImport } from './routes/_app/assets'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const LoginRoute = LoginRouteImport.update({
@@ -40,6 +41,11 @@ const AppPmRoute = AppPmRouteImport.update({
   path: '/pm',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAssetsRoute = AppAssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -49,12 +55,14 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/assets': typeof AppAssetsRoute
   '/pm': typeof AppPmRoute
   '/work-orders': typeof AppWorkOrdersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/assets': typeof AppAssetsRoute
   '/pm': typeof AppPmRoute
   '/work-orders': typeof AppWorkOrdersRoute
   '/': typeof AppIndexRoute
@@ -64,6 +72,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/assets': typeof AppAssetsRoute
   '/_app/pm': typeof AppPmRoute
   '/_app/work-orders': typeof AppWorkOrdersRoute
   '/_app/': typeof AppIndexRoute
@@ -71,13 +80,14 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/pm' | '/work-orders' | '/api/auth/$'
+  fullPaths: '/' | '/login' | '/assets' | '/pm' | '/work-orders' | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/pm' | '/work-orders' | '/' | '/api/auth/$'
+  to: '/login' | '/assets' | '/pm' | '/work-orders' | '/' | '/api/auth/$'
   id:
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/assets'
     | '/_app/pm'
     | '/_app/work-orders'
     | '/_app/'
@@ -127,6 +137,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPmRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/assets': {
+      id: '/_app/assets'
+      path: '/assets'
+      fullPath: '/assets'
+      preLoaderRoute: typeof AppAssetsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -138,12 +155,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAssetsRoute: typeof AppAssetsRoute
   AppPmRoute: typeof AppPmRoute
   AppWorkOrdersRoute: typeof AppWorkOrdersRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAssetsRoute: AppAssetsRoute,
   AppPmRoute: AppPmRoute,
   AppWorkOrdersRoute: AppWorkOrdersRoute,
   AppIndexRoute: AppIndexRoute,
