@@ -34,7 +34,7 @@ export const ROLE_CAPABILITIES: Record<
     },
     scientist: {
         requests: ['read', 'create'],
-        workOrders: ['read'],
+        workOrders: ['read', 'update'],
         pmInstances: ['read'],
         assetsSystems: ['read'],
         pmTasks: ['read'],
@@ -54,7 +54,9 @@ export const ROLE_DETAILS: Record<AppRole, string[]> = {
     ],
     scientist: [
         'Can view all modules',
-        'Can create requests only; cannot create/edit other records',
+        'Can create requests and update existing work orders',
+        'Cannot create, delete, or assign work orders',
+        'Can view assets and systems but cannot create/edit them',
     ],
     therapist: [
         'Can create and view requests only',

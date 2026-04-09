@@ -23,15 +23,14 @@ import {
 import { Input } from '../../components/ui/input'
 import {
   createAssetAdmin,
+  createAssetSystemLinkAdmin,
   createSiteAdmin,
-  createSystemAdmin,
   decommissionAssetAdmin,
-  decommissionSystemAdmin,
   type AssetSystemLinkRow,
   fetchAssetsAdminData,
   updateAssetAdmin,
+  updateAssetSystemLinkAdmin,
   updateSiteAdmin,
-  updateSystemAdmin,
   type AssetAdminRow,
   type SiteAdminRow,
 } from '../../data/assets.api'
@@ -50,6 +49,15 @@ type AssetFormState = {
   systemIds: number[]
 }
 
+type SystemFormState = {
+  systemId: string
+  serialNumber: string
+  swVersion: string
+  userCredentials: string
+  adminCredentials: string
+  status: AssetStatus
+}
+
 const siteColumnHelper = createColumnHelper<SiteAdminRow>()
 const assetColumnHelper = createColumnHelper<AssetAdminRow>()
 const systemColumnHelper = createColumnHelper<AssetSystemLinkRow>()
@@ -63,6 +71,15 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   status: 'Operational',
   siteId: '',
   systemIds: [],
+}
+
+const EMPTY_SYSTEM_FORM: SystemFormState = {
+  systemId: '',
+  serialNumber: '',
+  swVersion: '',
+  userCredentials: '',
+  adminCredentials: '',
+  status: 'Operational',
 }
 
 function toYmd(value: string | null): string {
@@ -87,7 +104,7 @@ export const Route = createFileRoute('/_app/assets' as any)({
     if (!role) {
       throw redirect({ to: '/login' })
     }
-    if (!['admin', 'engineer'].includes(role)) {
+    if (!['admin', 'engineer', 'scientist'].includes(role)) {
       throw redirect({ to: '/' })
     }
   },
@@ -115,7 +132,7 @@ function AssetsPage() {
 
   const [systemDialogOpen, setSystemDialogOpen] = useState(false)
   const [systemDialogMode, setSystemDialogMode] = useState<DialogMode>('create')
-  const [systemFormName, setSystemFormName] = useState('')
+  const [systemForm, setSystemForm] = useState<SystemFormState>(EMPTY_SYSTEM_FORM)
   const [editingSystemId, setEditingSystemId] = useState<number | null>(null)
 
   const [assetDialogOpen, setAssetDialogOpen] = useState(false)
@@ -150,15 +167,17 @@ function AssetsPage() {
   })
 
   const createSystemMutation = useMutation({
-    mutationFn: async (name: string) => createSystemAdmin({ data: { name } }),
+    mutationFn: async (payload: {
+      assetId: number
+      systemId: number
+      serialNumber?: string | null
+      swVersion?: string | null
+      userCredentials?: string | null
+      adminCredentials?: string | null
+      status?: AssetStatus
+    }) => createAssetSystemLinkAdmin({ data: payload }),
     onSuccess: refresh,
-    onError: (e: Error) => alert(e.message || 'Failed to create system'),
-  })
-
-  const updateSystemMutation = useMutation({
-    mutationFn: async (payload: { systemId: number; name: string }) => updateSystemAdmin({ data: payload }),
-    onSuccess: refresh,
-    onError: (e: Error) => alert(e.message || 'Failed to update system'),
+    onError: (e: Error) => alert(e.message || 'Failed to add system link'),
   })
 
   const createAssetMutation = useMutation({
@@ -184,8 +203,8 @@ function AssetsPage() {
       warrantyYears?: number | null
       catDate?: string | null
       installationDate?: string | null
-      siteId: number
       status: AssetStatus
+      siteId: number
       systemIds: number[]
     }) => updateAssetAdmin({ data: payload }),
     onSuccess: refresh,
@@ -198,10 +217,18 @@ function AssetsPage() {
     onError: (e: Error) => alert(e.message || 'Failed to de-commission asset'),
   })
 
-  const decommissionSystemMutation = useMutation({
-    mutationFn: async (systemId: number) => decommissionSystemAdmin({ data: { systemId } }),
+  const updateSystemLinkMutation = useMutation({
+    mutationFn: async (payload: {
+      assetId: number
+      systemId: number
+      serialNumber?: string | null
+      swVersion?: string | null
+      userCredentials?: string | null
+      adminCredentials?: string | null
+      status: AssetStatus
+    }) => updateAssetSystemLinkAdmin({ data: payload }),
     onSuccess: refresh,
-    onError: (e: Error) => alert(e.message || 'Failed to de-commission system'),
+    onError: (e: Error) => alert(e.message || 'Failed to update system link'),
   })
 
   const sites = data?.sites ?? []
@@ -226,14 +253,21 @@ function AssetsPage() {
   const openCreateSystemDialog = () => {
     setSystemDialogMode('create')
     setEditingSystemId(null)
-    setSystemFormName('')
+    setSystemForm(EMPTY_SYSTEM_FORM)
     setSystemDialogOpen(true)
   }
 
-  const openEditSystemDialog = (system: { systemId: number; systemName: string }) => {
+  const openEditSystemDialog = (system: AssetSystemLinkRow) => {
     setSystemDialogMode('edit')
     setEditingSystemId(system.systemId)
-    setSystemFormName(system.systemName)
+    setSystemForm({
+      systemId: String(system.systemId),
+      serialNumber: system.serialNumber ?? '',
+      swVersion: system.swVersion ?? '',
+      userCredentials: system.userCredentials ?? '',
+      adminCredentials: system.adminCredentials ?? '',
+      status: system.status === 'De-commissioned' ? 'De-commissioned' : 'Operational',
+    })
     setSystemDialogOpen(true)
   }
 
@@ -301,21 +335,51 @@ function AssetsPage() {
 
   const handleSystemSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const name = systemFormName.trim()
-    if (!name) {
-      alert('System name is required')
-      return
+
+    const linkPayload = {
+      serialNumber: systemForm.serialNumber.trim() || null,
+      swVersion: systemForm.swVersion.trim() || null,
+      userCredentials: systemForm.userCredentials.trim() || null,
+      adminCredentials: systemForm.adminCredentials.trim() || null,
+      status: systemDialogMode === 'create' ? 'Operational' as AssetStatus : systemForm.status,
     }
 
     try {
       if (systemDialogMode === 'create') {
-        await createSystemMutation.mutateAsync(name)
+        if (!selectedAssetId) {
+          alert('Select an asset first')
+          return
+        }
+
+        const systemId = Number(systemForm.systemId)
+        if (!systemId) {
+          alert('Select a system')
+          return
+        }
+
+        if (selectedAsset?.systemIds.includes(systemId)) {
+          alert('This system is already linked to the selected asset')
+          return
+        }
+
+        await createSystemMutation.mutateAsync({
+          assetId: selectedAssetId,
+          systemId,
+          ...linkPayload,
+        })
       } else {
         if (!editingSystemId) {
           alert('Missing system ID')
           return
         }
-        await updateSystemMutation.mutateAsync({ systemId: editingSystemId, name })
+
+        if (selectedAssetId) {
+          await updateSystemLinkMutation.mutateAsync({
+            assetId: selectedAssetId,
+            systemId: editingSystemId,
+            ...linkPayload,
+          })
+        }
       }
       setSystemDialogOpen(false)
     } catch {
@@ -417,7 +481,8 @@ function AssetsPage() {
         <button
           type="button"
           onClick={openCreateSystemDialog}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors"
+          disabled={selectedAssetId === null}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
         >
           <PlusCircle size={16} />
           Add System
@@ -425,14 +490,15 @@ function AssetsPage() {
         <button
           type="button"
           onClick={openCreateAssetDialog}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-colors"
+          disabled={selectedSiteId === null}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
         >
           <PlusCircle size={16} />
           Add Asset
         </button>
       </div>
     ) : null,
-  }), [search, canWrite])
+  }), [search, canWrite, selectedAssetId, selectedSiteId])
 
   useSetToolbar(toolbarConfig)
 
@@ -468,15 +534,20 @@ function AssetsPage() {
   )
 
   const visibleSystems = useMemo(() => {
-    if (!selectedAsset) return []
-    if (!q) return selectedAsset.systemLinks
+    const allLinks = assets.flatMap((asset) => asset.systemLinks)
 
-    return selectedAsset.systemLinks.filter((system) =>
-      `${system.systemName} ${system.serialNumber ?? ''} ${system.swVersion ?? ''} ${system.userCredentials ?? ''} ${system.adminCredentials ?? ''} ${system.status}`
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [q, selectedAsset])
+    const searchFiltered = q
+      ? allLinks.filter((system) =>
+          `${system.systemName} ${system.serialNumber ?? ''} ${system.swVersion ?? ''} ${system.userCredentials ?? ''} ${system.adminCredentials ?? ''} ${system.status}`
+            .toLowerCase()
+            .includes(q),
+        )
+      : allLinks
+
+    return selectedAssetId !== null
+      ? searchFiltered.filter((system) => system.assetId === selectedAssetId)
+      : searchFiltered
+  }, [assets, q, selectedAssetId])
 
   useEffect(() => {
     if (selectedSiteId !== null && !filteredSites.some((site) => site.id === selectedSiteId)) {
@@ -616,12 +687,12 @@ function AssetsPage() {
     const columns: ColumnDef<AssetSystemLinkRow, any>[] = [
       systemColumnHelper.accessor('systemName', {
         header: 'System',
-        size: 180,
+        size: 140,
         cell: (info) => <span className="text-gray-800 font-medium">{info.getValue()}</span>,
       }),
       systemColumnHelper.accessor('serialNumber', {
         header: 'Serial Number',
-        size: 170,
+        size: 130,
         cell: (info) => <span>{info.getValue() ?? '—'}</span>,
       }),
       systemColumnHelper.accessor('swVersion', {
@@ -651,7 +722,7 @@ function AssetsPage() {
         systemColumnHelper.display({
           id: 'actions',
           header: () => <div className="text-right">Actions</div>,
-          size: 220,
+          size: 120,
           cell: ({ row }) => (
             <div className="inline-flex gap-2 justify-end w-full">
               <button
@@ -660,26 +731,12 @@ function AssetsPage() {
                   event.stopPropagation()
                   openEditSystemDialog(row.original)
                 }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
+                disabled={selectedAssetId === null}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
               >
                 <Pencil size={14} />
                 Edit
               </button>
-              {row.original.status !== 'De-commissioned' && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    if (confirm('De-commission this system across linked assets?')) {
-                      decommissionSystemMutation.mutate(row.original.systemId)
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
-                >
-                  <ArchiveX size={14} />
-                  De-commission
-                </button>
-              )}
             </div>
           ),
         }),
@@ -687,7 +744,7 @@ function AssetsPage() {
     }
 
     return columns
-  }, [canWrite])
+  }, [canWrite, selectedAssetId])
 
   const sitesTable = useReactTable({
     data: filteredSites,
@@ -707,7 +764,7 @@ function AssetsPage() {
     data: visibleSystems,
     columns: systemColumns,
     getCoreRowModel: getCoreRowModel(),
-    getRowId: (row) => String(row.systemId),
+    getRowId: (row) => `${row.assetId}-${row.systemId}`,
     columnResizeMode: systemColumnResizeMode,
     enableColumnResizing: true,
   })
@@ -887,7 +944,7 @@ function AssetsPage() {
             <p className="text-xs text-gray-500">
               {selectedAsset
                 ? `Showing systems for ${selectedAsset.serialNumber}.`
-                : 'Select an asset to show its systems.'}
+                : 'Showing all systems. Select an asset to view/edit link-specific fields.'}
             </p>
           </div>
           <div className="h-[24rem] overflow-auto">
@@ -924,7 +981,7 @@ function AssetsPage() {
                 ) : systemsTable.getRowModel().rows.length === 0 ? (
                   <tr>
                     <td className="px-4 py-4 text-gray-400" colSpan={systemsTable.getAllLeafColumns().length || 1}>
-                      {selectedAsset ? 'No systems found for this asset.' : 'Select an asset to view systems.'}
+                      {selectedAsset ? 'No systems found for this asset.' : 'No systems found.'}
                     </td>
                   </tr>
                 ) : (
@@ -979,19 +1036,84 @@ function AssetsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{systemDialogMode === 'create' ? 'Add System' : 'Edit System'}</DialogTitle>
-            <DialogDescription>Provide system details. All fields except IDs are editable.</DialogDescription>
+            <DialogDescription>Provide system and link details. IDs are managed automatically.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSystemSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="system-name" className="text-sm font-medium text-gray-700">Name</label>
-              <Input
-                id="system-name"
-                value={systemFormName}
-                onChange={(e) => setSystemFormName(e.target.value)}
-                placeholder="Enter system name"
-                required
-              />
+            {systemDialogMode === 'create' ? (
+              <div className="space-y-1.5">
+                <label htmlFor="system-select" className="text-sm font-medium text-gray-700">System</label>
+                <select
+                  id="system-select"
+                  value={systemForm.systemId}
+                  onChange={(e) => setSystemForm((prev) => ({ ...prev, systemId: e.target.value }))}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  required
+                >
+                  <option value="">Select system</option>
+                  {systems.map((system) => (
+                    <option key={system.id} value={system.id}>{system.name}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">System</label>
+                <Input
+                  value={visibleSystems.find((s) => s.systemId === editingSystemId)?.systemName ?? '—'}
+                  disabled
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label htmlFor="system-serial" className="text-sm font-medium text-gray-700">Serial Number</label>
+                <Input
+                  id="system-serial"
+                  value={systemForm.serialNumber}
+                  onChange={(e) => setSystemForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="system-sw" className="text-sm font-medium text-gray-700">SW Version</label>
+                <Input
+                  id="system-sw"
+                  value={systemForm.swVersion}
+                  onChange={(e) => setSystemForm((prev) => ({ ...prev, swVersion: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <label htmlFor="system-user-cred" className="text-sm font-medium text-gray-700">User Credentials</label>
+                <Input
+                  id="system-user-cred"
+                  value={systemForm.userCredentials}
+                  onChange={(e) => setSystemForm((prev) => ({ ...prev, userCredentials: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <label htmlFor="system-admin-cred" className="text-sm font-medium text-gray-700">Admin Credentials</label>
+                <Input
+                  id="system-admin-cred"
+                  value={systemForm.adminCredentials}
+                  onChange={(e) => setSystemForm((prev) => ({ ...prev, adminCredentials: e.target.value }))}
+                />
+              </div>
+              {systemDialogMode === 'edit' && (
+                <div className="space-y-1.5 md:col-span-2">
+                  <label htmlFor="system-status" className="text-sm font-medium text-gray-700">Status</label>
+                  <select
+                    id="system-status"
+                    value={systemForm.status}
+                    onChange={(e) => setSystemForm((prev) => ({ ...prev, status: e.target.value as AssetStatus }))}
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <option value="Operational">Operational</option>
+                    <option value="De-commissioned">De-commissioned</option>
+                  </select>
+                </div>
+              )}
             </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setSystemDialogOpen(false)}>Cancel</Button>
               <Button type="submit">{systemDialogMode === 'create' ? 'Create System' : 'Save Changes'}</Button>

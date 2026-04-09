@@ -1,5 +1,19 @@
 import { authServerFn } from '../lib/server-utils'
 
+type ActorMeta = {
+  id: string
+  email?: string | null
+  role?: string | null
+}
+
+function withActor(user: ActorMeta) {
+  return {
+    actorUserId: user.id,
+    actorEmail: user.email ?? null,
+    actorRole: user.role ?? null,
+  }
+}
+
 type AssetStatus = 'Operational' | 'De-commissioned'
 export type SiteAdminRow = {
   id: number
@@ -13,6 +27,7 @@ export type SystemAdminRow = {
 }
 
 export type AssetSystemLinkRow = {
+  assetId: number
   systemId: number
   systemName: string
   serialNumber: string | null
@@ -62,7 +77,7 @@ function ensureAdminRole() {
 }
 
 function ensureAssetsReadRole() {
-  return import('../lib/auth-guards.server').then(({ requireRole }) => requireRole('admin', 'engineer'))
+  return import('../lib/auth-guards.server').then(({ requireRole }) => requireRole('admin', 'engineer', 'scientist'))
 }
 
 export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
@@ -122,6 +137,7 @@ export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
       if (!row.assetId || !row.systemId || !row.systemName) continue
       const current = systemsByAsset.get(row.assetId) ?? []
       current.push({
+        assetId: row.assetId,
         systemId: row.systemId,
         systemName: row.systemName,
         serialNumber: row.serialNumber ?? null,
@@ -175,7 +191,7 @@ export const createSiteAdmin = authServerFn({ method: 'POST' })
     return { name }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, sites } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -184,6 +200,13 @@ export const createSiteAdmin = authServerFn({ method: 'POST' })
         name: data.name,
       })
       .returning({ id: sites.id })
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SITE_CREATED', {
+      siteId: created.id,
+      name: data.name,
+      ...withActor(user),
+    })
 
     return created
   })
@@ -196,13 +219,20 @@ export const updateSiteAdmin = authServerFn({ method: 'POST' })
     return { siteId: data.siteId, name }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, sites, eq } = await getAssetsDbDeps()
 
     await db
       .update(sites)
       .set({ name: data.name })
       .where(eq(sites.id, data.siteId))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SITE_UPDATED', {
+      siteId: data.siteId,
+      name: data.name,
+      ...withActor(user),
+    })
 
     return { success: true }
   })
@@ -214,7 +244,7 @@ export const createSystemAdmin = authServerFn({ method: 'POST' })
     return { name }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, systems } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -223,6 +253,13 @@ export const createSystemAdmin = authServerFn({ method: 'POST' })
         name: data.name,
       })
       .returning({ id: systems.id })
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_CREATED', {
+      systemId: created.id,
+      name: data.name,
+      ...withActor(user),
+    })
 
     return created
   })
@@ -235,7 +272,7 @@ export const updateSystemAdmin = authServerFn({ method: 'POST' })
     return { systemId: data.systemId, name }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, systems, eq } = await getAssetsDbDeps()
 
     await db
@@ -244,6 +281,178 @@ export const updateSystemAdmin = authServerFn({ method: 'POST' })
         name: data.name,
       })
       .where(eq(systems.id, data.systemId))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_UPDATED', {
+      systemId: data.systemId,
+      name: data.name,
+      ...withActor(user),
+    })
+
+    return { success: true }
+  })
+
+export const createSystemWithLinkAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: {
+    name: string
+    assetId?: number | null
+    serialNumber?: string | null
+    swVersion?: string | null
+    userCredentials?: string | null
+    adminCredentials?: string | null
+    status?: AssetStatus
+  }) => {
+    const name = data.name?.trim()
+    if (!name) throw new Error('System name is required')
+
+    const status = data.status ?? 'Operational'
+    if (!['Operational', 'De-commissioned'].includes(status)) {
+      throw new Error('Invalid system link status')
+    }
+
+    return {
+      name,
+      assetId: data.assetId ?? null,
+      serialNumber: data.serialNumber?.trim() || null,
+      swVersion: data.swVersion?.trim() || null,
+      userCredentials: data.userCredentials?.trim() || null,
+      adminCredentials: data.adminCredentials?.trim() || null,
+      status,
+    }
+  })
+  .handler(async ({ data }) => {
+    const user = await ensureAdminRole()
+    const { db, systems, assetSystems } = await getAssetsDbDeps()
+
+    const [created] = await db
+      .insert(systems)
+      .values({ name: data.name })
+      .returning({ id: systems.id })
+
+    if (data.assetId) {
+      await db.insert(assetSystems).values({
+        assetId: data.assetId,
+        systemId: created.id,
+        serialNumber: data.serialNumber,
+        swVersion: data.swVersion,
+        userCredentials: data.userCredentials,
+        adminCredentials: data.adminCredentials,
+        status: data.status,
+      })
+    }
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_CREATED_WITH_LINK', {
+      systemId: created.id,
+      name: data.name,
+      linkedAssetId: data.assetId,
+      ...withActor(user),
+    })
+
+    return created
+  })
+
+export const createAssetSystemLinkAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: {
+    assetId: number
+    systemId: number
+    serialNumber?: string | null
+    swVersion?: string | null
+    userCredentials?: string | null
+    adminCredentials?: string | null
+    status?: AssetStatus
+  }) => {
+    if (!data.assetId) throw new Error('Asset ID is required')
+    if (!data.systemId) throw new Error('System ID is required')
+
+    const status = data.status ?? 'Operational'
+    if (!['Operational', 'De-commissioned'].includes(status)) {
+      throw new Error('Invalid system link status')
+    }
+
+    return {
+      assetId: data.assetId,
+      systemId: data.systemId,
+      serialNumber: data.serialNumber?.trim() || null,
+      swVersion: data.swVersion?.trim() || null,
+      userCredentials: data.userCredentials?.trim() || null,
+      adminCredentials: data.adminCredentials?.trim() || null,
+      status,
+    }
+  })
+  .handler(async ({ data }) => {
+    const user = await ensureAdminRole()
+    const { db, assetSystems } = await getAssetsDbDeps()
+
+    await db.insert(assetSystems).values({
+      assetId: data.assetId,
+      systemId: data.systemId,
+      serialNumber: data.serialNumber,
+      swVersion: data.swVersion,
+      userCredentials: data.userCredentials,
+      adminCredentials: data.adminCredentials,
+      status: data.status,
+    })
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_LINK_CREATED', {
+      assetId: data.assetId,
+      systemId: data.systemId,
+      status: data.status,
+      ...withActor(user),
+    })
+
+    return { success: true }
+  })
+
+export const updateAssetSystemLinkAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: {
+    assetId: number
+    systemId: number
+    serialNumber?: string | null
+    swVersion?: string | null
+    userCredentials?: string | null
+    adminCredentials?: string | null
+    status: AssetStatus
+  }) => {
+    if (!data.assetId) throw new Error('Asset ID is required')
+    if (!data.systemId) throw new Error('System ID is required')
+    if (!['Operational', 'De-commissioned'].includes(data.status)) {
+      throw new Error('Invalid system link status')
+    }
+
+    return {
+      assetId: data.assetId,
+      systemId: data.systemId,
+      serialNumber: data.serialNumber?.trim() || null,
+      swVersion: data.swVersion?.trim() || null,
+      userCredentials: data.userCredentials?.trim() || null,
+      adminCredentials: data.adminCredentials?.trim() || null,
+      status: data.status,
+    }
+  })
+  .handler(async ({ data }) => {
+    const user = await ensureAdminRole()
+    const { db, assetSystems, eq, and } = await getAssetsDbDeps()
+
+    await db
+      .update(assetSystems)
+      .set({
+        serialNumber: data.serialNumber,
+        swVersion: data.swVersion,
+        userCredentials: data.userCredentials,
+        adminCredentials: data.adminCredentials,
+        status: data.status,
+      })
+      .where(and(eq(assetSystems.assetId, data.assetId), eq(assetSystems.systemId, data.systemId)))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_LINK_UPDATED', {
+      assetId: data.assetId,
+      systemId: data.systemId,
+      status: data.status,
+      ...withActor(user),
+    })
 
     return { success: true }
   })
@@ -254,13 +463,19 @@ export const decommissionSystemAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, assetSystems, eq } = await getAssetsDbDeps()
 
     await db
       .update(assetSystems)
       .set({ status: 'De-commissioned' })
       .where(eq(assetSystems.systemId, data.systemId))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_DECOMMISSIONED', {
+      systemId: data.systemId,
+      ...withActor(user),
+    })
 
     return { success: true }
   })
@@ -304,7 +519,7 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, assets, assetSystems } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -328,6 +543,16 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
         status: data.status,
       })),
     )
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_CREATED', {
+      assetId: created.id,
+      siteId: data.siteId,
+      serialNumber: data.serialNumber,
+      systemIds: data.systemIds,
+      status: data.status,
+      ...withActor(user),
+    })
 
     return created
   })
@@ -370,7 +595,7 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, assets, assetSystems, eq } = await getAssetsDbDeps()
 
     await db
@@ -399,6 +624,16 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
       })),
     )
 
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_UPDATED', {
+      assetId: data.assetId,
+      siteId: data.siteId,
+      serialNumber: data.serialNumber,
+      systemIds: data.systemIds,
+      status: data.status,
+      ...withActor(user),
+    })
+
     return { success: true }
   })
 
@@ -408,13 +643,19 @@ export const decommissionAssetAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    const user = await ensureAdminRole()
     const { db, assets, eq } = await getAssetsDbDeps()
 
     await db
       .update(assets)
       .set({ status: 'De-commissioned' })
       .where(eq(assets.id, data.assetId))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_DECOMMISSIONED', {
+      assetId: data.assetId,
+      ...withActor(user),
+    })
 
     return { success: true }
   })

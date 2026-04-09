@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 import { authClient } from '../lib/auth-client'
+import { reportClientError } from '../lib/client-error-logger'
 
 export const Route = createFileRoute('/login')({
     component: LoginPage,
@@ -15,6 +16,12 @@ function LoginPage() {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
 
+    const getEmailDomain = () => {
+        const idx = email.lastIndexOf('@')
+        if (idx === -1) return null
+        return email.slice(idx + 1).toLowerCase() || null
+    }
+
     const handleEmailAuth = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
@@ -27,21 +34,36 @@ function LoginPage() {
             })
             if (error) {
                 setError(error.message ?? 'Sign in failed')
+                void reportClientError('CLIENT_LOGIN_FAILED', error.message ?? 'Sign in failed', {
+                    method: 'email-password',
+                    emailDomain: getEmailDomain(),
+                })
                 setLoading(false)
                 return
             }
             router.navigate({ to: '/' })
         } catch (err) {
             setError('Something went wrong')
+            void reportClientError('CLIENT_LOGIN_EXCEPTION', err, {
+                method: 'email-password',
+                emailDomain: getEmailDomain(),
+            })
             setLoading(false)
         }
     }
 
     const handleMicrosoftSignIn = async () => {
-        await authClient.signIn.social({
-            provider: 'microsoft',
-            callbackURL: '/',
-        })
+        try {
+            await authClient.signIn.social({
+                provider: 'microsoft',
+                callbackURL: '/',
+            })
+        } catch (err) {
+            setError('Microsoft sign in failed')
+            void reportClientError('CLIENT_LOGIN_EXCEPTION', err, {
+                method: 'microsoft-sso',
+            })
+        }
     }
 
     return (

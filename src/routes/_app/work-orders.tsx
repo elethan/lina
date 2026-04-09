@@ -54,7 +54,7 @@ export const Route = createFileRoute('/_app/work-orders')({
   }),
   beforeLoad: ({ context }) => {
     const user = (context as any).user
-    if (user?.role === 'therapist' || user?.role === 'scientist') {
+    if (user?.role === 'therapist') {
       throw redirect({ to: '/' })
     }
   },
@@ -99,8 +99,8 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
         <div className="flex flex-col gap-1">
           <span>Status</span>
           <select
-            value={(column.getFilterValue() ?? 'Open') as string}
-            onChange={(e) => column.setFilterValue(e.target.value === 'All' ? undefined : e.target.value)}
+            value={(column.getFilterValue() ?? 'All') as string}
+            onChange={(e) => column.setFilterValue(e.target.value === 'All' ? 'All' : e.target.value)}
             className="text-xs py-1 px-1.5 border border-primary-200 rounded bg-white text-gray-700 font-normal focus:outline-none focus:border-primary/60 outline-none w-full max-w-28 truncate"
           >
             <option value="All">All</option>
@@ -299,8 +299,9 @@ function WorkOrdersPage() {
   const navigate = useNavigate({ from: '/work-orders' })
   const router = useRouter()
   const { user } = useRouteContext({ from: '/_app' })
-  const { search: globalFilter = '', dateFrom = '', dateTo = '', status: statusFilter = 'Open', engineerId, newWoId } = Route.useSearch()
-  const selectedEngineerId = engineerId ?? null
+  const { search: globalFilter = '', dateFrom = '', dateTo = '' } = Route.useSearch()
+  const currentUserRole = String(user?.role ?? '').toLowerCase()
+  const canDeleteWorkOrders = currentUserRole === 'admin' || currentUserRole === 'engineer'
 
   // URL param updaters
   const setGlobalFilter = (value: string) =>
@@ -394,62 +395,66 @@ function WorkOrdersPage() {
           <Play size={16} />
           {isStarted ? 'Continue' : 'Start'}
         </button>
-        <button
-          id="btn-close-wo"
-          disabled={selectedCount === 0}
-          onClick={() => setShowDeleteDialog(true)}
-          className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
-        >
-          <XCircle size={16} />
-          Close
-        </button>
+        {canDeleteWorkOrders && (
+          <button
+            id="btn-close-wo"
+            disabled={selectedCount === 0}
+            onClick={() => setShowDeleteDialog(true)}
+            className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
+          >
+            <XCircle size={16} />
+            Close
+          </button>
+        )}
       </div>
     ),
-  }), [globalFilter, dateFrom, dateTo, selectedCount, isStarted])
+  }), [globalFilter, dateFrom, dateTo, selectedCount, isStarted, canDeleteWorkOrders])
 
   useSetToolbar(toolbarConfig)
 
   return (
     <>
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
-                <XCircle size={20} className="text-red-600" />
+      {canDeleteWorkOrders && (
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-3 mb-1">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
+                  <XCircle size={20} className="text-red-600" />
+                </div>
+                <DialogTitle className="text-base font-semibold text-gray-900">
+                  Close Work Order
+                </DialogTitle>
               </div>
-              <DialogTitle className="text-base font-semibold text-gray-900">
-                Close Work Order
-              </DialogTitle>
+              <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
+                You are about to delete <span className="font-semibold text-gray-700">{selectedCount} Work Order{selectedCount !== 1 ? 's' : ''}</span>.
+                <br /><br />
+                What would you like to do with the User Requests associated with {selectedCount === 1 ? 'this' : 'these'} Work Order{selectedCount !== 1 ? 's' : ''}?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2 mt-4 pl-[52px]">
+              <button
+                onClick={() => mutateDelete({ action: 'delete' })}
+                className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 text-white shadow-sm hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40"
+              >
+                Delete WO & Requests
+              </button>
+              <button
+                onClick={() => mutateDelete({ action: 'keep' })}
+                className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200"
+              >
+                Delete WO only (Keep Requests)
+              </button>
+              <button
+                onClick={() => setShowDeleteDialog(false)}
+                className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
+              >
+                Cancel
+              </button>
             </div>
-            <DialogDescription className="text-sm text-gray-500 leading-relaxed pl-[52px]">
-              You are about to delete <span className="font-semibold text-gray-700">{selectedCount} Work Order{selectedCount !== 1 ? 's' : ''}</span>.
-              <br /><br />
-              What would you like to do with the User Requests associated with {selectedCount === 1 ? 'this' : 'these'} Work Order{selectedCount !== 1 ? 's' : ''}?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-2 mt-4 pl-[52px]">
-            <button
-              onClick={() => mutateDelete({ action: 'delete' })}
-              className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 text-white shadow-sm hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40"
-            >
-              Delete WO & Requests
-            </button>
-            <button
-              onClick={() => mutateDelete({ action: 'keep' })}
-              className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200"
-            >
-              Delete WO only (Keep Requests)
-            </button>
-            <button
-              onClick={() => setShowDeleteDialog(false)}
-              className="mt-2 inline-flex w-full items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
-            >
-              Cancel
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
       <Await promise={workOrdersPromise} fallback={<TableSkeleton />}>
         {(workOrders) => (
           <WorkOrdersTableView
@@ -469,6 +474,7 @@ function WorkOrdersPage() {
         engineers={engineersList}
         currentUserId={user?.id || null}
         currentUserName={user?.name || user?.email || null}
+        currentUserRole={currentUserRole || null}
         onCloseComplete={() => setShowExecutionDialog(false)}
       />
     </>
@@ -498,9 +504,17 @@ function WorkOrdersTableView({
 
   // Read initial columns filter state from URL search parameters
   const [columnFilters, setColumnFilters] = useState<any[]>([
-    ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
+    { id: 'status', value: statusFilter || 'Open' },
     ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
   ])
+
+  // Keep table filter state aligned with URL-driven defaults.
+  useEffect(() => {
+    setColumnFilters([
+      { id: 'status', value: statusFilter || 'Open' },
+      ...(selectedEngineerId !== null ? [{ id: 'engineerId', value: selectedEngineerId }] : []),
+    ])
+  }, [statusFilter, selectedEngineerId])
 
   // Filtered data
   const filteredData = useMemo(() => data, [data])
@@ -532,16 +546,20 @@ function WorkOrdersTableView({
     },
     onRowSelectionChange: setRowSelection,
     onColumnFiltersChange: (updater) => {
-      setColumnFilters(updater)
-      const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
-      const newStatus = newFilters.find((f: any) => f.id === 'status')?.value as string | undefined
-      const newEngineerId = newFilters.find((f: any) => f.id === 'engineerId')?.value as number | undefined
-      navigate({
-        search: (prev: WoSearchParams) => ({
-          ...prev,
-          status: newStatus,
-          engineerId: newEngineerId,
+      setColumnFilters((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater
+        const newStatus = (next.find((f: any) => f.id === 'status')?.value as string | undefined) ?? 'Open'
+        const newEngineerId = next.find((f: any) => f.id === 'engineerId')?.value as number | undefined
+
+        navigate({
+          search: (old: WoSearchParams) => ({
+            ...old,
+            status: newStatus,
+            engineerId: newEngineerId,
+          })
         })
+
+        return next
       })
     },
     globalFilterFn: (row, _columnId, filterValue) => {
@@ -755,6 +773,7 @@ function WorkOrderExecutionDialog({
   engineers,
   currentUserId,
   currentUserName,
+  currentUserRole,
   onCloseComplete
 }: {
   wo: WorkOrderRow | null
@@ -763,9 +782,12 @@ function WorkOrderExecutionDialog({
   engineers: { id: number; name: string; userId: string | null }[]
   currentUserId: string | null
   currentUserName: string | null
+  currentUserRole: string | null
   onCloseComplete: () => void
 }) {
   const [showAddNote, setShowAddNote] = useState(false)
+  const [showCloseConfirmDialog, setShowCloseConfirmDialog] = useState(false)
+  const canAssignEngineer = currentUserRole === 'admin' || currentUserRole === 'engineer'
 
   // Resolve default engineer: assigned WO engineer first, then logged-in engineer profile, then first row.
   const defaultEngineerId: number = (
@@ -794,6 +816,7 @@ function WorkOrderExecutionDialog({
     setDisplayStartAt(wo?.startAt ?? null)
     setDisplayEndAt(wo?.endAt ?? null)
     setDisplayStatus(wo?.status ?? 'Open')
+    setShowCloseConfirmDialog(false)
     setShowStartAssignDialog(false)
     setStartAssignError(null)
     setStartEngineerId(defaultEngineerId > 0 ? defaultEngineerId : (engineers[0]?.id ?? 0))
@@ -829,7 +852,14 @@ function WorkOrderExecutionDialog({
     },
   })
 
-  const requiresStartEngineerSelection = !!(open && wo && !wo.startAt && !displayStartAt && !wo.engineerId)
+  const requiresStartEngineerSelection = !!(
+    canAssignEngineer &&
+    open &&
+    wo &&
+    !wo.startAt &&
+    !displayStartAt &&
+    !wo.engineerId
+  )
 
   useEffect(() => {
     if (requiresStartEngineerSelection) {
@@ -929,6 +959,7 @@ function WorkOrderExecutionDialog({
     onSuccess: (result) => {
       setDisplayEndAt(result.endAt)
       setDisplayStatus('Closed')
+      setShowCloseConfirmDialog(false)
       router.invalidate()
       onCloseComplete()
     },
@@ -1153,11 +1184,7 @@ function WorkOrderExecutionDialog({
               </button>
               {displayStatus !== 'Closed' && (
                 <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to close this Work Order?')) {
-                      closeWoMutation.mutate()
-                    }
-                  }}
+                  onClick={() => setShowCloseConfirmDialog(true)}
                   disabled={closeWoMutation.isPending}
                   className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-red-50 text-red-700 hover:bg-red-100 transition-colors border border-red-200 disabled:opacity-50"
                 >
@@ -1170,68 +1197,100 @@ function WorkOrderExecutionDialog({
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={showStartAssignDialog}
-        onOpenChange={(val) => {
-          setShowStartAssignDialog(val)
-          if (!val) {
-            onOpenChange(false)
-          }
-        }}
-      >
+      <Dialog open={showCloseConfirmDialog} onOpenChange={setShowCloseConfirmDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Select Engineer Before Start</DialogTitle>
+            <DialogTitle>Close This Work Order?</DialogTitle>
             <DialogDescription>
-              This Work Order has not started and has no assigned engineer. Choose an engineer to continue.
+              This will mark the work order as Closed and close all linked requests.
+              You cannot reopen it from this screen.
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-2 flex flex-col gap-3">
-            <select
-              value={startEngineerId}
-              onChange={(e) => {
-                setStartAssignError(null)
-                setStartEngineerId(Number(e.target.value))
-              }}
-              className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setShowCloseConfirmDialog(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+              disabled={closeWoMutation.isPending}
             >
-              <option value={0} disabled>Select Engineer</option>
-              {engineers.map((eng) => (
-                <option key={eng.id} value={eng.id}>{eng.name}</option>
-              ))}
-            </select>
-            {startAssignError && (
-              <p className="text-sm text-red-600">{startAssignError}</p>
-            )}
-            <DialogFooter className="pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setStartAssignError(null)
-                  setShowStartAssignDialog(false)
-                  onOpenChange(false)
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={startEngineerId <= 0 || !wo?.id || startWithEngineerMutation.isPending}
-                onClick={() => {
-                  setStartAssignError(null)
-                  if (startEngineerId > 0) {
-                    startWithEngineerMutation.mutate(startEngineerId)
-                  }
-                }}
-                className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-dark rounded-md transition-colors disabled:opacity-50"
-              >
-                {startWithEngineerMutation.isPending ? 'Starting...' : 'Assign & Start'}
-              </button>
-            </DialogFooter>
-          </div>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => closeWoMutation.mutate()}
+              disabled={closeWoMutation.isPending}
+              className="px-4 py-2 text-sm font-medium bg-red-600 text-white hover:bg-red-700 rounded-md transition-colors disabled:opacity-50"
+            >
+              {closeWoMutation.isPending ? 'Closing...' : 'Confirm Close'}
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {canAssignEngineer && (
+        <Dialog
+          open={showStartAssignDialog}
+          onOpenChange={(val) => {
+            setShowStartAssignDialog(val)
+            if (!val) {
+              onOpenChange(false)
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Select Engineer Before Start</DialogTitle>
+              <DialogDescription>
+                This Work Order has not started and has no assigned engineer. Choose an engineer to continue.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-2 flex flex-col gap-3">
+              <select
+                value={startEngineerId}
+                onChange={(e) => {
+                  setStartAssignError(null)
+                  setStartEngineerId(Number(e.target.value))
+                }}
+                className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              >
+                <option value={0} disabled>Select Engineer</option>
+                {engineers.map((eng) => (
+                  <option key={eng.id} value={eng.id}>{eng.name}</option>
+                ))}
+              </select>
+              {startAssignError && (
+                <p className="text-sm text-red-600">{startAssignError}</p>
+              )}
+              <DialogFooter className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStartAssignError(null)
+                    setShowStartAssignDialog(false)
+                    onOpenChange(false)
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={startEngineerId <= 0 || !wo?.id || startWithEngineerMutation.isPending}
+                  onClick={() => {
+                    setStartAssignError(null)
+                    if (startEngineerId > 0) {
+                      startWithEngineerMutation.mutate(startEngineerId)
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-dark rounded-md transition-colors disabled:opacity-50"
+                >
+                  {startWithEngineerMutation.isPending ? 'Starting...' : 'Assign & Start'}
+                </button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Secondary Dialog for actually typing the note */}
       <AddNoteDialog

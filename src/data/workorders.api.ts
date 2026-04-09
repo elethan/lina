@@ -1,5 +1,19 @@
 import { authServerFn } from '../lib/server-utils'
 
+type ActorMeta = {
+    id: string
+    email?: string | null
+    role?: string | null
+}
+
+function withActor(user: ActorMeta) {
+    return {
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        actorRole: user.role ?? null,
+    }
+}
+
 async function getWorkOrderDbDeps() {
     const [dbMod, schemaMod, ormMod] = await Promise.all([
         import('../db/client'),
@@ -255,7 +269,13 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         }
 
         const { logger } = await import('../lib/logger')
-        logger.info('WORK_ORDER_CREATED', { woId: wo.id, userId: user.id, requestIds })
+        logger.info('WORK_ORDER_CREATED', {
+            woId: wo.id,
+            requestIds,
+            assetId: firstRequest.assetId ?? null,
+            systemId: firstRequest.systemId ?? null,
+            ...withActor(user),
+        })
         return { woId: wo.id }
     })
 
@@ -321,7 +341,11 @@ export const mergeRequestsToWo = authServerFn({ method: 'POST' })
             .where(inArray(userRequests.id, requestIds))
 
         const { logger } = await import('../lib/logger')
-        logger.info('REQUESTS_MERGED_TO_WO', { woId, userId: user.id, requestIds })
+        logger.info('REQUESTS_MERGED_TO_WO', {
+            woId,
+            requestIds,
+            ...withActor(user),
+        })
         return { success: true }
     })
 
@@ -373,7 +397,12 @@ export const deleteWorkOrders = authServerFn({ method: 'POST' })
         // 4. Finally, delete the work orders
         await db.delete(workOrders).where(inArray(workOrders.id, woIds))
         const { logger } = await import('../lib/logger')
-        logger.info('WORK_ORDER_DELETED', { woIds, userId: user.id, requestAction })
+        logger.info('WORK_ORDER_DELETED', {
+            woIds,
+            requestAction,
+            requestIds,
+            ...withActor(user),
+        })
         return { success: true }
     })
 
@@ -413,12 +442,20 @@ export const addWorkOrderNote = authServerFn({ method: 'POST' })
         const { db, workOrderNotes } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         const result = await db.insert(workOrderNotes).values({
             woId: data.woId,
             engineerId: data.engineerId,
             noteText: data.noteText,
         }).returning({ id: workOrderNotes.id })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_NOTE_CREATED', {
+            woId: data.woId,
+            noteId: result[0]?.id ?? null,
+            engineerId: data.engineerId ?? null,
+            ...withActor(user),
+        })
 
         return result[0]
     })
@@ -432,10 +469,16 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
         const { db, workOrders, eq, sql } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         await db.update(workOrders)
             .set({ startAt: sql`CURRENT_TIMESTAMP` })
             .where(eq(workOrders.id, data.woId))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_STARTED', {
+            woId: data.woId,
+            ...withActor(user),
+        })
 
         return { startAt: new Date().toISOString() }
     })
@@ -491,7 +534,11 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         }
 
         const { logger } = await import('../lib/logger')
-        logger.info('WORK_ORDER_CLOSED', { woId: data.woId, userId: user.id })
+        logger.info('WORK_ORDER_CLOSED', {
+            woId: data.woId,
+            requestIds,
+            ...withActor(user),
+        })
         return { success: true, endAt: new Date().toISOString() }
     })
 
@@ -504,10 +551,16 @@ export const updateWorkOrderNote = authServerFn({ method: 'POST' })
         const { db, workOrderNotes, eq } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         await db.update(workOrderNotes)
             .set({ noteText: data.noteText })
             .where(eq(workOrderNotes.id, data.noteId))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_NOTE_UPDATED', {
+            noteId: data.noteId,
+            ...withActor(user),
+        })
 
         return { success: true }
     })
@@ -557,7 +610,7 @@ export const createDowntimeEvent = authServerFn({ method: 'POST' })
         const { db, downtimeEvents } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         const result = await db.insert(downtimeEvents).values({
             assetId: data.assetId,
             systemId: data.systemId,
@@ -566,6 +619,15 @@ export const createDowntimeEvent = authServerFn({ method: 'POST' })
             endAt: data.endAt,
             notes: data.notes,
         }).returning({ id: downtimeEvents.id })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_DOWNTIME_CREATED', {
+            downtimeEventId: result[0]?.id ?? null,
+            woId: data.woId,
+            assetId: data.assetId,
+            systemId: data.systemId,
+            ...withActor(user),
+        })
 
         return result[0]
     })
@@ -579,13 +641,21 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
         const { db, downtimeEvents, eq } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         await db.update(downtimeEvents)
             .set({
                 ...(data.endAt !== undefined ? { endAt: data.endAt } : {}),
                 ...(data.notes !== undefined ? { notes: data.notes } : {}),
             })
             .where(eq(downtimeEvents.id, data.id))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_DOWNTIME_UPDATED', {
+            downtimeEventId: data.id,
+            updatedEndAt: data.endAt !== undefined,
+            updatedNotes: data.notes !== undefined,
+            ...withActor(user),
+        })
 
         return { success: true }
     })

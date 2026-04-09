@@ -1,5 +1,19 @@
 import { authServerFn } from '../lib/server-utils'
 
+type ActorMeta = {
+    id: string
+    email?: string | null
+    role?: string | null
+}
+
+function withActor(user: ActorMeta) {
+    return {
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        actorRole: user.role ?? null,
+    }
+}
+
 async function getPmDbDeps() {
     const [dbMod, schemaMod, ormMod] = await Promise.all([
         import('../db/client'),
@@ -209,7 +223,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
         const { db, assetPm, eq, and, isNull } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('pmInstances', 'create')
+        const user = await requirePermission('pmInstances', 'create')
 
         const parsedStartAt = new Date(data.newStartAt)
         if (Number.isNaN(parsedStartAt.getTime())) {
@@ -267,6 +281,14 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
             })
             .returning({ id: assetPm.id })
 
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_CREATED_DUPLICATE', {
+            pmId: created.id,
+            sourcePmId: data.sourcePmId,
+            startAt: startAtIso,
+            ...withActor(user),
+        })
+
         return { id: created.id }
     })
 
@@ -281,7 +303,7 @@ export const reopenPmInstance = authServerFn({ method: 'POST' })
         const { db, assetPm, eq, and, isNull } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('pmInstances', 'update')
+        const user = await requirePermission('pmInstances', 'update')
 
         const [current] = await db
             .select({
@@ -303,6 +325,12 @@ export const reopenPmInstance = authServerFn({ method: 'POST' })
             .update(assetPm)
             .set({ completedAt: null })
             .where(eq(assetPm.id, data.pmId))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_REOPENED', {
+            pmId: data.pmId,
+            ...withActor(user),
+        })
 
         return { reopened: true }
     })
@@ -519,7 +547,7 @@ export const savePmTaskResult = authServerFn({ method: 'POST' })
         const { db, assetPmResults, eq, and, isNull } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('pmInstances', 'update')
+        const user = await requirePermission('pmInstances', 'update')
 
         const [existing] = await db
             .select({ id: assetPmResults.id })
@@ -542,6 +570,15 @@ export const savePmTaskResult = authServerFn({ method: 'POST' })
                     engineer: data.engineer ?? null,
                 })
                 .where(eq(assetPmResults.id, existing.id))
+
+            const { logger } = await import('../lib/logger')
+            logger.info('PM_TASK_RESULT_UPDATED', {
+                pmId: data.pmInstanceId,
+                taskId: data.taskId,
+                resultId: existing.id,
+                status: data.status,
+                ...withActor(user),
+            })
             return { id: existing.id }
         }
 
@@ -555,6 +592,15 @@ export const savePmTaskResult = authServerFn({ method: 'POST' })
                 engineer: data.engineer ?? null,
             })
             .returning({ id: assetPmResults.id })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_TASK_RESULT_CREATED', {
+            pmId: data.pmInstanceId,
+            taskId: data.taskId,
+            resultId: created.id,
+            status: data.status,
+            ...withActor(user),
+        })
 
         return { id: created.id }
     })
@@ -573,7 +619,7 @@ export const updatePmEngineers = authServerFn({ method: 'POST' })
         const { db, pmEngineers, eq } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('pmInstances', 'update')
+        const user = await requirePermission('pmInstances', 'update')
 
         await db.delete(pmEngineers).where(eq(pmEngineers.pmInstanceId, data.pmId))
 
@@ -585,6 +631,13 @@ export const updatePmEngineers = authServerFn({ method: 'POST' })
                 })),
             )
         }
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_ENGINEERS_UPDATED', {
+            pmId: data.pmId,
+            engineerIds: data.engineerIds,
+            ...withActor(user),
+        })
 
         return { ok: true }
     })
@@ -606,12 +659,18 @@ export const updatePmPhysicsHandOver = authServerFn({ method: 'POST' })
         const { db, assetPm, eq } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('pmInstances', 'update')
+        const user = await requirePermission('pmInstances', 'update')
 
         await db
             .update(assetPm)
             .set({ physicsHandOver: data.physicsHandOver })
             .where(eq(assetPm.id, data.pmId))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_PHYSICS_HANDOVER_UPDATED', {
+            pmId: data.pmId,
+            ...withActor(user),
+        })
 
         return { ok: true }
     })
@@ -627,12 +686,18 @@ export const completePmInstance = authServerFn({ method: 'POST' })
         const { db, assetPm, eq } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('pmInstances', 'update')
+        const user = await requirePermission('pmInstances', 'update')
 
         await db
             .update(assetPm)
             .set({ completedAt: new Date().toISOString() })
             .where(eq(assetPm.id, data.pmId))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_COMPLETED', {
+            pmId: data.pmId,
+            ...withActor(user),
+        })
 
         return { completed: true }
     })
@@ -655,10 +720,11 @@ export const savePm = authServerFn({ method: 'POST' })
         const { db, assetPm, eq } = await getPmDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
+        let user: ActorMeta
         if (data.pmId) {
-            await requirePermission('pmInstances', 'update')
+            user = await requirePermission('pmInstances', 'update')
         } else {
-            await requirePermission('pmInstances', 'create')
+            user = await requirePermission('pmInstances', 'create')
         }
 
         const parsedStartAt = new Date(data.startAt)
@@ -677,6 +743,14 @@ export const savePm = authServerFn({ method: 'POST' })
 
         if (data.pmId) {
             await db.update(assetPm).set(values).where(eq(assetPm.id, data.pmId))
+
+            const { logger } = await import('../lib/logger')
+            logger.info('PM_UPDATED', {
+                pmId: data.pmId,
+                assetId: data.assetId,
+                systemId: data.systemId,
+                ...withActor(user),
+            })
             return { id: data.pmId }
         }
 
@@ -684,6 +758,14 @@ export const savePm = authServerFn({ method: 'POST' })
             .insert(assetPm)
             .values({ ...values, completedAt: null })
             .returning({ id: assetPm.id })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_CREATED', {
+            pmId: created.id,
+            assetId: data.assetId,
+            systemId: data.systemId,
+            ...withActor(user),
+        })
 
         return { id: created.id }
     })

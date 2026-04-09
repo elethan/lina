@@ -4,6 +4,21 @@ import { logger } from './logger'
 const AUTH_WARN_DEDUPE_WINDOW_MS = 5000
 let lastAuthWarnAt = 0
 
+function isLikelyDbError(message: string): boolean {
+    const lower = message.toLowerCase()
+    return (
+        lower.includes('sqlite') ||
+        lower.includes('sql') ||
+        lower.includes('drizzle') ||
+        lower.includes('database') ||
+        lower.includes('constraint') ||
+        lower.includes('no such table') ||
+        lower.includes('foreign key') ||
+        lower.includes('unique') ||
+        lower.includes('not null')
+    )
+}
+
 export const globalMiddleware = createMiddleware().server(
     async ({ next }) => {
         try {
@@ -25,7 +40,11 @@ export const globalMiddleware = createMiddleware().server(
             }
 
             // Centralized Error Catcher (Structured Logging)
-            logger.error('API_UNHANDLED_EXCEPTION', {
+            const event = isLikelyDbError(message)
+                ? 'API_DB_EXCEPTION'
+                : 'API_UNHANDLED_EXCEPTION'
+
+            logger.error(event, {
                 message,
                 stack: error instanceof Error ? error.stack : undefined
             });

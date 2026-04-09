@@ -1,5 +1,19 @@
 import { authServerFn } from '../lib/server-utils'
 
+type ActorMeta = {
+    id: string
+    email?: string | null
+    role?: string | null
+}
+
+function withActor(user: ActorMeta) {
+    return {
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        actorRole: user.role ?? null,
+    }
+}
+
 async function getEngineerDbDeps() {
     const [dbMod, schemaMod, ormMod] = await Promise.all([
         import('../db/client'),
@@ -58,13 +72,20 @@ export const assignWorkOrdersToEngineer = authServerFn({ method: 'POST' })
         const { db, workOrders, inArray } = await getEngineerDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
-        await requirePermission('workOrders', 'update')
+        const user = await requirePermission('workOrders', 'update')
         const { woIds, engineerId } = data
 
         await db
             .update(workOrders)
             .set({ engineerId })
             .where(inArray(workOrders.id, woIds))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_ENGINEER_ASSIGNED', {
+            woIds,
+            engineerId,
+            ...withActor(user),
+        })
 
         return { success: true, assignedCount: woIds.length }
     })

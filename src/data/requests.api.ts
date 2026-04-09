@@ -1,5 +1,19 @@
 import { authServerFn } from '../lib/server-utils'
 
+type ActorMeta = {
+    id: string
+    email?: string | null
+    role?: string | null
+}
+
+function withActor(user: ActorMeta) {
+    return {
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        actorRole: user.role ?? null,
+    }
+}
+
 async function getRequestDbDeps() {
     const [dbMod, schemaMod, ormMod] = await Promise.all([
         import('../db/client'),
@@ -149,10 +163,18 @@ export const deleteRequests = authServerFn({ method: 'POST' })
             await db.update(userRequests)
                 .set({ status: 'Closed', engineerComment: engineerComment.trim() })
                 .where(inArray(userRequests.id, requestIds))
-            logger.info('REQUEST_CLOSED_WITH_COMMENT', { requestIds, userId: user.id, count: requestIds.length })
+            logger.info('REQUEST_CLOSED_WITH_COMMENT', {
+                requestIds,
+                count: requestIds.length,
+                ...withActor(user),
+            })
         } else {
             await db.delete(userRequests).where(inArray(userRequests.id, requestIds))
-            logger.info('REQUEST_DELETED', { requestIds, userId: user.id, count: requestIds.length })
+            logger.info('REQUEST_DELETED', {
+                requestIds,
+                count: requestIds.length,
+                ...withActor(user),
+            })
         }
         
         return { success: true }
@@ -191,10 +213,18 @@ export const createRequest = authServerFn({ method: 'POST' })
         }).returning({ id: userRequests.id })
 
         const { logger } = await import('../lib/logger')
-        logger.info('REQUEST_CREATED', { requestId: request.id, userId: user.id, assetId: data.assetId ?? null })
+        logger.info('REQUEST_CREATED', {
+            requestId: request.id,
+            assetId: data.assetId ?? null,
+            systemId: data.systemId ?? null,
+            ...withActor(user),
+        })
+
+        const { canRole } = await import('../lib/role-permissions')
+        const canCreateWorkOrders = canRole((user.role ?? 'therapist') as any, 'workOrders', 'create')
 
         // Auto-WO workflow: only when downtime + asset + system are all present
-        if (data.downtimeStartAt && data.assetId && data.systemId) {
+        if (data.downtimeStartAt && data.assetId && data.systemId && canCreateWorkOrders) {
             // Create a new WO
             const [wo] = await db.insert(workOrders).values({
                 assetId: data.assetId,
@@ -207,6 +237,14 @@ export const createRequest = authServerFn({ method: 'POST' })
 
             const woId = wo.id
             const woIsNew = true
+
+            logger.info('WORK_ORDER_CREATED_FROM_REQUEST', {
+                woId,
+                requestId: request.id,
+                assetId: data.assetId,
+                systemId: data.systemId,
+                ...withActor(user),
+            })
 
             // Create downtime event linked to new WO
             await db.insert(downtimeEvents).values({
@@ -222,7 +260,23 @@ export const createRequest = authServerFn({ method: 'POST' })
                 .set({ status: 'Active', woId: woId })
                 .where(eq(userRequests.id, request.id))
 
+            logger.info('REQUEST_LINKED_TO_WORK_ORDER', {
+                requestId: request.id,
+                woId,
+                ...withActor(user),
+            })
+
             return { id: request.id, linkedWoId: woId, woIsNew }
+        }
+
+        if (data.downtimeStartAt && data.assetId && data.systemId && !canCreateWorkOrders) {
+            logger.info('REQUEST_AUTO_WO_SKIPPED_MISSING_PERMISSION', {
+                requestId: request.id,
+                assetId: data.assetId,
+                systemId: data.systemId,
+                requiredPermission: 'workOrders.create',
+                ...withActor(user),
+            })
         }
 
         return { id: request.id }

@@ -16,9 +16,9 @@ import { ROLE_DETAILS, formatRoleLabel } from '../lib/role-permissions'
 
 const navItems = [
     { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'therapist'] },
-    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer'] },
+    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer', 'scientist'] },
     { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, allowedRoles: ['admin', 'engineer', 'scientist'] },
-    { to: '/assets' as string, label: 'Assets', icon: Boxes, allowedRoles: ['admin', 'engineer'] },
+    { to: '/assets' as string, label: 'Assets', icon: Boxes, allowedRoles: ['admin', 'engineer', 'scientist'] },
 ]
 
 type SidebarProps = {
