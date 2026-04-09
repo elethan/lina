@@ -66,10 +66,44 @@ async function getAssetsDbDeps() {
   ])
 
   const { db } = dbMod
-  const { sites, systems, assets, assetSystems } = schemaMod
-  const { eq, asc, inArray, and } = ormMod
+  const {
+    sites,
+    systems,
+    assets,
+    assetSystems,
+    assetPmResults,
+    pmEngineers,
+    workOrders,
+    workOrderNotes,
+    workOrderParts,
+    userRequests,
+    assetPm,
+    downtimeEvents,
+    spareParts,
+  } = schemaMod
+  const { eq, asc, inArray, and, sql } = ormMod
 
-  return { db, sites, systems, assets, assetSystems, eq, asc, inArray, and }
+  return {
+    db,
+    sites,
+    systems,
+    assets,
+    assetSystems,
+    assetPmResults,
+    pmEngineers,
+    workOrders,
+    workOrderNotes,
+    workOrderParts,
+    userRequests,
+    assetPm,
+    downtimeEvents,
+    spareParts,
+    eq,
+    asc,
+    inArray,
+    and,
+    sql,
+  }
 }
 
 function ensureAdminRole() {
@@ -78,6 +112,93 @@ function ensureAdminRole() {
 
 function ensureAssetsReadRole() {
   return import('../lib/auth-guards.server').then(({ requireRole }) => requireRole('admin', 'engineer', 'scientist'))
+}
+
+async function cascadeDeleteAssetById(
+  deps: Awaited<ReturnType<typeof getAssetsDbDeps>>,
+  assetId: number,
+) {
+  const {
+    db,
+    assets,
+    assetSystems,
+    assetPmResults,
+    pmEngineers,
+    workOrders,
+    workOrderNotes,
+    workOrderParts,
+    userRequests,
+    assetPm,
+    downtimeEvents,
+    eq,
+    inArray,
+  } = deps
+
+  const pmRows = await db
+    .select({ id: assetPm.id })
+    .from(assetPm)
+    .where(eq(assetPm.assetId, assetId))
+
+  const woRows = await db
+    .select({ id: workOrders.id })
+    .from(workOrders)
+    .where(eq(workOrders.assetId, assetId))
+
+  const pmIds = pmRows.map((row) => row.id)
+  const woIds = woRows.map((row) => row.id)
+
+  if (pmIds.length > 0) {
+    await db
+      .delete(pmEngineers)
+      .where(inArray(pmEngineers.pmInstanceId, pmIds))
+
+    await db
+      .delete(assetPmResults)
+      .where(inArray(assetPmResults.pmInstanceId, pmIds))
+  }
+
+  if (woIds.length > 0) {
+    await db
+      .update(userRequests)
+      .set({ woId: null })
+      .where(inArray(userRequests.woId, woIds))
+
+    await db
+      .delete(workOrderNotes)
+      .where(inArray(workOrderNotes.woId, woIds))
+
+    await db
+      .delete(workOrderParts)
+      .where(inArray(workOrderParts.woId, woIds))
+
+    await db
+      .delete(downtimeEvents)
+      .where(inArray(downtimeEvents.woId, woIds))
+  }
+
+  await db
+    .delete(assetPm)
+    .where(eq(assetPm.assetId, assetId))
+
+  await db
+    .delete(workOrders)
+    .where(eq(workOrders.assetId, assetId))
+
+  await db
+    .delete(userRequests)
+    .where(eq(userRequests.assetId, assetId))
+
+  await db
+    .delete(downtimeEvents)
+    .where(eq(downtimeEvents.assetId, assetId))
+
+  await db
+    .delete(assetSystems)
+    .where(eq(assetSystems.assetId, assetId))
+
+  await db
+    .delete(assets)
+    .where(eq(assets.id, assetId))
 }
 
 export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
@@ -231,6 +352,54 @@ export const updateSiteAdmin = authServerFn({ method: 'POST' })
     logger.info('ASSET_SITE_UPDATED', {
       siteId: data.siteId,
       name: data.name,
+      ...withActor(user),
+    })
+
+    return { success: true }
+  })
+
+export const deleteSiteAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: { siteId: number }) => {
+    if (!data.siteId) throw new Error('Site ID is required')
+    return data
+  })
+  .handler(async ({ data }) => {
+    const user = await ensureAdminRole()
+    const deps = await getAssetsDbDeps()
+    const { db, sites, assets, spareParts, eq } = deps
+
+    const [siteRow] = await db
+      .select({ id: sites.id, name: sites.name })
+      .from(sites)
+      .where(eq(sites.id, data.siteId))
+      .limit(1)
+
+    if (!siteRow) {
+      throw new Error('Site not found')
+    }
+
+    const siteAssets = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.siteId, data.siteId))
+
+    for (const asset of siteAssets) {
+      await cascadeDeleteAssetById(deps, asset.id)
+    }
+
+    await db
+      .delete(spareParts)
+      .where(eq(spareParts.siteId, data.siteId))
+
+    await db
+      .delete(sites)
+      .where(eq(sites.id, data.siteId))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SITE_DELETED', {
+      siteId: siteRow.id,
+      name: siteRow.name,
+      deletedAssetsCount: siteAssets.length,
       ...withActor(user),
     })
 
@@ -480,6 +649,296 @@ export const decommissionSystemAdmin = authServerFn({ method: 'POST' })
     return { success: true }
   })
 
+export const deleteAssetSystemEntryAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: { assetId: number; systemId: number }) => {
+    if (!data.assetId) throw new Error('Asset ID is required')
+    if (!data.systemId) throw new Error('System ID is required')
+    return data
+  })
+  .handler(async ({ data }) => {
+    const user = await ensureAdminRole()
+    const {
+      db,
+      assetSystems,
+      assetPmResults,
+      pmEngineers,
+      workOrders,
+      workOrderNotes,
+      workOrderParts,
+      userRequests,
+      assetPm,
+      downtimeEvents,
+      eq,
+      and,
+      inArray,
+    } = await getAssetsDbDeps()
+
+    const [existingLink] = await db
+      .select({
+        assetId: assetSystems.assetId,
+        systemId: assetSystems.systemId,
+      })
+      .from(assetSystems)
+      .where(and(eq(assetSystems.assetId, data.assetId), eq(assetSystems.systemId, data.systemId)))
+      .limit(1)
+
+    if (!existingLink) {
+      throw new Error('Asset-system entry not found')
+    }
+
+    const pmRows = await db
+      .select({ id: assetPm.id })
+      .from(assetPm)
+      .where(and(eq(assetPm.assetId, data.assetId), eq(assetPm.systemId, data.systemId)))
+
+    const woRows = await db
+      .select({ id: workOrders.id })
+      .from(workOrders)
+      .where(and(eq(workOrders.assetId, data.assetId), eq(workOrders.systemId, data.systemId)))
+
+    const pmIds = pmRows.map((row) => row.id)
+    const woIds = woRows.map((row) => row.id)
+
+    if (pmIds.length > 0) {
+      await db
+        .delete(pmEngineers)
+        .where(inArray(pmEngineers.pmInstanceId, pmIds))
+
+      await db
+        .delete(assetPmResults)
+        .where(inArray(assetPmResults.pmInstanceId, pmIds))
+    }
+
+    if (woIds.length > 0) {
+      await db
+        .update(userRequests)
+        .set({ woId: null })
+        .where(inArray(userRequests.woId, woIds))
+
+      await db
+        .delete(workOrderNotes)
+        .where(inArray(workOrderNotes.woId, woIds))
+
+      await db
+        .delete(workOrderParts)
+        .where(inArray(workOrderParts.woId, woIds))
+
+      await db
+        .delete(downtimeEvents)
+        .where(inArray(downtimeEvents.woId, woIds))
+    }
+
+    await db
+      .delete(assetPm)
+      .where(and(eq(assetPm.assetId, data.assetId), eq(assetPm.systemId, data.systemId)))
+
+    await db
+      .delete(workOrders)
+      .where(and(eq(workOrders.assetId, data.assetId), eq(workOrders.systemId, data.systemId)))
+
+    await db
+      .delete(userRequests)
+      .where(and(eq(userRequests.assetId, data.assetId), eq(userRequests.systemId, data.systemId)))
+
+    await db
+      .delete(downtimeEvents)
+      .where(and(eq(downtimeEvents.assetId, data.assetId), eq(downtimeEvents.systemId, data.systemId)))
+
+    await db
+      .delete(assetSystems)
+      .where(and(eq(assetSystems.assetId, data.assetId), eq(assetSystems.systemId, data.systemId)))
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_SYSTEM_ENTRY_DELETED', {
+      assetId: data.assetId,
+      systemId: data.systemId,
+      ...withActor(user),
+    })
+
+    return { success: true }
+  })
+
+// Backward-compatible alias; this action deletes the asset_systems row.
+export const deleteAssetSystemLinkAdmin = deleteAssetSystemEntryAdmin
+
+export const previewCloseWarningsAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: { kind: 'asset' | 'system' | 'site'; assetId?: number; systemId?: number; siteId?: number }) => {
+    if (data.kind === 'site') {
+      if (!data.siteId) throw new Error('Site ID is required')
+      return {
+        kind: data.kind,
+        assetId: null,
+        systemId: null,
+        siteId: data.siteId,
+      }
+    }
+
+    if (!data.assetId) throw new Error('Asset ID is required')
+    if (data.kind === 'system' && !data.systemId) throw new Error('System ID is required')
+
+    return {
+      kind: data.kind,
+      assetId: data.assetId,
+      systemId: data.systemId ?? null,
+      siteId: null,
+    }
+  })
+  .handler(async ({ data }) => {
+    await ensureAdminRole()
+    const {
+      db,
+      assets,
+      spareParts,
+      assetSystems,
+      workOrders,
+      userRequests,
+      assetPm,
+      downtimeEvents,
+      eq,
+      and,
+      inArray,
+      sql,
+    } = await getAssetsDbDeps()
+
+    const warnings: string[] = []
+
+    if (data.kind === 'site') {
+      const siteAssets = await db
+        .select({ id: assets.id })
+        .from(assets)
+        .where(eq(assets.siteId, data.siteId!))
+
+      const assetIds = siteAssets.map((row) => row.id)
+      const assetCount = assetIds.length
+
+      const [sparePartRows] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(spareParts)
+        .where(eq(spareParts.siteId, data.siteId!))
+
+      let systemEntryCount = 0
+      let historyCount = 0
+
+      if (assetIds.length > 0) {
+        const [systemRows, woRows, requestRows, pmRows, downtimeRows] = await Promise.all([
+          db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(assetSystems)
+            .where(inArray(assetSystems.assetId, assetIds)),
+          db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(workOrders)
+            .where(inArray(workOrders.assetId, assetIds)),
+          db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userRequests)
+            .where(inArray(userRequests.assetId, assetIds)),
+          db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(assetPm)
+            .where(inArray(assetPm.assetId, assetIds)),
+          db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(downtimeEvents)
+            .where(inArray(downtimeEvents.assetId, assetIds)),
+        ])
+
+        systemEntryCount = Number(systemRows[0]?.count ?? 0)
+        historyCount =
+          Number(woRows[0]?.count ?? 0) +
+          Number(requestRows[0]?.count ?? 0) +
+          Number(pmRows[0]?.count ?? 0) +
+          Number(downtimeRows[0]?.count ?? 0)
+      }
+
+      if (assetCount > 0) {
+        warnings.push(`This site has ${assetCount} asset record(s). Deleting the site will delete those assets.`)
+        warnings.push(`Deleting those assets will delete ${systemEntryCount} asset-systems entry(ies) and ${historyCount} related history record(s).`)
+      }
+
+      const sparePartsCount = Number(sparePartRows?.count ?? 0)
+      if (sparePartsCount > 0) {
+        warnings.push(`This site has ${sparePartsCount} spare part record(s). They will also be deleted.`)
+      }
+
+      return { warnings }
+    }
+
+    if (data.kind === 'asset') {
+      const [linkedSystems] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(assetSystems)
+        .where(eq(assetSystems.assetId, data.assetId))
+
+      const [woRows, requestRows, pmRows, downtimeRows] = await Promise.all([
+        db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(workOrders)
+          .where(eq(workOrders.assetId, data.assetId)),
+        db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(userRequests)
+          .where(eq(userRequests.assetId, data.assetId)),
+        db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(assetPm)
+          .where(eq(assetPm.assetId, data.assetId)),
+        db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(downtimeEvents)
+          .where(eq(downtimeEvents.assetId, data.assetId)),
+      ])
+
+      const systemCount = Number(linkedSystems?.count ?? 0)
+      const historyCount =
+        Number(woRows[0]?.count ?? 0) +
+        Number(requestRows[0]?.count ?? 0) +
+        Number(pmRows[0]?.count ?? 0) +
+        Number(downtimeRows[0]?.count ?? 0)
+
+      if (systemCount > 0) {
+        warnings.push(`This asset has ${systemCount} linked system record(s). They will be removed.`)
+      }
+
+      if (historyCount > 0) {
+        warnings.push(`This asset has ${historyCount} related history record(s). They will be removed.`)
+      }
+
+      return { warnings }
+    }
+
+    const [woRows, requestRows, pmRows, downtimeRows] = await Promise.all([
+      db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(workOrders)
+        .where(and(eq(workOrders.assetId, data.assetId), eq(workOrders.systemId, data.systemId!))),
+      db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(userRequests)
+        .where(and(eq(userRequests.assetId, data.assetId), eq(userRequests.systemId, data.systemId!))),
+      db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(assetPm)
+        .where(and(eq(assetPm.assetId, data.assetId), eq(assetPm.systemId, data.systemId!))),
+      db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(downtimeEvents)
+        .where(and(eq(downtimeEvents.assetId, data.assetId), eq(downtimeEvents.systemId, data.systemId!))),
+    ])
+
+    const historyCount =
+      Number(woRows[0]?.count ?? 0) +
+      Number(requestRows[0]?.count ?? 0) +
+      Number(pmRows[0]?.count ?? 0) +
+      Number(downtimeRows[0]?.count ?? 0)
+
+    if (historyCount > 0) {
+      warnings.push(`This asset-systems entry has ${historyCount} related history record(s). They will be removed.`)
+    }
+
+    return { warnings }
+  })
+
 export const createAssetAdmin = authServerFn({ method: 'POST' })
   .inputValidator((data: {
     serialNumber: string
@@ -654,6 +1113,43 @@ export const decommissionAssetAdmin = authServerFn({ method: 'POST' })
     const { logger } = await import('../lib/logger')
     logger.info('ASSET_DECOMMISSIONED', {
       assetId: data.assetId,
+      ...withActor(user),
+    })
+
+    return { success: true }
+  })
+
+export const deleteAssetAdmin = authServerFn({ method: 'POST' })
+  .inputValidator((data: { assetId: number }) => {
+    if (!data.assetId) throw new Error('Asset ID is required')
+    return data
+  })
+  .handler(async ({ data }) => {
+    const user = await ensureAdminRole()
+    const deps = await getAssetsDbDeps()
+    const { db, assets, eq } = deps
+
+    const [assetRow] = await db
+      .select({
+        id: assets.id,
+        serialNumber: assets.serialNumber,
+        siteId: assets.siteId,
+      })
+      .from(assets)
+      .where(eq(assets.id, data.assetId))
+      .limit(1)
+
+    if (!assetRow) {
+      throw new Error('Asset not found')
+    }
+
+    await cascadeDeleteAssetById(deps, data.assetId)
+
+    const { logger } = await import('../lib/logger')
+    logger.info('ASSET_DELETED', {
+      assetId: assetRow.id,
+      siteId: assetRow.siteId,
+      serialNumber: assetRow.serialNumber,
       ...withActor(user),
     })
 

@@ -8,7 +8,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Search, PlusCircle, Pencil, ArchiveX } from 'lucide-react'
+import { Search, PlusCircle, Pencil, ArchiveX, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { Button } from '../../components/ui/button'
@@ -25,7 +25,11 @@ import {
   createAssetAdmin,
   createAssetSystemLinkAdmin,
   createSiteAdmin,
+  deleteAssetAdmin,
+  deleteAssetSystemEntryAdmin,
+  deleteSiteAdmin,
   decommissionAssetAdmin,
+  previewCloseWarningsAdmin,
   type AssetSystemLinkRow,
   fetchAssetsAdminData,
   updateAssetAdmin,
@@ -57,6 +61,24 @@ type SystemFormState = {
   adminCredentials: string
   status: AssetStatus
 }
+
+type CloseTarget =
+  | {
+      kind: 'system'
+      label: string
+      assetId: number
+      systemId: number
+    }
+  | {
+      kind: 'asset'
+      label: string
+      assetId: number
+    }
+  | {
+      kind: 'site'
+      label: string
+      siteId: number
+    }
 
 const siteColumnHelper = createColumnHelper<SiteAdminRow>()
 const assetColumnHelper = createColumnHelper<AssetAdminRow>()
@@ -123,7 +145,7 @@ function AssetsPage() {
   const [search, setSearch] = useState('')
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null)
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null)
-  const [selectedSystemId, setSelectedSystemId] = useState<number | null>(null)
+  const [selectedSystemKey, setSelectedSystemKey] = useState<string | null>(null)
 
   const [siteDialogOpen, setSiteDialogOpen] = useState(false)
   const [siteDialogMode, setSiteDialogMode] = useState<DialogMode>('create')
@@ -139,6 +161,11 @@ function AssetsPage() {
   const [assetDialogMode, setAssetDialogMode] = useState<DialogMode>('create')
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null)
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM)
+
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const [pendingCloseTarget, setPendingCloseTarget] = useState<CloseTarget | null>(null)
+  const [closeWarnings, setCloseWarnings] = useState<string[]>([])
+  const [isLoadingCloseWarnings, setIsLoadingCloseWarnings] = useState(false)
 
   const [systemColumnResizeMode] = useState<ColumnResizeMode>('onChange')
 
@@ -215,6 +242,30 @@ function AssetsPage() {
     mutationFn: async (assetId: number) => decommissionAssetAdmin({ data: { assetId } }),
     onSuccess: refresh,
     onError: (e: Error) => alert(e.message || 'Failed to de-commission asset'),
+  })
+
+  const deleteSiteMutation = useMutation({
+    mutationFn: async (siteId: number) => deleteSiteAdmin({ data: { siteId } }),
+    onSuccess: refresh,
+    onError: (e: Error) => alert(e.message || 'Failed to delete site'),
+  })
+
+  const deleteAssetMutation = useMutation({
+    mutationFn: async (assetId: number) => deleteAssetAdmin({ data: { assetId } }),
+    onSuccess: refresh,
+    onError: (e: Error) => alert(e.message || 'Failed to delete asset'),
+  })
+
+  const deleteSystemLinkMutation = useMutation({
+    mutationFn: async (payload: { assetId: number; systemId: number }) => deleteAssetSystemEntryAdmin({ data: payload }),
+    onSuccess: refresh,
+    onError: (e: Error) => alert(e.message || 'Failed to delete asset-system entry'),
+  })
+
+  const previewCloseWarningsMutation = useMutation({
+    mutationFn: async (payload: { kind: 'asset' | 'system'; assetId: number; systemId?: number } | { kind: 'site'; siteId: number }) =>
+      previewCloseWarningsAdmin({ data: payload }),
+    onError: (e: Error) => alert(e.message || 'Failed to load deletion warnings'),
   })
 
   const updateSystemLinkMutation = useMutation({
@@ -462,7 +513,7 @@ function AssetsPage() {
             setSearch(e.target.value)
             setSelectedSiteId(null)
             setSelectedAssetId(null)
-            setSelectedSystemId(null)
+            setSelectedSystemKey(null)
           }}
           className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
         />
@@ -498,7 +549,12 @@ function AssetsPage() {
         </button>
       </div>
     ) : null,
-  }), [search, canWrite, selectedAssetId, selectedSiteId])
+  }), [
+    search,
+    canWrite,
+    selectedAssetId,
+    selectedSiteId,
+  ])
 
   useSetToolbar(toolbarConfig)
 
@@ -544,16 +600,22 @@ function AssetsPage() {
         )
       : allLinks
 
-    return selectedAssetId !== null
-      ? searchFiltered.filter((system) => system.assetId === selectedAssetId)
-      : searchFiltered
-  }, [assets, q, selectedAssetId])
+    if (selectedAssetId !== null) {
+      return searchFiltered.filter((system) => system.assetId === selectedAssetId)
+    }
+
+    if (selectedSiteId !== null) {
+      return []
+    }
+
+    return searchFiltered
+  }, [assets, q, selectedAssetId, selectedSiteId])
 
   useEffect(() => {
     if (selectedSiteId !== null && !filteredSites.some((site) => site.id === selectedSiteId)) {
       setSelectedSiteId(null)
       setSelectedAssetId(null)
-      setSelectedSystemId(null)
+      setSelectedSystemKey(null)
       return
     }
 
@@ -561,30 +623,101 @@ function AssetsPage() {
       const assetsForSite = filteredAssets.filter((asset) => asset.siteId === selectedSiteId)
       if (assetsForSite.length === 0) {
         if (selectedAssetId !== null) setSelectedAssetId(null)
-        if (selectedSystemId !== null) setSelectedSystemId(null)
+        if (selectedSystemKey !== null) setSelectedSystemKey(null)
         return
       }
 
-      const hasSelectedAsset = selectedAssetId !== null && assetsForSite.some((asset) => asset.id === selectedAssetId)
-      if (!hasSelectedAsset) {
-        setSelectedAssetId(assetsForSite[0].id)
-        if (selectedSystemId !== null) setSelectedSystemId(null)
-        return
+      if (selectedAssetId !== null && !assetsForSite.some((asset) => asset.id === selectedAssetId)) {
+        setSelectedAssetId(null)
+        if (selectedSystemKey !== null) setSelectedSystemKey(null)
       }
     }
 
     if (selectedSiteId === null && selectedAssetId !== null && !filteredAssets.some((asset) => asset.id === selectedAssetId)) {
       setSelectedAssetId(null)
-      setSelectedSystemId(null)
+      setSelectedSystemKey(null)
     }
-  }, [filteredAssets, filteredSites, selectedAssetId, selectedSiteId, selectedSystemId])
+  }, [filteredAssets, filteredSites, selectedAssetId, selectedSiteId, selectedSystemKey])
 
   useEffect(() => {
-    if (selectedSystemId === null) return
-    if (!visibleSystems.some((system) => system.systemId === selectedSystemId)) {
-      setSelectedSystemId(null)
+    if (selectedSystemKey === null) return
+    if (!visibleSystems.some((system) => `${system.assetId}-${system.systemId}` === selectedSystemKey)) {
+      setSelectedSystemKey(null)
     }
-  }, [selectedSystemId, visibleSystems])
+  }, [selectedSystemKey, visibleSystems])
+
+  const handleCloseSelected = async () => {
+    if (!pendingCloseTarget) return
+
+    try {
+      if (pendingCloseTarget.kind === 'system') {
+        await deleteSystemLinkMutation.mutateAsync({
+          assetId: pendingCloseTarget.assetId,
+          systemId: pendingCloseTarget.systemId,
+        })
+        setSelectedSystemKey(null)
+      } else if (pendingCloseTarget.kind === 'asset') {
+        await deleteAssetMutation.mutateAsync(pendingCloseTarget.assetId)
+        setSelectedAssetId(null)
+        setSelectedSystemKey(null)
+      } else {
+        await deleteSiteMutation.mutateAsync(pendingCloseTarget.siteId)
+        setSelectedSiteId(null)
+        setSelectedAssetId(null)
+        setSelectedSystemKey(null)
+      }
+      setCloseDialogOpen(false)
+      setPendingCloseTarget(null)
+      setCloseWarnings([])
+    } catch {
+      // Error is surfaced by mutation onError.
+    }
+  }
+
+  useEffect(() => {
+    if (!closeDialogOpen || pendingCloseTarget === null) {
+      setIsLoadingCloseWarnings(false)
+      return
+    }
+
+    let active = true
+    setIsLoadingCloseWarnings(true)
+
+    const payload = pendingCloseTarget.kind === 'asset'
+      ? {
+          kind: 'asset' as const,
+          assetId: pendingCloseTarget.assetId,
+        }
+      : pendingCloseTarget.kind === 'system'
+        ? {
+          kind: 'system' as const,
+          assetId: pendingCloseTarget.assetId,
+          systemId: pendingCloseTarget.systemId,
+        }
+        : {
+          kind: 'site' as const,
+          siteId: pendingCloseTarget.siteId,
+        }
+
+    previewCloseWarningsMutation
+      .mutateAsync(payload)
+      .then((result) => {
+        if (!active) return
+        setCloseWarnings(result.warnings ?? [])
+      })
+      .catch(() => {
+        if (!active) return
+        setCloseWarnings([])
+      })
+      .finally(() => {
+        if (!active) return
+        setIsLoadingCloseWarnings(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [closeDialogOpen, pendingCloseTarget])
 
   const siteColumns = useMemo<ColumnDef<SiteAdminRow, any>[]>(() => {
     const columns: ColumnDef<SiteAdminRow, any>[] = [
@@ -600,7 +733,7 @@ function AssetsPage() {
           id: 'actions',
           header: () => <div className="text-right">Actions</div>,
           cell: ({ row }) => (
-            <div className="text-right">
+            <div className="inline-flex gap-2 justify-end w-full">
               <button
                 type="button"
                 onClick={(event) => {
@@ -611,6 +744,26 @@ function AssetsPage() {
               >
                 <Pencil size={14} />
                 Edit
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const target: CloseTarget = {
+                    kind: 'site',
+                    label: row.original.name,
+                    siteId: row.original.id,
+                  }
+                  setCloseWarnings([])
+                  setIsLoadingCloseWarnings(true)
+                  setPendingCloseTarget(target)
+                  setCloseDialogOpen(true)
+                }}
+                className="inline-flex items-center justify-center p-2 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
+                title={`Delete site ${row.original.name}`}
+                aria-label={`Delete site ${row.original.name}`}
+              >
+                <Trash2 size={14} />
               </button>
             </div>
           ),
@@ -658,6 +811,26 @@ function AssetsPage() {
               >
                 <Pencil size={14} />
                 Edit
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const target: CloseTarget = {
+                    kind: 'asset',
+                    label: row.original.serialNumber,
+                    assetId: row.original.id,
+                  }
+                  setCloseWarnings([])
+                  setIsLoadingCloseWarnings(true)
+                  setPendingCloseTarget(target)
+                  setCloseDialogOpen(true)
+                }}
+                className="inline-flex items-center justify-center p-2 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
+                title={`Delete asset ${row.original.serialNumber}`}
+                aria-label={`Delete asset ${row.original.serialNumber}`}
+              >
+                <Trash2 size={14} />
               </button>
               {row.original.status !== 'De-commissioned' && (
                 <button
@@ -736,6 +909,27 @@ function AssetsPage() {
               >
                 <Pencil size={14} />
                 Edit
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const target: CloseTarget = {
+                    kind: 'system',
+                    label: row.original.systemName,
+                    assetId: row.original.assetId,
+                    systemId: row.original.systemId,
+                  }
+                  setCloseWarnings([])
+                  setIsLoadingCloseWarnings(true)
+                  setPendingCloseTarget(target)
+                  setCloseDialogOpen(true)
+                }}
+                className="inline-flex items-center justify-center p-2 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
+                title={`Delete system ${row.original.systemName}`}
+                aria-label={`Delete system ${row.original.systemName}`}
+              >
+                <Trash2 size={14} />
               </button>
             </div>
           ),
@@ -826,14 +1020,8 @@ function AssetsPage() {
                         key={row.id}
                         onClick={() => {
                           setSelectedSiteId(row.original.id)
-                          setSelectedSystemId(null)
-
-                          const assetsForSite = filteredAssets.filter((asset) => asset.siteId === row.original.id)
-                          if (assetsForSite.length > 0) {
-                            setSelectedAssetId(assetsForSite[0].id)
-                          } else {
-                            setSelectedAssetId(null)
-                          }
+                          setSelectedAssetId(null)
+                          setSelectedSystemKey(null)
                         }}
                         className={`border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors ${selectedSiteId === row.original.id ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50'}`}
                       >
@@ -891,7 +1079,7 @@ function AssetsPage() {
                         key={row.id}
                         onClick={() => {
                           setSelectedAssetId(row.original.id)
-                          setSelectedSystemId(null)
+                          setSelectedSystemKey(null)
                         }}
                         className={`border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors ${selectedAssetId === row.original.id ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50'}`}
                       >
@@ -944,7 +1132,9 @@ function AssetsPage() {
             <p className="text-xs text-gray-500">
               {selectedAsset
                 ? `Showing systems for ${selectedAsset.serialNumber}.`
-                : 'Showing all systems. Select an asset to view/edit link-specific fields.'}
+                : selectedSite
+                  ? `Select an asset to view systems for ${selectedSite.name}.`
+                  : 'Showing all systems. Select an asset to view/edit link-specific fields.'}
             </p>
           </div>
           <div className="h-[24rem] overflow-auto">
@@ -981,7 +1171,11 @@ function AssetsPage() {
                 ) : systemsTable.getRowModel().rows.length === 0 ? (
                   <tr>
                     <td className="px-4 py-4 text-gray-400" colSpan={systemsTable.getAllLeafColumns().length || 1}>
-                      {selectedAsset ? 'No systems found for this asset.' : 'No systems found.'}
+                      {selectedAsset
+                        ? 'No systems found for this asset.'
+                        : selectedSite
+                          ? 'Select an asset to view systems for this site.'
+                          : 'No systems found.'}
                     </td>
                   </tr>
                 ) : (
@@ -989,9 +1183,9 @@ function AssetsPage() {
                     <tr
                       key={row.id}
                       onClick={() => {
-                        setSelectedSystemId(row.original.systemId)
+                        setSelectedSystemKey(`${row.original.assetId}-${row.original.systemId}`)
                       }}
-                      className={`border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors ${selectedSystemId === row.original.systemId ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50'}`}
+                      className={`border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors ${selectedSystemKey === `${row.original.assetId}-${row.original.systemId}` ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50'}`}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id} style={{ width: cell.column.getSize() }} className="px-4 py-3 text-gray-700 align-top">
@@ -1241,6 +1435,65 @@ function AssetsPage() {
               <Button type="submit">{assetDialogMode === 'create' ? 'Create Asset' : 'Save Changes'}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={closeDialogOpen} onOpenChange={(open) => {
+        setCloseDialogOpen(open)
+        if (!open) {
+          setPendingCloseTarget(null)
+          setCloseWarnings([])
+          setIsLoadingCloseWarnings(false)
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Selection</DialogTitle>
+            <DialogDescription>
+              {pendingCloseTarget === null
+                ? 'No target selected.'
+                : pendingCloseTarget.kind === 'system'
+                  ? `Delete system ${pendingCloseTarget.label} from the selected asset?`
+                  : pendingCloseTarget.kind === 'asset'
+                    ? `Delete asset ${pendingCloseTarget.label}?`
+                    : `Delete site ${pendingCloseTarget.label}?`}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {pendingCloseTarget?.kind === 'system'
+              ? 'This deletes the selected asset-systems entry for that asset.'
+              : 'This action permanently deletes the selected record.'}
+          </p>
+          {isLoadingCloseWarnings ? (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              Checking related history...
+            </p>
+          ) : closeWarnings.length > 0 ? (
+            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 space-y-1">
+              {closeWarnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCloseDialogOpen(false)}>Cancel</Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleCloseSelected}
+              disabled={
+                pendingCloseTarget === null ||
+                isLoadingCloseWarnings ||
+                deleteSiteMutation.isPending ||
+                deleteAssetMutation.isPending ||
+                deleteSystemLinkMutation.isPending
+              }
+            >
+              {deleteSiteMutation.isPending || deleteAssetMutation.isPending || deleteSystemLinkMutation.isPending
+                ? 'Deleting...'
+                : 'Delete'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
