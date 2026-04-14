@@ -10,10 +10,15 @@ import tailwindcss from '@tailwindcss/vite'
 const config = defineConfig(({ command }) => ({
   plugins: [
     ...(command === 'serve' ? [devtools()] : []),
+    
     tsconfigPaths({ projects: ['./tsconfig.json'] }),
     tailwindcss(),
     tanstackStart(),
-    viteReact(),
+    viteReact({
+      babel: {
+        plugins: ['babel-plugin-react-compiler'],
+      },
+    }),
   ],
   // added this to try to test site in DigitakOcean, adjust or remove when internal
   preview: {
