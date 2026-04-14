@@ -25,6 +25,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, updateWorkOrderNote, startWorkOrder, fetchDowntimeByWoId, createDowntimeEvent, updateDowntimeEvent } from '../../data/workorders.api'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
+import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
+import { canPermissionMap } from '../../lib/role-permissions'
 
 // ── Search params type ─────────────────────────────────────
 type WoSearchParams = {
@@ -300,8 +302,13 @@ function WorkOrdersPage() {
   const router = useRouter()
   const { user } = useRouteContext({ from: '/_app' })
   const { search: globalFilter = '', dateFrom = '', dateTo = '' } = Route.useSearch()
-  const currentUserRole = String(user?.role ?? '').toLowerCase()
-  const canDeleteWorkOrders = currentUserRole === 'admin' || currentUserRole === 'engineer'
+  const { data: currentPermissions } = useQuery({
+    queryKey: ['current-user-permissions'],
+    queryFn: () => fetchCurrentUserPermissions(),
+  })
+  const permissionMap = currentPermissions?.permissions
+  const canDeleteWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'delete')
+  const canUpdateWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'update')
 
   // URL param updaters
   const setGlobalFilter = (value: string) =>
@@ -383,7 +390,7 @@ function WorkOrdersPage() {
       <div className="flex items-center gap-2">
         <button
           id="btn-start-wo"
-          disabled={selectedCount !== 1}
+          disabled={selectedCount !== 1 || !canUpdateWorkOrders}
           onClick={() => {
             if (selectedWo) {
               setActiveWoToExecute(selectedWo)
@@ -408,7 +415,15 @@ function WorkOrdersPage() {
         )}
       </div>
     ),
-  }), [globalFilter, dateFrom, dateTo, selectedCount, isStarted, canDeleteWorkOrders])
+  }), [
+    globalFilter,
+    dateFrom,
+    dateTo,
+    selectedCount,
+    isStarted,
+    canDeleteWorkOrders,
+    canUpdateWorkOrders,
+  ])
 
   useSetToolbar(toolbarConfig)
 
@@ -474,7 +489,7 @@ function WorkOrdersPage() {
         engineers={engineersList}
         currentUserId={user?.id || null}
         currentUserName={user?.name || user?.email || null}
-        currentUserRole={currentUserRole || null}
+        canUpdateWorkOrders={canUpdateWorkOrders}
         onCloseComplete={() => setShowExecutionDialog(false)}
       />
     </>
@@ -703,7 +718,7 @@ function WorkOrdersTableView({
 }
 
 // ── Inline Editable Note Cell ───────────────────────────────────
-function EditableNoteCell({ noteId, value, onSave }: { noteId: number; value: string; onSave: () => void }) {
+function EditableNoteCell({ noteId, value, onSave, editable = true }: { noteId: number; value: string; onSave: () => void; editable?: boolean }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(value)
 
@@ -729,8 +744,12 @@ function EditableNoteCell({ noteId, value, onSave }: { noteId: number; value: st
     return (
       <div
         className="whitespace-pre-wrap break-words cursor-pointer hover:bg-primary/5 rounded px-1 py-0.5 -mx-1 transition-colors min-h-[1.5em]"
-        onClick={() => setEditing(true)}
-        title="Click to edit"
+        onClick={() => {
+          if (editable) {
+            setEditing(true)
+          }
+        }}
+        title={editable ? 'Click to edit' : undefined}
       >
         {value}
       </div>
@@ -773,7 +792,7 @@ function WorkOrderExecutionDialog({
   engineers,
   currentUserId,
   currentUserName,
-  currentUserRole,
+  canUpdateWorkOrders,
   onCloseComplete
 }: {
   wo: WorkOrderRow | null
@@ -782,12 +801,12 @@ function WorkOrderExecutionDialog({
   engineers: { id: number; name: string; userId: string | null }[]
   currentUserId: string | null
   currentUserName: string | null
-  currentUserRole: string | null
+  canUpdateWorkOrders: boolean
   onCloseComplete: () => void
 }) {
   const [showAddNote, setShowAddNote] = useState(false)
   const [showCloseConfirmDialog, setShowCloseConfirmDialog] = useState(false)
-  const canAssignEngineer = currentUserRole === 'admin' || currentUserRole === 'engineer'
+  const canAssignEngineer = canUpdateWorkOrders
 
   // Resolve default engineer: assigned WO engineer first, then logged-in engineer profile, then first row.
   const defaultEngineerId: number = (
@@ -942,10 +961,10 @@ function WorkOrderExecutionDialog({
     }),
     notesColumnHelper.accessor('noteText', {
       header: 'Note',
-      cell: (info) => <EditableNoteCell noteId={info.row.original.id} value={info.getValue()} onSave={refetch} />,
+      cell: (info) => <EditableNoteCell noteId={info.row.original.id} value={info.getValue()} onSave={refetch} editable={canUpdateWorkOrders} />,
       size: 400,
     }),
-  ], [refetch])
+  ], [refetch, canUpdateWorkOrders])
 
   const notesTable = useReactTable({
     data: notes || [],
@@ -1028,6 +1047,7 @@ function WorkOrderExecutionDialog({
                 {!downtimeEvent && !showDowntimeForm && displayStatus !== 'Closed' && (
                   <button
                     onClick={() => setShowDowntimeForm(true)}
+                    disabled={!canUpdateWorkOrders}
                     className="text-xs font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
                   >
                     Record Downtime
@@ -1055,6 +1075,7 @@ function WorkOrderExecutionDialog({
                           type="datetime-local"
                           value={dtEndAt}
                           onChange={(e) => setDtEndAt(e.target.value)}
+                          disabled={!canUpdateWorkOrders}
                           className="text-sm border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
                         />
                         <button
@@ -1062,7 +1083,7 @@ function WorkOrderExecutionDialog({
                             if (!dtEndAt) return
                             updateDtMutation.mutate({ id: downtimeEvent.id, endAt: new Date(dtEndAt).toISOString() })
                           }}
-                          disabled={!dtEndAt || updateDtMutation.isPending}
+                          disabled={!canUpdateWorkOrders || !dtEndAt || updateDtMutation.isPending}
                           className="text-xs font-medium px-3 py-1.5 bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50 transition-colors"
                         >
                           {updateDtMutation.isPending ? 'Saving...' : 'Save'}
@@ -1096,6 +1117,7 @@ function WorkOrderExecutionDialog({
                       type="datetime-local"
                       value={dtStartAt}
                       onChange={(e) => setDtStartAt(e.target.value)}
+                      disabled={!canUpdateWorkOrders}
                       className="w-full text-sm border border-gray-300 rounded-md py-1.5 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
@@ -1105,6 +1127,7 @@ function WorkOrderExecutionDialog({
                       type="datetime-local"
                       value={dtEndAt}
                       onChange={(e) => setDtEndAt(e.target.value)}
+                      disabled={!canUpdateWorkOrders}
                       className="w-full text-sm border border-gray-300 rounded-md py-1.5 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
@@ -1117,7 +1140,7 @@ function WorkOrderExecutionDialog({
                           endAt: dtEndAt ? new Date(dtEndAt).toISOString() : undefined,
                         })
                       }}
-                      disabled={!dtStartAt || createDtMutation.isPending}
+                      disabled={!canUpdateWorkOrders || !dtStartAt || createDtMutation.isPending}
                       className="text-xs font-medium px-4 py-1.5 bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50 transition-colors"
                     >
                       {createDtMutation.isPending ? 'Saving...' : 'Save Downtime'}
@@ -1177,6 +1200,7 @@ function WorkOrderExecutionDialog({
             <div className="flex justify-between items-center shrink-0">
               <button
                 onClick={() => setShowAddNote(true)}
+                disabled={!canUpdateWorkOrders}
                 className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors border border-primary-200"
               >
                 <UserPlus size={16} />
@@ -1185,7 +1209,7 @@ function WorkOrderExecutionDialog({
               {displayStatus !== 'Closed' && (
                 <button
                   onClick={() => setShowCloseConfirmDialog(true)}
-                  disabled={closeWoMutation.isPending}
+                  disabled={!canUpdateWorkOrders || closeWoMutation.isPending}
                   className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-red-50 text-red-700 hover:bg-red-100 transition-colors border border-red-200 disabled:opacity-50"
                 >
                   <XCircle size={16} />
@@ -1218,7 +1242,7 @@ function WorkOrderExecutionDialog({
             <button
               type="button"
               onClick={() => closeWoMutation.mutate()}
-              disabled={closeWoMutation.isPending}
+              disabled={!canUpdateWorkOrders || closeWoMutation.isPending}
               className="px-4 py-2 text-sm font-medium bg-red-600 text-white hover:bg-red-700 rounded-md transition-colors disabled:opacity-50"
             >
               {closeWoMutation.isPending ? 'Closing...' : 'Confirm Close'}

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, redirect, useRouteContext } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import {
   type ColumnDef,
   type ColumnResizeMode,
@@ -38,6 +38,8 @@ import {
   type AssetAdminRow,
   type SiteAdminRow,
 } from '../../data/assets.api'
+import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
+import { canPermissionMap } from '../../lib/role-permissions'
 
 type DialogMode = 'create' | 'edit'
 type AssetStatus = 'Operational' | 'De-commissioned'
@@ -169,8 +171,14 @@ function AssetsPage() {
 
   const [systemColumnResizeMode] = useState<ColumnResizeMode>('onChange')
 
-  const { user } = useRouteContext({ from: '/_app' })
-  const canWrite = String(user?.role ?? '').toLowerCase() === 'admin'
+  const { data: currentPermissions } = useQuery({
+    queryKey: ['current-user-permissions'],
+    queryFn: () => fetchCurrentUserPermissions(),
+  })
+  const permissionMap = currentPermissions?.permissions
+  const canCreateAssets = canPermissionMap(permissionMap, 'assetsSystems', 'create')
+  const canUpdateAssets = canPermissionMap(permissionMap, 'assetsSystems', 'update')
+  const canDeleteAssets = canPermissionMap(permissionMap, 'assetsSystems', 'delete')
 
   const { data, isLoading } = useQuery({
     queryKey: ['assets-admin-data'],
@@ -519,7 +527,7 @@ function AssetsPage() {
         />
       </div>
     ),
-    rightContent: canWrite ? (
+    rightContent: canCreateAssets ? (
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -551,7 +559,7 @@ function AssetsPage() {
     ) : null,
   }), [
     search,
-    canWrite,
+    canCreateAssets,
     selectedAssetId,
     selectedSiteId,
   ])
@@ -727,7 +735,7 @@ function AssetsPage() {
       }),
     ]
 
-    if (canWrite) {
+    if (canUpdateAssets || canDeleteAssets) {
       columns.push(
         siteColumnHelper.display({
           id: 'actions',
@@ -740,6 +748,7 @@ function AssetsPage() {
                   event.stopPropagation()
                   openEditSiteDialog(row.original)
                 }}
+                disabled={!canUpdateAssets}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
               >
                 <Pencil size={14} />
@@ -759,6 +768,7 @@ function AssetsPage() {
                   setPendingCloseTarget(target)
                   setCloseDialogOpen(true)
                 }}
+                disabled={!canDeleteAssets}
                 className="inline-flex items-center justify-center p-2 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
                 title={`Delete site ${row.original.name}`}
                 aria-label={`Delete site ${row.original.name}`}
@@ -772,7 +782,7 @@ function AssetsPage() {
     }
 
     return columns
-  }, [canWrite])
+  }, [canUpdateAssets, canDeleteAssets])
 
   const assetColumns = useMemo<ColumnDef<AssetAdminRow, any>[]>(() => {
     const columns: ColumnDef<AssetAdminRow, any>[] = [
@@ -794,7 +804,7 @@ function AssetsPage() {
       }),
     ]
 
-    if (canWrite) {
+    if (canUpdateAssets || canDeleteAssets) {
       columns.push(
         assetColumnHelper.display({
           id: 'actions',
@@ -807,6 +817,7 @@ function AssetsPage() {
                   event.stopPropagation()
                   openEditAssetDialog(row.original)
                 }}
+                disabled={!canUpdateAssets}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
               >
                 <Pencil size={14} />
@@ -826,6 +837,7 @@ function AssetsPage() {
                   setPendingCloseTarget(target)
                   setCloseDialogOpen(true)
                 }}
+                disabled={!canDeleteAssets}
                 className="inline-flex items-center justify-center p-2 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
                 title={`Delete asset ${row.original.serialNumber}`}
                 aria-label={`Delete asset ${row.original.serialNumber}`}
@@ -841,6 +853,7 @@ function AssetsPage() {
                       decommissionAssetMutation.mutate(row.original.id)
                     }
                   }}
+                  disabled={!canUpdateAssets}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
                 >
                   <ArchiveX size={14} />
@@ -854,7 +867,7 @@ function AssetsPage() {
     }
 
     return columns
-  }, [canWrite])
+  }, [canUpdateAssets, canDeleteAssets])
 
   const systemColumns = useMemo<ColumnDef<AssetSystemLinkRow, any>[]>(() => {
     const columns: ColumnDef<AssetSystemLinkRow, any>[] = [
@@ -890,7 +903,7 @@ function AssetsPage() {
       }),
     ]
 
-    if (canWrite) {
+    if (canUpdateAssets || canDeleteAssets) {
       columns.push(
         systemColumnHelper.display({
           id: 'actions',
@@ -904,7 +917,7 @@ function AssetsPage() {
                   event.stopPropagation()
                   openEditSystemDialog(row.original)
                 }}
-                disabled={selectedAssetId === null}
+                disabled={!canUpdateAssets || selectedAssetId === null}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
               >
                 <Pencil size={14} />
@@ -925,6 +938,7 @@ function AssetsPage() {
                   setPendingCloseTarget(target)
                   setCloseDialogOpen(true)
                 }}
+                disabled={!canDeleteAssets}
                 className="inline-flex items-center justify-center p-2 rounded-md border border-red-200 text-red-700 hover:bg-red-50"
                 title={`Delete system ${row.original.systemName}`}
                 aria-label={`Delete system ${row.original.systemName}`}
@@ -938,7 +952,7 @@ function AssetsPage() {
     }
 
     return columns
-  }, [canWrite, selectedAssetId])
+  }, [canUpdateAssets, canDeleteAssets, selectedAssetId])
 
   const sitesTable = useReactTable({
     data: filteredSites,

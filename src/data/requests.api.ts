@@ -1,4 +1,5 @@
 import { authServerFn } from '../lib/server-utils'
+import { normalizeAppRole } from '../lib/role-permissions'
 
 type ActorMeta = {
     id: string
@@ -220,8 +221,12 @@ export const createRequest = authServerFn({ method: 'POST' })
             ...withActor(user),
         })
 
-        const { canRole } = await import('../lib/role-permissions')
-        const canCreateWorkOrders = canRole((user.role ?? 'therapist') as any, 'workOrders', 'create')
+        const { canRoleConfigured } = await import('../lib/role-permissions.server')
+        const canCreateWorkOrders = await canRoleConfigured(
+            normalizeAppRole(user.role),
+            'workOrders',
+            'create',
+        )
 
         // Auto-WO workflow: only when downtime + asset + system are all present
         if (data.downtimeStartAt && data.assetId && data.systemId && canCreateWorkOrders) {

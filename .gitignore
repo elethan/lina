@@ -20,3 +20,4 @@ todos.json
 src/db/seed*.ts
 local-md/
 deploy_key
+.codesight

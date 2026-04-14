@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter, useNavigate, Await } from '@tanstack/react-router'
+import { createFileRoute, useRouter, useNavigate, Await, useRouteContext } from '@tanstack/react-router'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import {
@@ -26,11 +26,12 @@ import {
     DialogFooter,
 } from '../../components/ui/dialog'
 import { useMutation } from '@tanstack/react-query'
-import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import TableSkeleton from '../../components/TableSkeleton'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
+import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
+import { canPermissionMap } from '../../lib/role-permissions'
 
 import { fetchSiteEquipment, fetchSites } from '../../data/equipment.api'
 import { useQuery } from '@tanstack/react-query'
@@ -241,9 +242,16 @@ function RequestsPage() {
     const { requests: requestsPromise } = Route.useLoaderData()
     const router = useRouter()
     const navigate = useNavigate({ from: '/' })
-    const { user } = useRouteContext({ from: '/_app/' })
-    const userRole = user?.role ?? 'therapist'
     const { search: globalFilter = '', dateFrom = '', dateTo = '', siteId } = Route.useSearch()
+    const { data: currentPermissions } = useQuery({
+        queryKey: ['current-user-permissions'],
+        queryFn: () => fetchCurrentUserPermissions(),
+    })
+    const permissionMap = currentPermissions?.permissions
+    const canCreateRequests = canPermissionMap(permissionMap, 'requests', 'create')
+    const canCloseRequests = canPermissionMap(permissionMap, 'requests', 'delete')
+    const canCreateWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'create')
+    const canMergeToWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'update')
 
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
@@ -353,6 +361,7 @@ function RequestsPage() {
             <div className="flex items-center gap-2">
                 <button
                     id="btn-new"
+                    disabled={!canCreateRequests}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-32 whitespace-nowrap disabled:opacity-50"
                     onClick={() => setShowNewRequestDialog(true)}
                 >
@@ -362,7 +371,7 @@ function RequestsPage() {
                 <div className="w-px h-8 bg-gray-200" />
                 <button
                     id="btn-create-wo"
-                    disabled={selectedCount === 0 || userRole === 'therapist'}
+                    disabled={selectedCount === 0 || !canCreateWorkOrders}
                     onClick={() => setShowCreateWODialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
@@ -371,7 +380,7 @@ function RequestsPage() {
                 </button>
                 <button
                     id="btn-merge"
-                    disabled={selectedCount === 0 || userRole === 'therapist'}
+                    disabled={selectedCount === 0 || !canMergeToWorkOrders}
                     onClick={() => setShowMergeDialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
@@ -380,7 +389,7 @@ function RequestsPage() {
                 </button>
                 <button
                     id="btn-close"
-                    disabled={selectedCount === 0}
+                    disabled={selectedCount === 0 || !canCloseRequests}
                     onClick={() => setShowCloseDialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
@@ -389,7 +398,17 @@ function RequestsPage() {
                 </button>
             </div>
         ),
-    }), [globalFilter, dateFrom, dateTo, selectedCount, userRole, siteId])
+    }), [
+        globalFilter,
+        dateFrom,
+        dateTo,
+        selectedCount,
+        siteId,
+        canCreateRequests,
+        canCloseRequests,
+        canCreateWorkOrders,
+        canMergeToWorkOrders,
+    ])
 
     useSetToolbar(toolbarConfig)
 

@@ -1,11 +1,12 @@
 import { auth } from './auth'
 import { getRequest } from '@tanstack/react-start/server'
 import {
-    canRole,
+    normalizeAppRole,
     type AppRole,
     type PermissionAction,
     type PermissionResource,
 } from './role-permissions'
+import { canRoleConfigured } from './role-permissions.server'
 
 type SessionUser = {
     id: string
@@ -28,7 +29,7 @@ export async function requireSessionUser(): Promise<SessionUser> {
 
 export async function requireRole(...allowedRoles: AppRole[]) {
     const user = await requireSessionUser()
-    const currentRole = (user.role ?? 'therapist') as AppRole
+    const currentRole = normalizeAppRole(user.role)
 
     if (!allowedRoles.includes(currentRole)) {
         throw new Error('Forbidden')
@@ -42,9 +43,9 @@ export async function requirePermission(
     action: PermissionAction,
 ) {
     const user = await requireSessionUser()
-    const currentRole = (user.role ?? 'therapist') as AppRole
+    const currentRole = normalizeAppRole(user.role)
 
-    if (!canRole(currentRole, resource, action)) {
+    if (!(await canRoleConfigured(currentRole, resource, action))) {
         throw new Error(`Forbidden: missing permission ${resource}.${action}`)
     }
 
