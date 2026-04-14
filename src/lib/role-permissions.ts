@@ -1,5 +1,12 @@
 export type AppRole = 'admin' | 'engineer' | 'scientist' | 'therapist'
 
+export const APP_ROLES = [
+    'admin',
+    'engineer',
+    'scientist',
+    'therapist',
+] as const
+
 export type PermissionResource =
     | 'requests'
     | 'workOrders'
@@ -7,12 +14,32 @@ export type PermissionResource =
     | 'assetsSystems'
     | 'pmTasks'
 
+export const PERMISSION_RESOURCES = [
+    'requests',
+    'workOrders',
+    'pmInstances',
+    'assetsSystems',
+    'pmTasks',
+] as const
+
 export type PermissionAction =
     | 'read'
     | 'create'
     | 'update'
     | 'delete'
     | 'assign'
+
+export type RolePermissionMap = Partial<
+    Record<PermissionResource, PermissionAction[]>
+>
+
+export const PERMISSION_ACTIONS = [
+    'read',
+    'create',
+    'update',
+    'delete',
+    'assign',
+] as const
 
 export const ROLE_CAPABILITIES: Record<
     AppRole,
@@ -35,7 +62,7 @@ export const ROLE_CAPABILITIES: Record<
     scientist: {
         requests: ['read', 'create'],
         workOrders: ['read', 'update'],
-        pmInstances: ['read'],
+        pmInstances: ['read', 'update'],
         assetsSystems: ['read'],
         pmTasks: ['read'],
     },
@@ -55,6 +82,7 @@ export const ROLE_DETAILS: Record<AppRole, string[]> = {
     scientist: [
         'Can view all modules',
         'Can create requests and update existing work orders',
+        'Can execute and edit existing PM instances',
         'Cannot create, delete, or assign work orders',
         'Can view assets and systems but cannot create/edit them',
     ],
@@ -69,11 +97,28 @@ export function formatRoleLabel(role?: string | null): string {
     return role.charAt(0).toUpperCase() + role.slice(1)
 }
 
+export function normalizeAppRole(role?: string | null): AppRole {
+    if (role && APP_ROLES.includes(role as AppRole)) {
+        return role as AppRole
+    }
+
+    return 'therapist'
+}
+
 export function canRole(
     role: AppRole,
     resource: PermissionResource,
     action: PermissionAction,
 ): boolean {
     const actions = ROLE_CAPABILITIES[role]?.[resource] ?? []
+    return actions.includes(action)
+}
+
+export function canPermissionMap(
+    permissions: RolePermissionMap | undefined,
+    resource: PermissionResource,
+    action: PermissionAction,
+): boolean {
+    const actions = permissions?.[resource] ?? []
     return actions.includes(action)
 }

@@ -1,4 +1,5 @@
 import { authServerFn } from '../lib/server-utils'
+import type { PermissionAction } from '../lib/role-permissions'
 
 type ActorMeta = {
   id: string
@@ -106,12 +107,18 @@ async function getAssetsDbDeps() {
   }
 }
 
-function ensureAdminRole() {
-  return import('../lib/auth-guards.server').then(({ requireRole }) => requireRole('admin'))
+function ensureAssetsPermission(action: Exclude<PermissionAction, 'assign'>) {
+  return import('../lib/auth-guards.server').then(({ requirePermission }) =>
+    requirePermission('assetsSystems', action),
+  )
+}
+
+function ensureAdminRole(action: Exclude<PermissionAction, 'assign'> = 'update') {
+  return ensureAssetsPermission(action)
 }
 
 function ensureAssetsReadRole() {
-  return import('../lib/auth-guards.server').then(({ requireRole }) => requireRole('admin', 'engineer', 'scientist'))
+  return ensureAssetsPermission('read')
 }
 
 async function cascadeDeleteAssetById(
@@ -312,7 +319,7 @@ export const createSiteAdmin = authServerFn({ method: 'POST' })
     return { name }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('create')
     const { db, sites } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -340,7 +347,7 @@ export const updateSiteAdmin = authServerFn({ method: 'POST' })
     return { siteId: data.siteId, name }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('update')
     const { db, sites, eq } = await getAssetsDbDeps()
 
     await db
@@ -364,7 +371,7 @@ export const deleteSiteAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('delete')
     const deps = await getAssetsDbDeps()
     const { db, sites, assets, spareParts, eq } = deps
 
@@ -413,7 +420,7 @@ export const createSystemAdmin = authServerFn({ method: 'POST' })
     return { name }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('create')
     const { db, systems } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -441,7 +448,7 @@ export const updateSystemAdmin = authServerFn({ method: 'POST' })
     return { systemId: data.systemId, name }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('update')
     const { db, systems, eq } = await getAssetsDbDeps()
 
     await db
@@ -490,7 +497,7 @@ export const createSystemWithLinkAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('create')
     const { db, systems, assetSystems } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -550,7 +557,7 @@ export const createAssetSystemLinkAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('create')
     const { db, assetSystems } = await getAssetsDbDeps()
 
     await db.insert(assetSystems).values({
@@ -601,7 +608,7 @@ export const updateAssetSystemLinkAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('update')
     const { db, assetSystems, eq, and } = await getAssetsDbDeps()
 
     await db
@@ -632,7 +639,7 @@ export const decommissionSystemAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('update')
     const { db, assetSystems, eq } = await getAssetsDbDeps()
 
     await db
@@ -656,7 +663,7 @@ export const deleteAssetSystemEntryAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('delete')
     const {
       db,
       assetSystems,
@@ -784,7 +791,7 @@ export const previewCloseWarningsAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    await ensureAdminRole()
+    await ensureAssetsReadRole()
     const {
       db,
       assets,
@@ -978,7 +985,7 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('create')
     const { db, assets, assetSystems } = await getAssetsDbDeps()
 
     const [created] = await db
@@ -1054,7 +1061,7 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
     }
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('update')
     const { db, assets, assetSystems, eq } = await getAssetsDbDeps()
 
     await db
@@ -1102,7 +1109,7 @@ export const decommissionAssetAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('update')
     const { db, assets, eq } = await getAssetsDbDeps()
 
     await db
@@ -1125,7 +1132,7 @@ export const deleteAssetAdmin = authServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
-    const user = await ensureAdminRole()
+    const user = await ensureAdminRole('delete')
     const deps = await getAssetsDbDeps()
     const { db, assets, eq } = deps
 

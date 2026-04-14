@@ -6,19 +6,30 @@ import {
     CalendarCheck2,
     Boxes,
     ShieldCheck,
+    SlidersHorizontal,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
     LogOut,
 } from 'lucide-react'
 import { authClient } from '../lib/auth-client'
-import { ROLE_DETAILS, formatRoleLabel } from '../lib/role-permissions'
+import {
+    canPermissionMap,
+    canRole,
+    normalizeAppRole,
+    type PermissionResource,
+    ROLE_DETAILS,
+    formatRoleLabel,
+} from '../lib/role-permissions'
+import { useQuery } from '@tanstack/react-query'
+import { fetchCurrentUserPermissions } from '../data/current-user-permissions.api'
 
 const navItems = [
-    { to: '/', label: 'Requests', icon: MessageSquareText, allowedRoles: ['admin', 'engineer', 'scientist', 'therapist'] },
-    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, allowedRoles: ['admin', 'engineer', 'scientist'] },
-    { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, allowedRoles: ['admin', 'engineer', 'scientist'] },
-    { to: '/assets' as string, label: 'Assets', icon: Boxes, allowedRoles: ['admin', 'engineer', 'scientist'] },
+    { to: '/', label: 'Requests', icon: MessageSquareText, resource: 'requests' as PermissionResource },
+    { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, resource: 'workOrders' as PermissionResource },
+    { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, resource: 'pmInstances' as PermissionResource },
+    { to: '/assets' as string, label: 'Assets', icon: Boxes, resource: 'assetsSystems' as PermissionResource },
+    { to: '/config' as string, label: 'Config', icon: SlidersHorizontal, adminOnly: true },
 ]
 
 type SidebarProps = {
@@ -33,7 +44,12 @@ export default function Sidebar({ userRole }: SidebarProps) {
     const roleMenuRef = useRef<HTMLDivElement | null>(null)
 
     const roleLabel = formatRoleLabel(userRole)
+    const currentRole = normalizeAppRole(userRole)
     const currentPath = router.state.location.pathname
+    const { data: currentPermissions } = useQuery({
+        queryKey: ['current-user-permissions'],
+        queryFn: () => fetchCurrentUserPermissions(),
+    })
 
     useEffect(() => {
         if (!showRoleMenu) return
@@ -58,7 +74,11 @@ export default function Sidebar({ userRole }: SidebarProps) {
     }, [collapsed])
 
     const visibleNavItems = navItems.filter((item) =>
-        item.allowedRoles.includes(userRole)
+        item.adminOnly
+            ? (currentPermissions?.role ?? currentRole) === 'admin'
+            : currentPermissions
+                ? canPermissionMap(currentPermissions.permissions, item.resource, 'read')
+                : canRole(currentRole, item.resource, 'read')
     )
 
     const handleSignOut = async () => {

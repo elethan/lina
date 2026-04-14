@@ -81,8 +81,10 @@ export type PmFormData = {
 }
 
 export type PmFormOptions = {
-    assets: Array<{ id: number; label: string }>
+    sites: Array<{ id: number; label: string }>
+    assets: Array<{ id: number; label: string; siteId: number | null }>
     systems: Array<{ id: number; label: string }>
+    assetSystemIds: Record<number, number[]>
     engineers: Array<{ id: number; label: string }>
 }
 
@@ -100,6 +102,9 @@ export type PmExecutionTaskRow = {
 
 export type PmExecutionData = {
     pmId: number
+    assetId: number | null
+    systemId: number | null
+    engineerId: number | null
     serialNumber: string | null
     siteName: string | null
     systemName: string | null
@@ -380,17 +385,28 @@ export const fetchPmFormOptions = authServerFn({ method: 'GET' }).handler(
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
         const { db } = await import('../db/client')
-        const { assets, systems, engineers } = await import('../db/schema')
+        const { assets, systems, engineers, sites, assetSystems } = await import('../db/schema')
 
-        const [assetRows, systemRows, engineerRows] = await Promise.all([
-            db.select({ id: assets.id, serialNumber: assets.serialNumber }).from(assets),
+        const [siteRows, assetRows, systemRows, assetSystemRows, engineerRows] = await Promise.all([
+            db.select({ id: sites.id, name: sites.name }).from(sites),
+            db.select({ id: assets.id, serialNumber: assets.serialNumber, siteId: assets.siteId }).from(assets),
             db.select({ id: systems.id, name: systems.name }).from(systems),
+            db.select({ assetId: assetSystems.assetId, systemId: assetSystems.systemId }).from(assetSystems),
             db.select({ id: engineers.id, firstName: engineers.firstName, lastName: engineers.lastName }).from(engineers),
         ])
 
+        const assetSystemIds: Record<number, number[]> = {}
+        for (const row of assetSystemRows) {
+            if (row.assetId != null && row.systemId != null) {
+                ;(assetSystemIds[row.assetId] ??= []).push(row.systemId)
+            }
+        }
+
         return {
-            assets: assetRows.map((a) => ({ id: a.id, label: a.serialNumber })),
+            sites: siteRows.map((s) => ({ id: s.id, label: s.name })),
+            assets: assetRows.map((a) => ({ id: a.id, label: a.serialNumber, siteId: a.siteId })),
             systems: systemRows.map((s) => ({ id: s.id, label: s.name })),
+            assetSystemIds,
             engineers: engineerRows.map((e) => ({ id: e.id, label: `${e.firstName} ${e.lastName}` })),
         }
     },
@@ -426,7 +442,9 @@ export const fetchPmExecutionData = authServerFn({ method: 'GET' })
         const [pmRow] = await db
             .select({
                 pmId: assetPm.id,
+                assetId: assetPm.assetId,
                 systemId: assetPm.systemId,
+                engineerId: assetPm.engineerId,
                 intervalMonths: assetPm.intervalMonths,
                 physicsHandOver: assetPm.physicsHandOver,
                 startAt: assetPm.startAt,
@@ -513,6 +531,9 @@ export const fetchPmExecutionData = authServerFn({ method: 'GET' })
 
         return {
             pmId: pmRow.pmId,
+            assetId: pmRow.assetId ?? null,
+            systemId: pmRow.systemId ?? null,
+            engineerId: pmRow.engineerId ?? null,
             serialNumber: pmRow.serialNumber ?? null,
             siteName: pmRow.siteName ?? null,
             systemName: pmRow.systemName ?? null,
@@ -768,4 +789,32 @@ export const savePm = authServerFn({ method: 'POST' })
         })
 
         return { id: created.id }
+    })
+
+export const deletePmInstance = authServerFn({ method: 'POST' })
+    .inputValidator((data: { pmId: number }) => {
+        if (!data.pmId) {
+            throw new Error('PM record is required')
+        }
+        return data
+    })
+    .handler(async ({ data }) => {
+        const { requirePermission } = await import('../lib/auth-guards.server')
+        const user = await requirePermission('pmInstances', 'delete')
+
+        const { db, assetPm, assetPmResults, pmEngineers, eq } = await getPmDbDeps()
+
+        db.transaction((tx) => {
+            tx.delete(assetPmResults).where(eq(assetPmResults.pmInstanceId, data.pmId)).run()
+            tx.delete(pmEngineers).where(eq(pmEngineers.pmInstanceId, data.pmId)).run()
+            tx.delete(assetPm).where(eq(assetPm.id, data.pmId)).run()
+        })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('PM_DELETED', {
+            pmId: data.pmId,
+            ...withActor(user),
+        })
+
+        return { success: true }
     })
