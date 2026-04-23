@@ -23,6 +23,7 @@ import {
 } from '../lib/role-permissions'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCurrentUserPermissions } from '../data/current-user-permissions.api'
+import { loadRequestsUrlState, pickRequestsUrlState, saveRequestsUrlState, type RequestsUrlState } from '../lib/requests-url-state'
 
 const navItems = [
     { to: '/', label: 'Requests', icon: MessageSquareText, resource: 'requests' as PermissionResource },
@@ -46,10 +47,23 @@ export default function Sidebar({ userRole }: SidebarProps) {
     const roleLabel = formatRoleLabel(userRole)
     const currentRole = normalizeAppRole(userRole)
     const currentPath = router.state.location.pathname
+    const [savedRequestsSearch, setSavedRequestsSearch] = useState<RequestsUrlState | null>(null)
     const { data: currentPermissions } = useQuery({
         queryKey: ['current-user-permissions'],
         queryFn: () => fetchCurrentUserPermissions(),
     })
+
+    useEffect(() => {
+        setSavedRequestsSearch(loadRequestsUrlState())
+    }, [])
+
+    useEffect(() => {
+        if (currentPath !== '/') return
+
+        const next = pickRequestsUrlState(router.state.location.search as Record<string, unknown>)
+        saveRequestsUrlState(next)
+        setSavedRequestsSearch(next)
+    }, [currentPath, router.state.location.search])
 
     useEffect(() => {
         if (!showRoleMenu) return
@@ -169,22 +183,40 @@ export default function Sidebar({ userRole }: SidebarProps) {
 
             {/* Navigation */}
             <nav className="flex-1 px-2 py-4 space-y-1">
-                {visibleNavItems.map((item) => (
-                    <Link
-                        key={item.label}
-                        to={item.to}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isNavItemActive(item.to)
-                            ? 'bg-primary/10 text-primary-darker font-semibold'
-                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                            }`}
-                        activeOptions={{ exact: true }}
-                    >
-                        <item.icon size={20} className="shrink-0" />
-                        {!collapsed && (
-                            <span className="text-sm font-medium">{item.label}</span>
-                        )}
-                    </Link>
-                ))}
+                {visibleNavItems.map((item) =>
+                    item.to === '/' ? (
+                        <Link
+                            key={item.label}
+                            to="/"
+                            search={savedRequestsSearch ?? true}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isNavItemActive(item.to)
+                                ? 'bg-primary/10 text-primary-darker font-semibold'
+                                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                                }`}
+                            activeOptions={{ exact: true }}
+                        >
+                            <item.icon size={20} className="shrink-0" />
+                            {!collapsed && (
+                                <span className="text-sm font-medium">{item.label}</span>
+                            )}
+                        </Link>
+                    ) : (
+                        <Link
+                            key={item.label}
+                            to={item.to}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isNavItemActive(item.to)
+                                ? 'bg-primary/10 text-primary-darker font-semibold'
+                                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                                }`}
+                            activeOptions={{ exact: true }}
+                        >
+                            <item.icon size={20} className="shrink-0" />
+                            {!collapsed && (
+                                <span className="text-sm font-medium">{item.label}</span>
+                            )}
+                        </Link>
+                    )
+                )}
             </nav>
 
             {/* Bottom actions */}

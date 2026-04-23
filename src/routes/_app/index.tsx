@@ -42,6 +42,13 @@ type RequestSearchParams = {
     dateTo?: string
     status?: string
     siteId?: number
+    assetId?: number
+}
+
+const parseOptionalNumber = (value: unknown): number | undefined => {
+    if (value === undefined || value === null || value === '') return undefined
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
 }
 
 const getDefaultDateFrom = () => {
@@ -65,7 +72,8 @@ export const Route = createFileRoute('/_app/')({
                 : search.status === 'OpenActive'
                     ? 'Open'
                     : 'Open',
-        siteId: search.siteId ? Number(search.siteId) : undefined,
+        siteId: parseOptionalNumber(search.siteId ?? search.siteID),
+        assetId: parseOptionalNumber(search.assetId ?? search.assetID),
     }),
     loaderDeps: ({ search }) => ({
         dateFrom: search.dateFrom,
@@ -726,7 +734,7 @@ function RequestsTableView({
     setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
     onSelectionChange: (items: RequestRow[]) => void
 }) {
-    const { siteId, search: globalFilter = '', status: statusFilter = 'Open' } = Route.useSearch()
+    const { siteId, assetId, search: globalFilter = '', status: statusFilter = 'Open' } = Route.useSearch()
     const navigate = useNavigate({ from: '/' })
     const selectedCount = Object.keys(rowSelection).length
 
@@ -736,14 +744,25 @@ function RequestsTableView({
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const { containerRef, pageSize } = useDynamicPageSize()
     const [pageIndex, setPageIndex] = useState(0)
+    const [isLinacDown, setIsLinacDown] = useState(false)
+    const hasValidAssetId = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
+
+    useEffect(() => {
+        if (!hasValidAssetId) {
+            setIsLinacDown(false)
+        }
+    }, [hasValidAssetId])
 
     const filteredData = useMemo(() => {
         let result = data
-        if (siteId) {
+        if (typeof siteId === 'number') {
             result = result.filter((row) => row.siteId === siteId)
         }
+        if (typeof assetId === 'number') {
+            result = result.filter((row) => row.assetId === assetId)
+        }
         return result
-    }, [data, siteId])
+    }, [data, siteId, assetId])
 
     // Report selection to outer for toolbar button states / mutations
     useEffect(() => {
@@ -792,6 +811,63 @@ function RequestsTableView({
 
     return (
         <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
+            <div className="mb-5 flex justify-center">
+                <button
+                    type="button"
+                    disabled={!hasValidAssetId}
+                    aria-pressed={isLinacDown}
+                    aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
+                    onClick={() => setIsLinacDown((prev) => !prev)}
+                    className="group relative h-32 w-full max-w-156 overflow-hidden rounded-full border border-gray-300/80 bg-white shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-sm [--linac-rail-y:clamp(0.375rem,6%,1rem)]"
+                >
+                    <svg
+                        aria-hidden="true"
+                        viewBox="0 0 1000 160"
+                        preserveAspectRatio="none"
+                        className="absolute inset-0 h-full w-full"
+                    >
+                        <defs>
+                            <linearGradient id="linac-track" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#ecfdf3" />
+                                <stop offset="50%" stopColor="#f5f7fa" />
+                                <stop offset="100%" stopColor="#fff1f2" />
+                            </linearGradient>
+                        </defs>
+                        <rect x="6" y="6" width="988" height="148" rx="74" fill="url(#linac-track)" />
+                    </svg>
+
+                    <div className="absolute inset-x-1.5 top-[var(--linac-rail-y)] bottom-[var(--linac-rail-y)] overflow-hidden rounded-full">
+                        <div
+                            className="h-full w-1/2 rounded-full transition-transform duration-300 ease-out"
+                            style={{ transform: isLinacDown ? 'translateX(100%)' : 'translateX(0)' }}
+                        >
+                            <svg aria-hidden="true" viewBox="0 0 500 148" preserveAspectRatio="none" className="h-full w-full">
+                                <defs>
+                                    <linearGradient id="linac-thumb" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stopColor={isLinacDown ? '#ef4444' : '#059669'} />
+                                        <stop offset="100%" stopColor={isLinacDown ? '#dc2626' : '#047857'} />
+                                    </linearGradient>
+                                </defs>
+                                <rect x="4" y="4" width="492" height="140" rx="68" fill="url(#linac-thumb)" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div className="relative z-10 grid h-full grid-cols-2 items-center px-8 text-lg font-bold uppercase tracking-[0.16em] md:text-2xl">
+                        <span className="flex justify-center">
+                            <span className={`px-4 py-2 transition-opacity duration-200 ${!isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
+                                CLINICAL
+                            </span>
+                        </span>
+                        <span className="flex justify-center">
+                            <span className={`px-4 py-2 transition-opacity duration-200 ${isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
+                                DOWN
+                            </span>
+                        </span>
+                    </div>
+                </button>
+            </div>
+
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
                 <table className="min-w-full" style={{ width: table.getTotalSize() }}>
                     <thead>

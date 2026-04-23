@@ -60,6 +60,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         links: [{ rel: 'stylesheet', href: appCss }],
     }),
     component: RootComponent,
+    notFoundComponent: RootNotFound,
     shellComponent: RootDocument,
 })
 
@@ -82,5 +83,24 @@ function RootComponent() {
         <TanStackQueryProvider>
             <Outlet />
         </TanStackQueryProvider>
+    )
+}
+
+function RootNotFound() {
+    return (
+        <div className="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center p-6">
+            <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-sm p-8 text-center">
+                <h1 className="text-2xl font-semibold">Page not found</h1>
+                <p className="mt-2 text-sm text-gray-600">
+                    The page you requested does not exist or may have moved.
+                </p>
+                <a
+                    href="/"
+                    className="mt-6 inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark transition-colors"
+                >
+                    Go to Requests
+                </a>
+            </div>
+        </div>
     )
 }
