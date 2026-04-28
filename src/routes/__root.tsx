@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { authServerFn } from '../lib/server-utils'
 import { getRequest } from '@tanstack/react-start/server'
+import { buildRedirectTargetFromLocation } from '../lib/redirect-target'
 
 import TanStackQueryProvider from '../integrations/tanstack-query/root-provider'
 
@@ -46,6 +47,9 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         if (!session?.user) {
             throw redirect({
                 to: '/login' as string,
+                search: {
+                    redirect: buildRedirectTargetFromLocation(location),
+                },
             })
         }
 

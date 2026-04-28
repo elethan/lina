@@ -32,6 +32,8 @@ import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '.
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import { canPermissionMap } from '../../lib/role-permissions'
+import { pushClientErrorNotice } from '../../lib/client-error-logger'
+import { UNAUTHORIZED_REDIRECT_NOTICE } from '../../lib/redirect-target'
 
 import { fetchSiteEquipment, fetchSites } from '../../data/equipment.api'
 import { useQuery } from '@tanstack/react-query'
@@ -43,6 +45,7 @@ type RequestSearchParams = {
     status?: string
     siteId?: number
     assetId?: number
+    notice?: string
 }
 
 const parseOptionalNumber = (value: unknown): number | undefined => {
@@ -74,6 +77,10 @@ export const Route = createFileRoute('/_app/')({
                     : 'Open',
         siteId: parseOptionalNumber(search.siteId ?? search.siteID),
         assetId: parseOptionalNumber(search.assetId ?? search.assetID),
+        notice:
+            search.notice === UNAUTHORIZED_REDIRECT_NOTICE
+                ? UNAUTHORIZED_REDIRECT_NOTICE
+                : undefined,
     }),
     loaderDeps: ({ search }) => ({
         dateFrom: search.dateFrom,
@@ -250,7 +257,13 @@ function RequestsPage() {
     const { requests: requestsPromise } = Route.useLoaderData()
     const router = useRouter()
     const navigate = useNavigate({ from: '/' })
-    const { search: globalFilter = '', dateFrom = '', dateTo = '', siteId } = Route.useSearch()
+    const {
+        search: globalFilter = '',
+        dateFrom = '',
+        dateTo = '',
+        siteId,
+        notice,
+    } = Route.useSearch()
     const { data: currentPermissions } = useQuery({
         queryKey: ['current-user-permissions'],
         queryFn: () => fetchCurrentUserPermissions(),
@@ -267,6 +280,23 @@ function RequestsPage() {
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateFrom: value || undefined }) })
     const setDateTo = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, dateTo: value || undefined }) })
+
+    useEffect(() => {
+        if (notice !== UNAUTHORIZED_REDIRECT_NOTICE) return
+
+        pushClientErrorNotice(
+            'Access Restricted',
+            'You do not have access to that page. Showing Requests instead.',
+        )
+
+        navigate({
+            replace: true,
+            search: (prev: RequestSearchParams) => ({
+                ...prev,
+                notice: undefined,
+            }),
+        })
+    }, [navigate, notice])
 
     const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
     const [selectedItems, setSelectedItems] = useState<RequestRow[]>([])

@@ -2,8 +2,12 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 import { authClient } from '../lib/auth-client'
 import { reportClientError } from '../lib/client-error-logger'
+import { resolveSafeRedirectTarget } from '../lib/redirect-target'
 
 export const Route = createFileRoute('/login')({
+    validateSearch: (search: Record<string, unknown>) => ({
+        redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+    }),
     component: LoginPage,
 })
 
@@ -11,10 +15,12 @@ const microsoftSsoEnabled = !!import.meta.env.VITE_ENABLE_MICROSOFT_SSO
 
 function LoginPage() {
     const router = useRouter()
+    const { redirect } = Route.useSearch()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const postLoginTarget = resolveSafeRedirectTarget(redirect)
 
     const getEmailDomain = () => {
         const idx = email.lastIndexOf('@')
@@ -41,7 +47,7 @@ function LoginPage() {
                 setLoading(false)
                 return
             }
-            router.navigate({ to: '/' })
+            router.navigate({ href: postLoginTarget })
         } catch (err) {
             setError('Something went wrong')
             void reportClientError('CLIENT_LOGIN_EXCEPTION', err, {
@@ -56,7 +62,7 @@ function LoginPage() {
         try {
             await authClient.signIn.social({
                 provider: 'microsoft',
-                callbackURL: '/',
+                callbackURL: postLoginTarget,
             })
         } catch (err) {
             setError('Microsoft sign in failed')

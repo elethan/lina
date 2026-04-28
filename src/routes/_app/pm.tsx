@@ -32,6 +32,10 @@ import { useRouter } from '@tanstack/react-router'
 import { useRouteContext } from '@tanstack/react-router'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import { canPermissionMap } from '../../lib/role-permissions'
+import {
+    buildRedirectTargetFromLocation,
+    UNAUTHORIZED_REDIRECT_NOTICE,
+} from '../../lib/redirect-target'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import {
     fetchPmRows,
@@ -89,14 +93,24 @@ export const Route = createFileRoute('/_app/pm')({
         siteName: typeof search.siteName === 'string' ? search.siteName : undefined,
         systemName: typeof search.systemName === 'string' ? search.systemName : undefined,
     }),
-    beforeLoad: ({ context }) => {
+    beforeLoad: ({ context, location }) => {
         const user = (context as any).user
         const role = user?.role as string | undefined
         if (!role) {
-            throw redirect({ to: '/login' })
+            throw redirect({
+                to: '/login',
+                search: {
+                    redirect: buildRedirectTargetFromLocation(location),
+                },
+            })
         }
         if (!['admin', 'engineer', 'scientist'].includes(role)) {
-            throw redirect({ to: '/' })
+            throw redirect({
+                to: '/',
+                search: {
+                    notice: UNAUTHORIZED_REDIRECT_NOTICE,
+                },
+            })
         }
     },
     loaderDeps: ({ search }) => ({

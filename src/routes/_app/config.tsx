@@ -4,6 +4,10 @@ import { Save, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import {
+    buildRedirectTargetFromLocation,
+    UNAUTHORIZED_REDIRECT_NOTICE,
+} from '../../lib/redirect-target'
+import {
     fetchRolePermissionsConfig,
     saveRolePermissionsConfig,
     type RolePermissionEntry,
@@ -26,13 +30,23 @@ function toLabel(value: string): string {
 }
 
 export const Route = createFileRoute('/_app/config')({
-    beforeLoad: ({ context }) => {
+    beforeLoad: ({ context, location }) => {
         const role = String((context as any).user?.role ?? '').toLowerCase()
         if (!role) {
-            throw redirect({ to: '/login' })
+            throw redirect({
+                to: '/login',
+                search: {
+                    redirect: buildRedirectTargetFromLocation(location),
+                },
+            })
         }
         if (role !== 'admin') {
-            throw redirect({ to: '/' })
+            throw redirect({
+                to: '/',
+                search: {
+                    notice: UNAUTHORIZED_REDIRECT_NOTICE,
+                },
+            })
         }
     },
     component: ConfigPage,

@@ -27,6 +27,7 @@ import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import { canPermissionMap } from '../../lib/role-permissions'
+import { UNAUTHORIZED_REDIRECT_NOTICE } from '../../lib/redirect-target'
 
 // ── Search params type ─────────────────────────────────────
 type WoSearchParams = {
@@ -57,7 +58,12 @@ export const Route = createFileRoute('/_app/work-orders')({
   beforeLoad: ({ context }) => {
     const user = (context as any).user
     if (user?.role === 'therapist') {
-      throw redirect({ to: '/' })
+      throw redirect({
+        to: '/',
+        search: {
+          notice: UNAUTHORIZED_REDIRECT_NOTICE,
+        },
+      })
     }
   },
   loaderDeps: ({ search }) => ({

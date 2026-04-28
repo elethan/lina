@@ -40,6 +40,10 @@ import {
 } from '../../data/assets.api'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import { canPermissionMap } from '../../lib/role-permissions'
+import {
+  buildRedirectTargetFromLocation,
+  UNAUTHORIZED_REDIRECT_NOTICE,
+} from '../../lib/redirect-target'
 
 type DialogMode = 'create' | 'edit'
 type AssetStatus = 'Operational' | 'De-commissioned'
@@ -123,13 +127,23 @@ function toDateInputValue(value: string | null): string {
 }
 
 export const Route = createFileRoute('/_app/assets' as any)({
-  beforeLoad: ({ context }) => {
+  beforeLoad: ({ context, location }) => {
     const role = String((context as any).user?.role ?? '').toLowerCase()
     if (!role) {
-      throw redirect({ to: '/login' })
+      throw redirect({
+        to: '/login',
+        search: {
+          redirect: buildRedirectTargetFromLocation(location),
+        },
+      })
     }
     if (!['admin', 'engineer', 'scientist'].includes(role)) {
-      throw redirect({ to: '/' })
+      throw redirect({
+        to: '/',
+        search: {
+          notice: UNAUTHORIZED_REDIRECT_NOTICE,
+        },
+      })
     }
   },
   component: AssetsPage,
