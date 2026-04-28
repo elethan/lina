@@ -126,7 +126,7 @@ function toDateInputValue(value: string | null): string {
   return toYmd(value)
 }
 
-export const Route = createFileRoute('/_app/assets' as any)({
+export const Route = createFileRoute('/_app/assets')({
   beforeLoad: ({ context, location }) => {
     const role = String((context as any).user?.role ?? '').toLowerCase()
     if (!role) {
