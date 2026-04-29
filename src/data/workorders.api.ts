@@ -108,7 +108,6 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
             eq,
             sql,
             desc,
-            and,
         } = await getWorkOrderDbDeps()
 
         const dateFromIso = data.dateFrom
@@ -117,16 +116,6 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
         const dateToIso = data.dateTo
             ? new Date(`${data.dateTo}T23:59:59.999Z`).toISOString()
             : undefined
-
-        const normalizedCreatedAt = sql<string>`
-            CASE
-                WHEN ${workOrders.createdAt} LIKE '__/__/____' THEN
-                    substr(${workOrders.createdAt}, 7, 4) || '-' || substr(${workOrders.createdAt}, 1, 2) || '-' || substr(${workOrders.createdAt}, 4, 2) || 'T00:00:00.000Z'
-                WHEN ${workOrders.createdAt} LIKE '____-__-__ __:__:__' THEN
-                    replace(${workOrders.createdAt}, ' ', 'T') || 'Z'
-                ELSE ${workOrders.createdAt}
-            END
-        `
 
         // Base WO data with joins
         let rowsQuery = db
@@ -153,11 +142,11 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
             .leftJoin(engineers, eq(workOrders.engineerId, engineers.id))
 
         if (dateFromIso && dateToIso) {
-            rowsQuery = rowsQuery.where(sql`${normalizedCreatedAt} >= ${dateFromIso} AND ${normalizedCreatedAt} <= ${dateToIso}`)
+            rowsQuery = rowsQuery.where(sql`${workOrders.createdAt} >= ${dateFromIso} AND ${workOrders.createdAt} <= ${dateToIso}`)
         } else if (dateFromIso) {
-            rowsQuery = rowsQuery.where(sql`${normalizedCreatedAt} >= ${dateFromIso}`)
+            rowsQuery = rowsQuery.where(sql`${workOrders.createdAt} >= ${dateFromIso}`)
         } else if (dateToIso) {
-            rowsQuery = rowsQuery.where(sql`${normalizedCreatedAt} <= ${dateToIso}`)
+            rowsQuery = rowsQuery.where(sql`${workOrders.createdAt} <= ${dateToIso}`)
         }
 
         const rows = await rowsQuery.orderBy(desc(workOrders.startAt), desc(workOrders.id))
@@ -292,16 +281,6 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
         const sixMonthsAgoIso = sixMonthsAgo.toISOString()
 
-        const normalizedCreatedAt = sql<string>`
-            CASE
-                WHEN ${workOrders.createdAt} LIKE '__/__/____' THEN
-                    substr(${workOrders.createdAt}, 7, 4) || '-' || substr(${workOrders.createdAt}, 1, 2) || '-' || substr(${workOrders.createdAt}, 4, 2) || 'T00:00:00.000Z'
-                WHEN ${workOrders.createdAt} LIKE '____-__-__ __:__:__' THEN
-                    replace(${workOrders.createdAt}, ' ', 'T') || 'Z'
-                ELSE ${workOrders.createdAt}
-            END
-        `
-
         const rows = await db
             .select({
                 id: workOrders.id,
@@ -315,7 +294,7 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
                 and(
                     eq(workOrders.assetId, data.assetId),
                     inArray(workOrders.status, ['Open', 'Active']),
-                    sql`${normalizedCreatedAt} >= ${sixMonthsAgoIso}`
+                    sql`${workOrders.createdAt} >= ${sixMonthsAgoIso}`
                 )
             )
             .orderBy(desc(workOrders.createdAt))
@@ -447,6 +426,7 @@ export const addWorkOrderNote = authServerFn({ method: 'POST' })
             woId: data.woId,
             engineerId: data.engineerId,
             noteText: data.noteText,
+            createdAt: new Date().toISOString(),
         }).returning({ id: workOrderNotes.id })
 
         const { logger } = await import('../lib/logger')
@@ -466,12 +446,13 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data }) => {
-        const { db, workOrders, eq, sql } = await getWorkOrderDbDeps()
+        const { db, workOrders, eq } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         const user = await requirePermission('workOrders', 'update')
+        const startedAt = new Date().toISOString()
         await db.update(workOrders)
-            .set({ startAt: sql`CURRENT_TIMESTAMP` })
+            .set({ startAt: startedAt })
             .where(eq(workOrders.id, data.woId))
 
         const { logger } = await import('../lib/logger')
@@ -480,7 +461,7 @@ export const startWorkOrder = authServerFn({ method: 'POST' })
             ...withActor(user),
         })
 
-        return { startAt: new Date().toISOString() }
+        return { startAt: startedAt }
     })
 
 export const closeWorkOrder = authServerFn({ method: 'POST' })
@@ -494,7 +475,6 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
             workOrders,
             userRequests,
             eq,
-            sql,
             inArray,
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
@@ -512,10 +492,11 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         }
 
         // 1. Update WO status and end date
+        const endedAt = new Date().toISOString()
         await db.update(workOrders)
             .set({
                 status: 'Closed',
-                endAt: sql`CURRENT_TIMESTAMP`,
+                endAt: endedAt,
             })
             .where(eq(workOrders.id, data.woId))
 
@@ -539,7 +520,7 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
             requestIds,
             ...withActor(user),
         })
-        return { success: true, endAt: new Date().toISOString() }
+        return { success: true, endAt: endedAt }
     })
 
 export const updateWorkOrderNote = authServerFn({ method: 'POST' })

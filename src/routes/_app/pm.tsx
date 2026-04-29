@@ -294,10 +294,13 @@ const columns: ColumnDef<PmRow, any>[] = [
     }),
 ]
 
-function toDateInputValue(date: Date): string {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
+function toDateInputValue(value: string | Date): string {
+    const date = typeof value === 'string' ? new Date(value) : value
+    if (Number.isNaN(date.getTime())) return ''
+
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
 }
 
@@ -311,7 +314,7 @@ function getSuggestedStartDate(source: PmRow | null): string {
         return ''
     }
 
-    base.setMonth(base.getMonth() + source.intervalMonths)
+    base.setUTCMonth(base.getUTCMonth() + source.intervalMonths)
     return toDateInputValue(base)
 }
 
@@ -649,7 +652,7 @@ function PmExecutionDialog({
         if (data) {
             setAssignedEngineerIds(data.assignedEngineerIds)
             setPhysicsHandOverText(data.physicsHandOver)
-            setScheduledDate(data.startAt ? toDateInputValue(new Date(data.startAt)) : '')
+            setScheduledDate(data.startAt ? toDateInputValue(data.startAt) : '')
             const nextDraftStatus: Record<number, TaskStatus | ''> = {}
             for (const task of data.tasks) {
                 nextDraftStatus[task.taskId] = task.status ?? ''
@@ -700,7 +703,7 @@ function PmExecutionDialog({
                                         onChange={(e) => setScheduledDate(e.target.value)}
                                         onBlur={() => {
                                             if (!canManagePm || !scheduledDate) return
-                                            const currentIso = data.startAt ? toDateInputValue(new Date(data.startAt)) : ''
+                                            const currentIso = data.startAt ? toDateInputValue(data.startAt) : ''
                                             if (scheduledDate === currentIso) return
                                             rescheduleMutation.mutate(scheduledDate)
                                         }}

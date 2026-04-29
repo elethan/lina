@@ -13,6 +13,7 @@ export type PermissionResource =
     | 'pmInstances'
     | 'assetsSystems'
     | 'pmTasks'
+    | 'machineClinical'
 
 export const PERMISSION_RESOURCES = [
     'requests',
@@ -20,6 +21,7 @@ export const PERMISSION_RESOURCES = [
     'pmInstances',
     'assetsSystems',
     'pmTasks',
+    'machineClinical',
 ] as const
 
 export type PermissionAction =
@@ -65,9 +67,11 @@ export const ROLE_CAPABILITIES: Record<
         pmInstances: ['read', 'update'],
         assetsSystems: ['read'],
         pmTasks: ['read'],
+        machineClinical: ['update'],
     },
     therapist: {
         requests: ['read', 'create'],
+        machineClinical: ['update'],
     },
 }
 

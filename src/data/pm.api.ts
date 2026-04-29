@@ -283,6 +283,7 @@ export const duplicatePmInstance = authServerFn({ method: 'POST' })
                 startAt: startAtIso,
                 engineerId: null,
                 completedAt: null,
+                createdAt: new Date().toISOString(),
             })
             .returning({ id: assetPm.id })
 
@@ -777,7 +778,7 @@ export const savePm = authServerFn({ method: 'POST' })
 
         const [created] = await db
             .insert(assetPm)
-            .values({ ...values, completedAt: null })
+            .values({ ...values, completedAt: null, createdAt: new Date().toISOString() })
             .returning({ id: assetPm.id })
 
         const { logger } = await import('../lib/logger')

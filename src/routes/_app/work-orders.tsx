@@ -45,6 +45,23 @@ const getDefaultDateFrom = () => {
   return date.toISOString().slice(0, 10)
 }
 
+const EN_GB_UTC_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'UTC',
+}
+
+function formatEnGbUtcDateTime(value: string | null | undefined): string {
+  if (!value) return '-'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return '-'
+  return parsed.toLocaleString('en-GB', EN_GB_UTC_DATE_TIME_OPTIONS)
+}
+
 // ── Route ─────────────────────────────────────────────────────
 export const Route = createFileRoute('/_app/work-orders')({
   validateSearch: (search: Record<string, unknown>): WoSearchParams => ({
@@ -956,7 +973,7 @@ function WorkOrderExecutionDialog({
       header: 'Date',
       cell: (info) => {
         const d = info.getValue()
-        return d ? new Date(d).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '-'
+        return formatEnGbUtcDateTime(d)
       },
       size: 140,
     }),
@@ -1031,13 +1048,13 @@ function WorkOrderExecutionDialog({
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Start Date</h4>
                   <p className="text-sm text-gray-800 font-medium">
-                    {displayStartAt ? new Date(displayStartAt).toLocaleString() : <span className="text-gray-400 italic">Not started</span>}
+                    {displayStartAt ? formatEnGbUtcDateTime(displayStartAt) : <span className="text-gray-400 italic">Not started</span>}
                   </p>
                 </div>
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">End Date</h4>
                   <p className="text-sm text-gray-800 font-medium">
-                    {displayEndAt ? new Date(displayEndAt).toLocaleString() : <span className="text-gray-400 italic">In progress</span>}
+                    {displayEndAt ? formatEnGbUtcDateTime(displayEndAt) : <span className="text-gray-400 italic">In progress</span>}
                   </p>
                 </div>
               </div>
@@ -1066,14 +1083,14 @@ function WorkOrderExecutionDialog({
                   <div>
                     <label className="text-xs font-medium text-gray-500">Down Since</label>
                     <p className="text-sm text-gray-800 font-medium mt-0.5">
-                      {new Date(downtimeEvent.startAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      {formatEnGbUtcDateTime(downtimeEvent.startAt)}
                     </p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">Restored At</label>
                     {downtimeEvent.endAt ? (
                       <p className="text-sm text-gray-800 font-medium mt-0.5">
-                        {new Date(downtimeEvent.endAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        {formatEnGbUtcDateTime(downtimeEvent.endAt)}
                       </p>
                     ) : displayStatus !== 'Closed' ? (
                       <div className="flex items-center gap-2 mt-0.5">

@@ -273,6 +273,7 @@ function RequestsPage() {
     const canCloseRequests = canPermissionMap(permissionMap, 'requests', 'delete')
     const canCreateWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'create')
     const canMergeToWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'update')
+    const canToggleMachineClinical = canPermissionMap(permissionMap, 'machineClinical', 'update')
 
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
@@ -712,6 +713,7 @@ function RequestsPage() {
                         rowSelection={rowSelection}
                         setRowSelection={setRowSelection}
                         onSelectionChange={setSelectedItems}
+                        canToggleMachineClinical={canToggleMachineClinical}
                     />
                 )}
             </Await>
@@ -758,11 +760,13 @@ function RequestsTableView({
     rowSelection,
     setRowSelection,
     onSelectionChange,
+    canToggleMachineClinical,
 }: {
     data: RequestRow[]
     rowSelection: Record<string, boolean>
     setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
     onSelectionChange: (items: RequestRow[]) => void
+    canToggleMachineClinical: boolean
 }) {
     const { siteId, assetId, search: globalFilter = '', status: statusFilter = 'Open' } = Route.useSearch()
     const navigate = useNavigate({ from: '/' })
@@ -778,10 +782,10 @@ function RequestsTableView({
     const hasValidAssetId = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
 
     useEffect(() => {
-        if (!hasValidAssetId) {
+        if (!hasValidAssetId || !canToggleMachineClinical) {
             setIsLinacDown(false)
         }
-    }, [hasValidAssetId])
+    }, [hasValidAssetId, canToggleMachineClinical])
 
     const filteredData = useMemo(() => {
         let result = data
@@ -844,7 +848,7 @@ function RequestsTableView({
             <div className="mb-5 flex justify-center">
                 <button
                     type="button"
-                    disabled={!hasValidAssetId}
+                    disabled={!hasValidAssetId || !canToggleMachineClinical}
                     aria-pressed={isLinacDown}
                     aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
                     onClick={() => setIsLinacDown((prev) => !prev)}

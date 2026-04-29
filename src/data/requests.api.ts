@@ -211,6 +211,7 @@ export const createRequest = authServerFn({ method: 'POST' })
             downtimeStartAt: data.downtimeStartAt,
             downtimeEndAt: data.downtimeEndAt,
             status: 'Open',
+            createdAt: new Date().toISOString(),
         }).returning({ id: userRequests.id })
 
         const { logger } = await import('../lib/logger')
