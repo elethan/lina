@@ -51,6 +51,7 @@ export type RequestRow = {
     id: number
     assetId: number | null
     serialNumber: string | null
+    assetModelName: string | null
     siteId: number | null
     siteName: string | null
     systemName: string | null
@@ -99,6 +100,7 @@ export const fetchRequests = authServerFn({ method: 'GET' })
                 id: userRequests.id,
                 assetId: userRequests.assetId,
                 serialNumber: assets.serialNumber,
+                assetModelName: assets.modelName,
                 siteId: sites.id,
                 siteName: sites.name,
                 systemName: systems.name,
@@ -131,6 +133,7 @@ export const fetchRequests = authServerFn({ method: 'GET' })
             id: r.id,
             assetId: r.assetId ?? null,
             serialNumber: r.serialNumber ?? null,
+            assetModelName: r.assetModelName ?? null,
             siteId: r.siteId ?? null,
             siteName: r.siteName ?? null,
             systemName: r.systemName ?? null,

@@ -779,13 +779,21 @@ function RequestsTableView({
     const { containerRef, pageSize } = useDynamicPageSize()
     const [pageIndex, setPageIndex] = useState(0)
     const [isLinacDown, setIsLinacDown] = useState(false)
+    const [showModeConfirmDialog, setShowModeConfirmDialog] = useState(false)
+    const [pendingLinacDown, setPendingLinacDown] = useState<boolean | null>(null)
+    const [dialogSiteId, setDialogSiteId] = useState<number | undefined>(undefined)
+    const [dialogAssetId, setDialogAssetId] = useState<number | undefined>(undefined)
+    const [dialogError, setDialogError] = useState<string | null>(null)
     const hasValidAssetId = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
 
     useEffect(() => {
-        if (!hasValidAssetId || !canToggleMachineClinical) {
+        if (!canToggleMachineClinical) {
             setIsLinacDown(false)
+            setShowModeConfirmDialog(false)
+            setPendingLinacDown(null)
+            setDialogError(null)
         }
-    }, [hasValidAssetId, canToggleMachineClinical])
+    }, [canToggleMachineClinical])
 
     const filteredData = useMemo(() => {
         let result = data
@@ -797,6 +805,103 @@ function RequestsTableView({
         }
         return result
     }, [data, siteId, assetId])
+
+    const activeAssetContext = useMemo(() => {
+        if (!hasValidAssetId) return null
+
+        const row = data.find((item) => item.assetId === assetId) ?? null
+        return {
+            assetId: assetId as number,
+            siteId: typeof row?.siteId === 'number'
+                ? row.siteId
+                : (typeof siteId === 'number' ? siteId : undefined),
+            siteName: row?.siteName ?? null,
+            assetName: row?.assetModelName ?? null,
+            serialNumber: row?.serialNumber ?? null,
+        }
+    }, [hasValidAssetId, data, assetId, siteId])
+
+    const { data: modeSites, isLoading: isModeSitesLoading } = useQuery({
+        queryKey: ['sites'],
+        queryFn: async () => fetchSites(),
+        enabled: showModeConfirmDialog && !hasValidAssetId && canToggleMachineClinical,
+    })
+
+    const { data: modeEquipment, isLoading: isModeEquipmentLoading } = useQuery({
+        queryKey: ['siteEquipment', dialogSiteId],
+        queryFn: async () => fetchSiteEquipment({ data: { siteId: dialogSiteId as number } }),
+        enabled: showModeConfirmDialog && !hasValidAssetId && !!dialogSiteId && canToggleMachineClinical,
+    })
+
+    const modeAssets = modeEquipment?.assets ?? []
+    const selectedModeSiteName = modeSites?.find((site) => site.siteId === dialogSiteId)?.name
+    const selectedModeAsset = modeAssets.find((asset) => asset.assetId === dialogAssetId)
+
+    useEffect(() => {
+        if (!showModeConfirmDialog || hasValidAssetId || !dialogSiteId) return
+
+        if (modeAssets.length === 1) {
+            const onlyAssetId = modeAssets[0].assetId
+            if (dialogAssetId !== onlyAssetId) {
+                setDialogAssetId(onlyAssetId)
+            }
+            return
+        }
+
+        if (dialogAssetId && !modeAssets.some((asset) => asset.assetId === dialogAssetId)) {
+            setDialogAssetId(undefined)
+        }
+    }, [showModeConfirmDialog, hasValidAssetId, dialogSiteId, modeAssets, dialogAssetId])
+
+    const openModeDialog = () => {
+        if (!canToggleMachineClinical) return
+
+        setPendingLinacDown(!isLinacDown)
+        setDialogError(null)
+
+        if (hasValidAssetId) {
+            setDialogAssetId(assetId as number)
+            setDialogSiteId(activeAssetContext?.siteId)
+        } else {
+            setDialogSiteId(typeof siteId === 'number' ? siteId : undefined)
+            setDialogAssetId(undefined)
+        }
+
+        setShowModeConfirmDialog(true)
+    }
+
+    const handleConfirmModeToggle = () => {
+        if (pendingLinacDown === null) return
+
+        let nextSiteId = typeof siteId === 'number' ? siteId : undefined
+        let nextAssetId = hasValidAssetId ? (assetId as number) : undefined
+
+        if (!hasValidAssetId) {
+            if (!dialogSiteId) {
+                setDialogError('Site is required before changing mode.')
+                return
+            }
+            if (!dialogAssetId) {
+                setDialogError('Asset is required before changing mode.')
+                return
+            }
+            nextSiteId = dialogSiteId
+            nextAssetId = dialogAssetId
+        }
+
+        navigate({
+            search: (prev: RequestSearchParams) => ({
+                ...prev,
+                siteId: nextSiteId,
+                assetId: nextAssetId,
+            }),
+        })
+
+        setIsLinacDown(pendingLinacDown)
+        setShowModeConfirmDialog(false)
+        setPendingLinacDown(null)
+        setDialogError(null)
+    }
 
     // Report selection to outer for toolbar button states / mutations
     useEffect(() => {
@@ -845,13 +950,123 @@ function RequestsTableView({
 
     return (
         <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
+            <Dialog
+                open={showModeConfirmDialog}
+                onOpenChange={(nextOpen) => {
+                    setShowModeConfirmDialog(nextOpen)
+                    if (!nextOpen) {
+                        setPendingLinacDown(null)
+                        setDialogError(null)
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Confirm Linac Mode Change
+                        </DialogTitle>
+                        <DialogDescription>
+                            {pendingLinacDown
+                                ? 'Switch selected machine context to DOWN mode?'
+                                : 'Switch selected machine context to CLINICAL mode?'}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {hasValidAssetId ? (
+                        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                            <p><span className="font-semibold">Site:</span> {activeAssetContext?.siteName ?? '—'}</p>
+                            <p>
+                                <span className="font-semibold">Asset:</span>{' '}
+                                {activeAssetContext?.assetName ?? 'Unknown Asset'}
+                                {activeAssetContext?.serialNumber
+                                    ? ` (SN: ${activeAssetContext.serialNumber})`
+                                    : ` (ID ${activeAssetContext?.assetId ?? '—'})`}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="space-y-1.5">
+                                <label htmlFor="mode-site" className="text-sm font-medium text-gray-700">Site</label>
+                                <select
+                                    id="mode-site"
+                                    value={dialogSiteId ?? ''}
+                                    onChange={(e) => {
+                                        const value = e.target.value ? Number(e.target.value) : undefined
+                                        setDialogSiteId(value)
+                                        setDialogAssetId(undefined)
+                                    }}
+                                    disabled={isModeSitesLoading}
+                                    className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
+                                >
+                                    <option value="">Select a Site</option>
+                                    {modeSites?.map((site) => (
+                                        <option key={site.siteId} value={site.siteId}>{site.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label htmlFor="mode-asset" className="text-sm font-medium text-gray-700">Asset</label>
+                                <select
+                                    id="mode-asset"
+                                    value={dialogAssetId ?? ''}
+                                    onChange={(e) => setDialogAssetId(e.target.value ? Number(e.target.value) : undefined)}
+                                    disabled={!dialogSiteId || isModeEquipmentLoading}
+                                    className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
+                                >
+                                    <option value="">{dialogSiteId ? 'Select an Asset' : 'Select a Site first'}</option>
+                                    {modeAssets.map((asset) => (
+                                        <option key={asset.assetId} value={asset.assetId}>
+                                            {(asset.modelName || 'Unknown Model')} (SN: {asset.serialNumber})
+                                        </option>
+                                    ))}
+                                </select>
+                                {dialogSiteId && selectedModeSiteName && (
+                                    <p className="text-xs text-gray-500">Selected site: {selectedModeSiteName}</p>
+                                )}
+                                {selectedModeAsset && (
+                                    <p className="text-xs text-gray-500">
+                                        Selected asset: {selectedModeAsset.modelName || 'Unknown Model'} (SN: {selectedModeAsset.serialNumber})
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {dialogError && (
+                        <p className="text-sm text-red-600">{dialogError}</p>
+                    )}
+
+                    <DialogFooter>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowModeConfirmDialog(false)
+                                setPendingLinacDown(null)
+                                setDialogError(null)
+                            }}
+                            className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirmModeToggle}
+                            className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md shadow-sm transition-colors"
+                        >
+                            Confirm
+                        </button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <div className="mb-5 flex justify-center">
                 <button
                     type="button"
-                    disabled={!hasValidAssetId || !canToggleMachineClinical}
+                    disabled={!canToggleMachineClinical}
                     aria-pressed={isLinacDown}
                     aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
-                    onClick={() => setIsLinacDown((prev) => !prev)}
+                    onClick={openModeDialog}
                     className="group relative h-32 w-full max-w-156 overflow-hidden rounded-full border border-gray-300/80 bg-white shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-sm [--linac-rail-y:clamp(0.375rem,6%,1rem)]"
                 >
                     <svg
