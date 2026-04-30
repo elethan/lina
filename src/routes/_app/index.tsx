@@ -25,7 +25,7 @@ import {
     DialogDescription,
     DialogFooter,
 } from '../../components/ui/dialog'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import TableSkeleton from '../../components/TableSkeleton'
 import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
@@ -35,8 +35,14 @@ import { canPermissionMap } from '../../lib/role-permissions'
 import { pushClientErrorNotice } from '../../lib/client-error-logger'
 import { UNAUTHORIZED_REDIRECT_NOTICE } from '../../lib/redirect-target'
 
-import { fetchSiteEquipment, fetchSites } from '../../data/equipment.api'
-import { useQuery } from '@tanstack/react-query'
+import {
+    fetchMachineClinicalAssetContext,
+    fetchMachineClinicalAssetsBySite,
+    fetchMachineClinicalStatus,
+    fetchSiteEquipment,
+    fetchSites,
+    updateMachineClinicalStatus,
+} from '../../data/equipment.api'
 
 type RequestSearchParams = {
     search?: string
@@ -714,6 +720,7 @@ function RequestsPage() {
                         setRowSelection={setRowSelection}
                         onSelectionChange={setSelectedItems}
                         canToggleMachineClinical={canToggleMachineClinical}
+                        currentUserRole={currentPermissions?.role}
                     />
                 )}
             </Await>
@@ -755,22 +762,34 @@ function RequestsPage() {
 }
 
 // ── Inner table view (renders inside <Await> once data resolves) ────
+type MachineClinicalStatus = 'Clinical' | 'Down'
+
+const normalizeMachineClinicalStatus = (status: string | null | undefined): MachineClinicalStatus => {
+    if (!status) return 'Clinical'
+    return status.toLowerCase() === 'down' ? 'Down' : 'Clinical'
+}
+
 function RequestsTableView({
     data,
     rowSelection,
     setRowSelection,
     onSelectionChange,
     canToggleMachineClinical,
+    currentUserRole,
 }: {
     data: RequestRow[]
     rowSelection: Record<string, boolean>
     setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
     onSelectionChange: (items: RequestRow[]) => void
     canToggleMachineClinical: boolean
+    currentUserRole?: string
 }) {
+    const router = useRouter()
+    const queryClient = useQueryClient()
     const { siteId, assetId, search: globalFilter = '', status: statusFilter = 'Open' } = Route.useSearch()
     const navigate = useNavigate({ from: '/' })
     const selectedCount = Object.keys(rowSelection).length
+    const isTherapist = String(currentUserRole ?? '').toLowerCase() === 'therapist'
 
     const [columnFilters, setColumnFilters] = useState<any[]>([
         ...(statusFilter && statusFilter !== 'All' ? [{ id: 'status', value: statusFilter }] : []),
@@ -778,22 +797,12 @@ function RequestsTableView({
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const { containerRef, pageSize } = useDynamicPageSize()
     const [pageIndex, setPageIndex] = useState(0)
-    const [isLinacDown, setIsLinacDown] = useState(false)
     const [showModeConfirmDialog, setShowModeConfirmDialog] = useState(false)
-    const [pendingLinacDown, setPendingLinacDown] = useState<boolean | null>(null)
-    const [dialogSiteId, setDialogSiteId] = useState<number | undefined>(undefined)
-    const [dialogAssetId, setDialogAssetId] = useState<number | undefined>(undefined)
-    const [dialogError, setDialogError] = useState<string | null>(null)
-    const hasValidAssetId = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
+    const [pendingModeStatus, setPendingModeStatus] = useState<MachineClinicalStatus | null>(null)
+    const [modeDialogError, setModeDialogError] = useState<string | null>(null)
 
-    useEffect(() => {
-        if (!canToggleMachineClinical) {
-            setIsLinacDown(false)
-            setShowModeConfirmDialog(false)
-            setPendingLinacDown(null)
-            setDialogError(null)
-        }
-    }, [canToggleMachineClinical])
+    const hasSelectedAsset = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
+    const selectedAssetId = hasSelectedAsset ? assetId : undefined
 
     const filteredData = useMemo(() => {
         let result = data
@@ -806,102 +815,152 @@ function RequestsTableView({
         return result
     }, [data, siteId, assetId])
 
-    const activeAssetContext = useMemo(() => {
-        if (!hasValidAssetId) return null
-
-        const row = data.find((item) => item.assetId === assetId) ?? null
-        return {
-            assetId: assetId as number,
-            siteId: typeof row?.siteId === 'number'
-                ? row.siteId
-                : (typeof siteId === 'number' ? siteId : undefined),
-            siteName: row?.siteName ?? null,
-            assetName: row?.assetModelName ?? null,
-            serialNumber: row?.serialNumber ?? null,
-        }
-    }, [hasValidAssetId, data, assetId, siteId])
-
     const { data: modeSites, isLoading: isModeSitesLoading } = useQuery({
         queryKey: ['sites'],
         queryFn: async () => fetchSites(),
-        enabled: showModeConfirmDialog && !hasValidAssetId && canToggleMachineClinical,
     })
 
-    const { data: modeEquipment, isLoading: isModeEquipmentLoading } = useQuery({
-        queryKey: ['siteEquipment', dialogSiteId],
-        queryFn: async () => fetchSiteEquipment({ data: { siteId: dialogSiteId as number } }),
-        enabled: showModeConfirmDialog && !hasValidAssetId && !!dialogSiteId && canToggleMachineClinical,
+    const { data: modeAssetContext } = useQuery({
+        queryKey: ['machine-clinical-asset-context', selectedAssetId],
+        queryFn: async () => fetchMachineClinicalAssetContext({ data: { assetId: selectedAssetId as number } }),
+        enabled: hasSelectedAsset,
     })
 
-    const modeAssets = modeEquipment?.assets ?? []
-    const selectedModeSiteName = modeSites?.find((site) => site.siteId === dialogSiteId)?.name
-    const selectedModeAsset = modeAssets.find((asset) => asset.assetId === dialogAssetId)
+    const resolvedSiteId = typeof siteId === 'number'
+        ? siteId
+        : (modeAssetContext?.siteId ?? undefined)
+
+    const { data: modeAssets, isLoading: isModeAssetsLoading } = useQuery({
+        queryKey: ['machine-clinical-assets-by-site', resolvedSiteId],
+        queryFn: async () => fetchMachineClinicalAssetsBySite({ data: { siteId: resolvedSiteId as number } }),
+        enabled: typeof resolvedSiteId === 'number',
+    })
+
+    const { data: machineStatus, isLoading: isMachineStatusLoading } = useQuery({
+        queryKey: ['machine-clinical-status', selectedAssetId],
+        queryFn: async () => fetchMachineClinicalStatus({ data: { assetId: selectedAssetId as number } }),
+        enabled: hasSelectedAsset,
+    })
+
+    const isLinacDown = normalizeMachineClinicalStatus(machineStatus?.status) === 'Down'
+
+    const { mutate: mutateMachineClinicalStatus, isPending: isUpdatingMachineStatus } = useMutation({
+        mutationFn: async (payload: { assetId: number; status: MachineClinicalStatus }) =>
+            updateMachineClinicalStatus({ data: payload }),
+        onSuccess: async (_result, vars) => {
+            await queryClient.invalidateQueries({
+                queryKey: ['machine-clinical-status', vars.assetId],
+            })
+            await queryClient.invalidateQueries({
+                queryKey: ['machine-clinical-asset-context', vars.assetId],
+            })
+            await queryClient.invalidateQueries({
+                queryKey: ['machine-clinical-assets-by-site'],
+            })
+            await queryClient.invalidateQueries({
+                queryKey: ['siteEquipment'],
+            })
+
+            setShowModeConfirmDialog(false)
+            setPendingModeStatus(null)
+            setModeDialogError(null)
+            router.invalidate()
+        },
+        onError: (error: Error) => {
+            setModeDialogError(error.message || 'Failed to update machine mode.')
+        },
+    })
 
     useEffect(() => {
-        if (!showModeConfirmDialog || hasValidAssetId || !dialogSiteId) return
+        if (!hasSelectedAsset) return
+        if (typeof siteId === 'number') return
+        if (typeof modeAssetContext?.siteId !== 'number') return
 
-        if (modeAssets.length === 1) {
-            const onlyAssetId = modeAssets[0].assetId
-            if (dialogAssetId !== onlyAssetId) {
-                setDialogAssetId(onlyAssetId)
+        navigate({
+            replace: true,
+            search: (prev: RequestSearchParams) => ({
+                ...prev,
+                siteId: modeAssetContext.siteId ?? undefined,
+            }),
+        })
+    }, [hasSelectedAsset, siteId, modeAssetContext?.siteId, navigate])
+
+    useEffect(() => {
+        if (hasSelectedAsset && modeAssets && modeAssets.length > 0) {
+            const stillVisible = modeAssets.some((asset) => asset.assetId === selectedAssetId)
+            if (!stillVisible) {
+                navigate({
+                    replace: true,
+                    search: (prev: RequestSearchParams) => ({
+                        ...prev,
+                        assetId: undefined,
+                    }),
+                })
             }
-            return
         }
+    }, [hasSelectedAsset, modeAssets, selectedAssetId, navigate])
 
-        if (dialogAssetId && !modeAssets.some((asset) => asset.assetId === dialogAssetId)) {
-            setDialogAssetId(undefined)
-        }
-    }, [showModeConfirmDialog, hasValidAssetId, dialogSiteId, modeAssets, dialogAssetId])
+    useEffect(() => {
+        if (hasSelectedAsset) return
+        if (typeof resolvedSiteId !== 'number') return
+        if (!modeAssets || modeAssets.length !== 1) return
+
+        const onlyAssetId = modeAssets[0].assetId
+        navigate({
+            replace: true,
+            search: (prev: RequestSearchParams) => ({
+                ...prev,
+                siteId: resolvedSiteId,
+                assetId: onlyAssetId,
+            }),
+        })
+    }, [hasSelectedAsset, modeAssets, resolvedSiteId, navigate])
+
+    const handleSiteComboChange = (value: string) => {
+        const nextSiteId = value ? Number(value) : undefined
+        navigate({
+            search: (prev: RequestSearchParams) => ({
+                ...prev,
+                siteId: nextSiteId,
+                assetId: undefined,
+            }),
+        })
+    }
+
+    const handleAssetComboChange = (value: string) => {
+        const nextAssetId = value ? Number(value) : undefined
+        navigate({
+            search: (prev: RequestSearchParams) => ({
+                ...prev,
+                siteId: typeof resolvedSiteId === 'number' ? resolvedSiteId : prev.siteId,
+                assetId: nextAssetId,
+            }),
+        })
+    }
 
     const openModeDialog = () => {
-        if (!canToggleMachineClinical) return
+        if (!canToggleMachineClinical || !hasSelectedAsset) return
 
-        setPendingLinacDown(!isLinacDown)
-        setDialogError(null)
-
-        if (hasValidAssetId) {
-            setDialogAssetId(assetId as number)
-            setDialogSiteId(activeAssetContext?.siteId)
-        } else {
-            setDialogSiteId(typeof siteId === 'number' ? siteId : undefined)
-            setDialogAssetId(undefined)
-        }
+        setPendingModeStatus(isLinacDown ? 'Clinical' : 'Down')
+        setModeDialogError(null)
 
         setShowModeConfirmDialog(true)
     }
 
     const handleConfirmModeToggle = () => {
-        if (pendingLinacDown === null) return
+        if (!pendingModeStatus || !selectedAssetId) return
 
-        let nextSiteId = typeof siteId === 'number' ? siteId : undefined
-        let nextAssetId = hasValidAssetId ? (assetId as number) : undefined
-
-        if (!hasValidAssetId) {
-            if (!dialogSiteId) {
-                setDialogError('Site is required before changing mode.')
-                return
-            }
-            if (!dialogAssetId) {
-                setDialogError('Asset is required before changing mode.')
-                return
-            }
-            nextSiteId = dialogSiteId
-            nextAssetId = dialogAssetId
-        }
-
-        navigate({
-            search: (prev: RequestSearchParams) => ({
-                ...prev,
-                siteId: nextSiteId,
-                assetId: nextAssetId,
-            }),
+        mutateMachineClinicalStatus({
+            assetId: selectedAssetId,
+            status: pendingModeStatus,
         })
-
-        setIsLinacDown(pendingLinacDown)
-        setShowModeConfirmDialog(false)
-        setPendingLinacDown(null)
-        setDialogError(null)
     }
+
+    const isToggleDisabled =
+        !canToggleMachineClinical ||
+        !hasSelectedAsset ||
+        isMachineStatusLoading ||
+        isUpdatingMachineStatus
 
     // Report selection to outer for toolbar button states / mutations
     useEffect(() => {
@@ -955,8 +1014,8 @@ function RequestsTableView({
                 onOpenChange={(nextOpen) => {
                     setShowModeConfirmDialog(nextOpen)
                     if (!nextOpen) {
-                        setPendingLinacDown(null)
-                        setDialogError(null)
+                        setPendingModeStatus(null)
+                        setModeDialogError(null)
                     }
                 }}
             >
@@ -966,75 +1025,14 @@ function RequestsTableView({
                             Confirm Linac Mode Change
                         </DialogTitle>
                         <DialogDescription>
-                            {pendingLinacDown
-                                ? 'Switch selected machine context to DOWN mode?'
-                                : 'Switch selected machine context to CLINICAL mode?'}
+                            {pendingModeStatus
+                                ? `Are you sure you want to switch this machine to ${pendingModeStatus.toUpperCase()} mode?`
+                                : 'Are you sure you want to change this machine mode?'}
                         </DialogDescription>
                     </DialogHeader>
 
-                    {hasValidAssetId ? (
-                        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-                            <p><span className="font-semibold">Site:</span> {activeAssetContext?.siteName ?? '—'}</p>
-                            <p>
-                                <span className="font-semibold">Asset:</span>{' '}
-                                {activeAssetContext?.assetName ?? 'Unknown Asset'}
-                                {activeAssetContext?.serialNumber
-                                    ? ` (SN: ${activeAssetContext.serialNumber})`
-                                    : ` (ID ${activeAssetContext?.assetId ?? '—'})`}
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            <div className="space-y-1.5">
-                                <label htmlFor="mode-site" className="text-sm font-medium text-gray-700">Site</label>
-                                <select
-                                    id="mode-site"
-                                    value={dialogSiteId ?? ''}
-                                    onChange={(e) => {
-                                        const value = e.target.value ? Number(e.target.value) : undefined
-                                        setDialogSiteId(value)
-                                        setDialogAssetId(undefined)
-                                    }}
-                                    disabled={isModeSitesLoading}
-                                    className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
-                                >
-                                    <option value="">Select a Site</option>
-                                    {modeSites?.map((site) => (
-                                        <option key={site.siteId} value={site.siteId}>{site.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <label htmlFor="mode-asset" className="text-sm font-medium text-gray-700">Asset</label>
-                                <select
-                                    id="mode-asset"
-                                    value={dialogAssetId ?? ''}
-                                    onChange={(e) => setDialogAssetId(e.target.value ? Number(e.target.value) : undefined)}
-                                    disabled={!dialogSiteId || isModeEquipmentLoading}
-                                    className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500"
-                                >
-                                    <option value="">{dialogSiteId ? 'Select an Asset' : 'Select a Site first'}</option>
-                                    {modeAssets.map((asset) => (
-                                        <option key={asset.assetId} value={asset.assetId}>
-                                            {(asset.modelName || 'Unknown Model')} (SN: {asset.serialNumber})
-                                        </option>
-                                    ))}
-                                </select>
-                                {dialogSiteId && selectedModeSiteName && (
-                                    <p className="text-xs text-gray-500">Selected site: {selectedModeSiteName}</p>
-                                )}
-                                {selectedModeAsset && (
-                                    <p className="text-xs text-gray-500">
-                                        Selected asset: {selectedModeAsset.modelName || 'Unknown Model'} (SN: {selectedModeAsset.serialNumber})
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {dialogError && (
-                        <p className="text-sm text-red-600">{dialogError}</p>
+                    {modeDialogError && (
+                        <p className="text-sm text-red-600">{modeDialogError}</p>
                     )}
 
                     <DialogFooter>
@@ -1042,8 +1040,8 @@ function RequestsTableView({
                             type="button"
                             onClick={() => {
                                 setShowModeConfirmDialog(false)
-                                setPendingLinacDown(null)
-                                setDialogError(null)
+                                setPendingModeStatus(null)
+                                setModeDialogError(null)
                             }}
                             className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
                         >
@@ -1052,18 +1050,63 @@ function RequestsTableView({
                         <button
                             type="button"
                             onClick={handleConfirmModeToggle}
+                            disabled={isUpdatingMachineStatus}
                             className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md shadow-sm transition-colors"
                         >
-                            Confirm
+                            {isUpdatingMachineStatus ? 'Updating...' : 'Confirm'}
                         </button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            <div className="mb-5 flex justify-center">
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div className="w-full shrink-0 space-y-2 lg:w-72">
+                    <div className="space-y-1">
+                        <label htmlFor="linac-site" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                            Site
+                        </label>
+                        <select
+                            id="linac-site"
+                            value={resolvedSiteId ?? ''}
+                            onChange={(e) => handleSiteComboChange(e.target.value)}
+                            disabled={isTherapist || isModeSitesLoading}
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                        >
+                            <option value="">Select a site</option>
+                            {modeSites?.map((site) => (
+                                <option key={site.siteId} value={site.siteId}>
+                                    {site.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label htmlFor="linac-asset" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                            Asset
+                        </label>
+                        <select
+                            id="linac-asset"
+                            value={selectedAssetId ?? ''}
+                            onChange={(e) => handleAssetComboChange(e.target.value)}
+                            disabled={isTherapist || typeof resolvedSiteId !== 'number' || isModeAssetsLoading}
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                        >
+                            <option value="">
+                                {typeof resolvedSiteId === 'number' ? 'Select an asset' : 'Select a site first'}
+                            </option>
+                            {(modeAssets ?? []).map((asset) => (
+                                <option key={asset.assetId} value={asset.assetId}>
+                                    {(asset.modelName || 'Unknown Model')} (SN: {asset.serialNumber})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
                 <button
                     type="button"
-                    disabled={!canToggleMachineClinical}
+                    disabled={isToggleDisabled}
                     aria-pressed={isLinacDown}
                     aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
                     onClick={openModeDialog}

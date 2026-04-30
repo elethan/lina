@@ -1,4 +1,4 @@
-import { Link, useRouter } from '@tanstack/react-router'
+import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import {
     MessageSquareText,
@@ -42,11 +42,12 @@ export default function Sidebar({ userRole }: SidebarProps) {
     const [showRoleMenu, setShowRoleMenu] = useState(false)
     const [showRoleDetails, setShowRoleDetails] = useState(false)
     const router = useRouter()
+    const location = useLocation()
     const roleMenuRef = useRef<HTMLDivElement | null>(null)
 
     const roleLabel = formatRoleLabel(userRole)
     const currentRole = normalizeAppRole(userRole)
-    const currentPath = router.state.location.pathname
+    const currentPath = location.pathname
     const [savedRequestsSearch, setSavedRequestsSearch] = useState<RequestsUrlState | null>(null)
     const { data: currentPermissions } = useQuery({
         queryKey: ['current-user-permissions'],
@@ -60,10 +61,10 @@ export default function Sidebar({ userRole }: SidebarProps) {
     useEffect(() => {
         if (currentPath !== '/') return
 
-        const next = pickRequestsUrlState(router.state.location.search as Record<string, unknown>)
+        const next = pickRequestsUrlState(location.search as Record<string, unknown>)
         saveRequestsUrlState(next)
         setSavedRequestsSearch(next)
-    }, [currentPath, router.state.location.search])
+    }, [currentPath, location.search])
 
     useEffect(() => {
         if (!showRoleMenu) return

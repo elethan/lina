@@ -150,10 +150,18 @@ export const Route = createFileRoute('/_app/assets')({
 })
 
 function statusBadge(status: string) {
-  if (status === 'De-commissioned') {
+  const normalized = status.trim().toLowerCase()
+
+  if (normalized === 'de-commissioned' || normalized === 'decommissioned') {
+    return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200'
+  }
+
+  if (normalized === 'down') {
     return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200'
   }
-  return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary-darker border border-primary/20'
+
+  // Treat Clinical and legacy Operational as healthy status.
+  return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
 }
 
 function AssetsPage() {
@@ -909,11 +917,6 @@ function AssetsPage() {
         header: 'Admin Credentials',
         size: 180,
         cell: (info) => <span>{info.getValue() ?? '—'}</span>,
-      }),
-      systemColumnHelper.accessor('status', {
-        header: 'Status',
-        size: 140,
-        cell: (info) => <span className={statusBadge(info.getValue())}>{info.getValue()}</span>,
       }),
     ]
 
