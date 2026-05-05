@@ -22,7 +22,7 @@ import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data
 import { fetchEngineers, assignWorkOrdersToEngineer } from '../../data/engineers.api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog'
-import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, updateWorkOrderNote, startWorkOrder, fetchDowntimeByWoId, createDowntimeEvent, updateDowntimeEvent } from '../../data/workorders.api'
+import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, reopenWorkOrder, updateWorkOrderNote, startWorkOrder, fetchDowntimeByWoId, createDowntimeEvent, updateDowntimeEvent } from '../../data/workorders.api'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
@@ -55,11 +55,58 @@ const EN_GB_UTC_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   timeZone: 'UTC',
 }
 
-function formatEnGbUtcDateTime(value: string | null | undefined): string {
-  if (!value) return '-'
+const EN_GB_LOCAL_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+}
+
+const EN_GB_UTC_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+}
+
+const EN_GB_LOCAL_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+}
+
+function HydratedDateText({
+  value,
+  dateOnly = false,
+  emptyText = '-',
+}: {
+  value: string | null | undefined
+  dateOnly?: boolean
+  emptyText?: string
+}) {
+  const [isHydrated, setIsHydrated] = useState(false)
+
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
+
+  if (!value) return <>{emptyText}</>
+
   const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return '-'
-  return parsed.toLocaleString('en-GB', EN_GB_UTC_DATE_TIME_OPTIONS)
+  if (Number.isNaN(parsed.getTime())) return <>{emptyText}</>
+
+  if (dateOnly) {
+    const dateOptions = isHydrated ? EN_GB_LOCAL_DATE_OPTIONS : EN_GB_UTC_DATE_OPTIONS
+    return <>{parsed.toLocaleDateString('en-GB', dateOptions)}</>
+  }
+
+  const dateTimeOptions = isHydrated
+    ? EN_GB_LOCAL_DATE_TIME_OPTIONS
+    : EN_GB_UTC_DATE_TIME_OPTIONS
+
+  return <>{parsed.toLocaleString('en-GB', dateTimeOptions)}</>
 }
 
 // ── Route ─────────────────────────────────────────────────────
@@ -252,12 +299,7 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
       if (!date) return <span className="text-gray-300 italic text-xs">Not started</span>
       return (
         <span className="text-gray-600 text-xs">
-          {new Date(date).toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            timeZone: 'UTC',
-          })}
+          <HydratedDateText value={date} dateOnly />
         </span>
       )
     },
@@ -270,12 +312,7 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
       if (!date) return <span className="text-gray-300">—</span>
       return (
         <span className="text-green-600 text-xs font-medium">
-          {new Date(date).toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            timeZone: 'UTC',
-          })}
+          <HydratedDateText value={date} dateOnly />
         </span>
       )
     },
@@ -305,12 +342,7 @@ const columns: ColumnDef<WorkOrderRow, any>[] = [
       if (!date) return <span className="text-gray-300">—</span>
       return (
         <span className="text-gray-400 text-xs">
-          {new Date(date).toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            timeZone: 'UTC',
-          })}
+          <HydratedDateText value={date} dateOnly />
         </span>
       )
     },
@@ -366,6 +398,7 @@ function WorkOrdersPage() {
   // ── Derived state for single selection ──────────────────────────────
   const selectedWo = selectedWos[0] ?? null
   const isStarted = !!(selectedWo && selectedWo.startAt)
+  const isClosed = selectedWo?.status === 'Closed'
 
   // ── Set toolbar content (synchronous — SSR-safe) ─────────────
   const toolbarConfig = useMemo(() => ({
@@ -423,7 +456,7 @@ function WorkOrdersPage() {
           className="inline-flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-all w-40"
         >
           <Play size={16} />
-          {isStarted ? 'Continue' : 'Start'}
+          {isClosed ? 'View' : isStarted ? 'Continue' : 'Start'}
         </button>
         {canDeleteWorkOrders && (
           <button
@@ -443,6 +476,7 @@ function WorkOrdersPage() {
     dateFrom,
     dateTo,
     selectedCount,
+    isClosed,
     isStarted,
     canDeleteWorkOrders,
     canUpdateWorkOrders,
@@ -584,20 +618,18 @@ function WorkOrdersTableView({
     },
     onRowSelectionChange: setRowSelection,
     onColumnFiltersChange: (updater) => {
-      setColumnFilters((prev) => {
-        const next = typeof updater === 'function' ? updater(prev) : updater
-        const newStatus = (next.find((f: any) => f.id === 'status')?.value as string | undefined) ?? 'Open'
-        const newEngineerId = next.find((f: any) => f.id === 'engineerId')?.value as number | undefined
+      const next = typeof updater === 'function' ? updater(columnFilters) : updater
+      setColumnFilters(next)
 
-        navigate({
-          search: (old: WoSearchParams) => ({
-            ...old,
-            status: newStatus,
-            engineerId: newEngineerId,
-          })
+      const newStatus = (next.find((f: any) => f.id === 'status')?.value as string | undefined) ?? 'Open'
+      const newEngineerId = next.find((f: any) => f.id === 'engineerId')?.value as number | undefined
+
+      navigate({
+        search: (old: WoSearchParams) => ({
+          ...old,
+          status: newStatus,
+          engineerId: newEngineerId,
         })
-
-        return next
       })
     },
     globalFilterFn: (row, _columnId, filterValue) => {
@@ -844,6 +876,7 @@ function WorkOrderExecutionDialog({
   const [displayStartAt, setDisplayStartAt] = useState<string | null>(wo?.startAt ?? null)
   const [displayEndAt, setDisplayEndAt] = useState<string | null>(wo?.endAt ?? null)
   const [displayStatus, setDisplayStatus] = useState<string>(wo?.status ?? 'Open')
+  const isClosedWorkOrder = displayStatus === 'Closed'
   const [showStartAssignDialog, setShowStartAssignDialog] = useState(false)
   const [startEngineerId, setStartEngineerId] = useState<number>(
     defaultEngineerId > 0 ? defaultEngineerId : (engineers[0]?.id ?? 0),
@@ -865,6 +898,15 @@ function WorkOrderExecutionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wo?.id])
 
+  useEffect(() => {
+    if (!open) {
+      setShowCloseConfirmDialog(false)
+      setShowStartAssignDialog(false)
+      setShowAddNote(false)
+      setStartAssignError(null)
+    }
+  }, [open])
+
   // Mutation to start the WO
   const router = useRouter()
   const startWoMutation = useMutation({
@@ -872,6 +914,9 @@ function WorkOrderExecutionDialog({
     onSuccess: (result) => {
       setDisplayStartAt(result.startAt)
       router.invalidate() // Refresh parent table so "Start" -> "Continue"
+    },
+    onError: (err: Error) => {
+      alert(err.message || 'Failed to start work order')
     },
   })
 
@@ -898,6 +943,7 @@ function WorkOrderExecutionDialog({
     canAssignEngineer &&
     open &&
     wo &&
+    !isClosedWorkOrder &&
     !wo.startAt &&
     !displayStartAt &&
     !wo.engineerId
@@ -912,14 +958,14 @@ function WorkOrderExecutionDialog({
   // Auto-start: set startAt if the WO hasn't been started yet
   const autoStartedRef = useRef(false)
   useEffect(() => {
-    if (open && wo && !wo.startAt && !displayStartAt && !requiresStartEngineerSelection && !autoStartedRef.current) {
+    if (open && wo && !isClosedWorkOrder && !wo.startAt && !displayStartAt && !requiresStartEngineerSelection && !autoStartedRef.current) {
       autoStartedRef.current = true
       startWoMutation.mutate()
     }
     if (!open) {
       autoStartedRef.current = false
     }
-  }, [open, wo?.id, displayStartAt, requiresStartEngineerSelection])
+  }, [open, wo?.id, displayStartAt, requiresStartEngineerSelection, isClosedWorkOrder])
 
   // Fetch the chronologically ordered notes
   const { data: notes, refetch } = useQuery({
@@ -971,10 +1017,7 @@ function WorkOrderExecutionDialog({
   const notesColumns = useMemo(() => [
     notesColumnHelper.accessor('createdAt', {
       header: 'Date',
-      cell: (info) => {
-        const d = info.getValue()
-        return formatEnGbUtcDateTime(d)
-      },
+      cell: (info) => <HydratedDateText value={info.getValue()} />,
       size: 140,
     }),
     notesColumnHelper.accessor('engineerName', {
@@ -1014,6 +1057,19 @@ function WorkOrderExecutionDialog({
     },
   })
 
+  const reopenWoMutation = useMutation({
+    mutationFn: async () => await reopenWorkOrder({ data: { woId: wo!.id } }),
+    onSuccess: (result) => {
+      setDisplayStatus(result.status)
+      setDisplayEndAt(null)
+      setShowCloseConfirmDialog(false)
+      router.invalidate()
+    },
+    onError: (err: Error) => {
+      alert(err.message || 'Failed to reopen work order')
+    },
+  })
+
 
   if (!wo) return null
 
@@ -1048,13 +1104,13 @@ function WorkOrderExecutionDialog({
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Start Date</h4>
                   <p className="text-sm text-gray-800 font-medium">
-                    {displayStartAt ? formatEnGbUtcDateTime(displayStartAt) : <span className="text-gray-400 italic">Not started</span>}
+                    {displayStartAt ? <HydratedDateText value={displayStartAt} /> : <span className="text-gray-400 italic">Not started</span>}
                   </p>
                 </div>
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">End Date</h4>
                   <p className="text-sm text-gray-800 font-medium">
-                    {displayEndAt ? formatEnGbUtcDateTime(displayEndAt) : <span className="text-gray-400 italic">In progress</span>}
+                    {displayEndAt ? <HydratedDateText value={displayEndAt} /> : <span className="text-gray-400 italic">In progress</span>}
                   </p>
                 </div>
               </div>
@@ -1083,14 +1139,14 @@ function WorkOrderExecutionDialog({
                   <div>
                     <label className="text-xs font-medium text-gray-500">Down Since</label>
                     <p className="text-sm text-gray-800 font-medium mt-0.5">
-                      {formatEnGbUtcDateTime(downtimeEvent.startAt)}
+                      <HydratedDateText value={downtimeEvent.startAt} />
                     </p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">Restored At</label>
                     {downtimeEvent.endAt ? (
                       <p className="text-sm text-gray-800 font-medium mt-0.5">
-                        {formatEnGbUtcDateTime(downtimeEvent.endAt)}
+                        <HydratedDateText value={downtimeEvent.endAt} />
                       </p>
                     ) : displayStatus !== 'Closed' ? (
                       <div className="flex items-center gap-2 mt-0.5">
@@ -1229,7 +1285,7 @@ function WorkOrderExecutionDialog({
                 <UserPlus size={16} />
                 Add Note Entry
               </button>
-              {displayStatus !== 'Closed' && (
+              {displayStatus !== 'Closed' ? (
                 <button
                   onClick={() => setShowCloseConfirmDialog(true)}
                   disabled={!canUpdateWorkOrders || closeWoMutation.isPending}
@@ -1237,6 +1293,15 @@ function WorkOrderExecutionDialog({
                 >
                   <XCircle size={16} />
                   {closeWoMutation.isPending ? 'Closing...' : 'Close Work Order'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => reopenWoMutation.mutate()}
+                  disabled={!canUpdateWorkOrders || reopenWoMutation.isPending}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200 disabled:opacity-50"
+                >
+                  <CheckCircle2 size={16} />
+                  {reopenWoMutation.isPending ? 'Reopening...' : 'Reopen Work Order'}
                 </button>
               )}
             </div>
@@ -1250,7 +1315,7 @@ function WorkOrderExecutionDialog({
             <DialogTitle>Close This Work Order?</DialogTitle>
             <DialogDescription>
               This will mark the work order as Closed and close all linked requests.
-              You cannot reopen it from this screen.
+              You can reopen it later from the execution view if this was accidental.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

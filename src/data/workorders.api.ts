@@ -212,6 +212,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 systemId: userRequests.systemId,
                 commentText: userRequests.commentText,
                 downtimeStartAt: userRequests.downtimeStartAt,
+                downtimeEndAt: userRequests.downtimeEndAt,
             })
             .from(userRequests)
             .where(inArray(userRequests.id, requestIds))
@@ -246,7 +247,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             .set({ status: 'Active', woId: wo.id })
             .where(inArray(userRequests.id, requestIds))
 
-        // Auto-create downtime event if first request has downtimeStartAt
+        // Inherit downtime values from the source request when downtime start exists.
         if (firstRequest.downtimeStartAt && firstRequest.assetId && firstRequest.systemId) {
             const { downtimeEvents } = await getWorkOrderDbDeps()
             await db.insert(downtimeEvents).values({
@@ -254,6 +255,7 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
                 systemId: firstRequest.systemId,
                 woId: wo.id,
                 startAt: firstRequest.downtimeStartAt,
+                endAt: firstRequest.downtimeEndAt,
             })
         }
 
@@ -523,6 +525,64 @@ export const closeWorkOrder = authServerFn({ method: 'POST' })
         return { success: true, endAt: endedAt }
     })
 
+export const reopenWorkOrder = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woId: number }) => {
+        if (!data.woId) throw new Error('Work Order ID is required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const {
+            db,
+            workOrders,
+            userRequests,
+            eq,
+            and,
+        } = await getWorkOrderDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        const user = await requirePermission('workOrders', 'update')
+
+        const [existing] = await db
+            .select({
+                id: workOrders.id,
+                status: workOrders.status,
+                startAt: workOrders.startAt,
+            })
+            .from(workOrders)
+            .where(eq(workOrders.id, data.woId))
+
+        if (!existing) {
+            throw new Error('Work Order not found')
+        }
+
+        if (existing.status !== 'Closed') {
+            return { success: true, status: existing.status }
+        }
+
+        const reopenedStatus = existing.startAt ? 'Active' : 'Open'
+        const linkedRequestStatus = reopenedStatus === 'Active' ? 'Active' : 'Open'
+
+        await db.update(workOrders)
+            .set({
+                status: reopenedStatus,
+                endAt: null,
+            })
+            .where(eq(workOrders.id, data.woId))
+
+        await db.update(userRequests)
+            .set({ status: linkedRequestStatus })
+            .where(and(eq(userRequests.woId, data.woId), eq(userRequests.status, 'Closed')))
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_REOPENED', {
+            woId: data.woId,
+            status: reopenedStatus,
+            ...withActor(user),
+        })
+
+        return { success: true, status: reopenedStatus }
+    })
+
 export const updateWorkOrderNote = authServerFn({ method: 'POST' })
     .inputValidator((data: { noteId: number; noteText: string }) => {
         if (!data.noteId || !data.noteText) throw new Error('Note ID and text are required')
@@ -588,7 +648,7 @@ export const createDowntimeEvent = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data }) => {
-        const { db, downtimeEvents } = await getWorkOrderDbDeps()
+        const { db, downtimeEvents, userRequests, eq } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         const user = await requirePermission('workOrders', 'update')
@@ -601,12 +661,19 @@ export const createDowntimeEvent = authServerFn({ method: 'POST' })
             notes: data.notes,
         }).returning({ id: downtimeEvents.id })
 
+        if (data.endAt !== undefined) {
+            await db.update(userRequests)
+                .set({ downtimeEndAt: data.endAt })
+                .where(eq(userRequests.woId, data.woId))
+        }
+
         const { logger } = await import('../lib/logger')
         logger.info('WORK_ORDER_DOWNTIME_CREATED', {
             downtimeEventId: result[0]?.id ?? null,
             woId: data.woId,
             assetId: data.assetId,
             systemId: data.systemId,
+            syncedRequestDowntimeEnd: data.endAt !== undefined,
             ...withActor(user),
         })
 
@@ -619,10 +686,20 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
         return data
     })
     .handler(async ({ data }) => {
-        const { db, downtimeEvents, eq } = await getWorkOrderDbDeps()
+        const { db, downtimeEvents, userRequests, assets, eq, and, isNull } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         const user = await requirePermission('workOrders', 'update')
+        const [existingDowntime] = await db
+            .select({ woId: downtimeEvents.woId, assetId: downtimeEvents.assetId })
+            .from(downtimeEvents)
+            .where(eq(downtimeEvents.id, data.id))
+            .limit(1)
+
+        if (!existingDowntime) {
+            throw new Error('Downtime event not found')
+        }
+
         await db.update(downtimeEvents)
             .set({
                 ...(data.endAt !== undefined ? { endAt: data.endAt } : {}),
@@ -630,11 +707,35 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
             })
             .where(eq(downtimeEvents.id, data.id))
 
+        if (data.endAt !== undefined && existingDowntime.woId !== null) {
+            await db.update(userRequests)
+                .set({ downtimeEndAt: data.endAt })
+                .where(eq(userRequests.woId, existingDowntime.woId))
+        }
+
+        let syncedAssetClinical = false
+        if (data.endAt !== undefined) {
+            const openDowntimeForAsset = await db
+                .select({ id: downtimeEvents.id })
+                .from(downtimeEvents)
+                .where(and(eq(downtimeEvents.assetId, existingDowntime.assetId), isNull(downtimeEvents.endAt)))
+                .limit(1)
+
+            if (openDowntimeForAsset.length === 0) {
+                await db.update(assets)
+                    .set({ status: 'Clinical' })
+                    .where(eq(assets.id, existingDowntime.assetId))
+                syncedAssetClinical = true
+            }
+        }
+
         const { logger } = await import('../lib/logger')
         logger.info('WORK_ORDER_DOWNTIME_UPDATED', {
             downtimeEventId: data.id,
             updatedEndAt: data.endAt !== undefined,
             updatedNotes: data.notes !== undefined,
+            syncedRequestDowntimeEnd: data.endAt !== undefined && existingDowntime.woId !== null,
+            syncedAssetClinical,
             ...withActor(user),
         })
 

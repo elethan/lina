@@ -184,6 +184,56 @@ export const deleteRequests = authServerFn({ method: 'POST' })
         return { success: true }
     })
 
+export const updateRequestComment = authServerFn({ method: 'POST' })
+    .inputValidator((data: { requestId: number; commentText: string }) => {
+        if (!data.requestId) {
+            throw new Error('Request ID is required')
+        }
+
+        const trimmedComment = data.commentText?.trim() ?? ''
+        if (!trimmedComment) {
+            throw new Error('Comment cannot be empty')
+        }
+
+        return {
+            requestId: data.requestId,
+            commentText: trimmedComment,
+        }
+    })
+    .handler(async ({ data }) => {
+        const [{ requireSessionUser }, { canRoleConfigured }, { logger }] = await Promise.all([
+            import('../lib/auth-guards.server'),
+            import('../lib/role-permissions.server'),
+            import('../lib/logger'),
+        ])
+
+        const user = await requireSessionUser()
+        const role = normalizeAppRole(user.role)
+
+        const [canUpdateRequests, canCreateRequests] = await Promise.all([
+            canRoleConfigured(role, 'requests', 'update'),
+            canRoleConfigured(role, 'requests', 'create'),
+        ])
+
+        // Therapists are expected to edit request comments; allow via requests.create fallback.
+        if (!canUpdateRequests && !canCreateRequests) {
+            throw new Error('Forbidden: missing permission requests.update or requests.create')
+        }
+
+        const { db, userRequests, eq } = await getRequestDbDeps()
+
+        await db.update(userRequests)
+            .set({ commentText: data.commentText })
+            .where(eq(userRequests.id, data.requestId))
+
+        logger.info('REQUEST_COMMENT_UPDATED', {
+            requestId: data.requestId,
+            ...withActor(user),
+        })
+
+        return { success: true }
+    })
+
 export const createRequest = authServerFn({ method: 'POST' })
     .inputValidator((data: {
         assetId?: number,
@@ -194,6 +244,26 @@ export const createRequest = authServerFn({ method: 'POST' })
         downtimeEndAt?: string,
     }) => {
         if (!data.reportedBy || !data.commentText) throw new Error('Missing required fields')
+
+        const parsedDowntimeStart = data.downtimeStartAt ? new Date(data.downtimeStartAt) : null
+        const parsedDowntimeEnd = data.downtimeEndAt ? new Date(data.downtimeEndAt) : null
+
+        if (parsedDowntimeStart && Number.isNaN(parsedDowntimeStart.getTime())) {
+            throw new Error('Invalid downtimeStartAt value')
+        }
+
+        if (parsedDowntimeEnd && Number.isNaN(parsedDowntimeEnd.getTime())) {
+            throw new Error('Invalid downtimeEndAt value')
+        }
+
+        if (data.downtimeEndAt && !data.downtimeStartAt) {
+            throw new Error('downtimeStartAt is required when downtimeEndAt is provided')
+        }
+
+        if (parsedDowntimeStart && parsedDowntimeEnd && parsedDowntimeEnd.getTime() < parsedDowntimeStart.getTime()) {
+            throw new Error('downtimeEndAt cannot be earlier than downtimeStartAt')
+        }
+
         return data
     })
     .handler(async ({ data }): Promise<{ id: number; linkedWoId?: number; woIsNew?: boolean }> => {

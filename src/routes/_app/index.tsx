@@ -28,7 +28,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import TableSkeleton from '../../components/TableSkeleton'
-import { fetchRequests, deleteRequests, createRequest, type RequestRow } from '../../data/requests.api'
+import { fetchRequests, deleteRequests, createRequest, updateRequestComment, type RequestRow } from '../../data/requests.api'
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import { canPermissionMap } from '../../lib/role-permissions'
@@ -105,8 +105,138 @@ const fuzzyFilter: FilterFn<RequestRow> = (row, columnId, value, addMeta) => {
     return itemRank.passed
 }
 
+const EN_GB_UTC_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+}
+
+const EN_GB_LOCAL_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+}
+
+const formatDateTimeForDisplay = (value: string | null | undefined, isHydrated: boolean): string | null => {
+    if (!value) return null
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    return parsed.toLocaleString(
+        'en-GB',
+        isHydrated ? EN_GB_LOCAL_DATE_TIME_OPTIONS : EN_GB_UTC_DATE_TIME_OPTIONS,
+    )
+}
+
+function EditableRequestCommentCell({
+    requestId,
+    value,
+    editable,
+    onSave,
+}: {
+    requestId: number
+    value: string
+    editable: boolean
+    onSave?: (requestId: number, commentText: string) => Promise<void>
+}) {
+    const [editing, setEditing] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
+    const [text, setText] = useState(value)
+
+    useEffect(() => {
+        if (!editing) {
+            setText(value)
+        }
+    }, [value, editing])
+
+    const handleSave = async () => {
+        const trimmed = text.trim()
+
+        if (!trimmed) {
+            alert('Comment cannot be empty')
+            setText(value)
+            setEditing(false)
+            return
+        }
+
+        if (trimmed === value.trim()) {
+            setText(value)
+            setEditing(false)
+            return
+        }
+
+        if (!onSave) {
+            setText(value)
+            setEditing(false)
+            return
+        }
+
+        setIsSaving(true)
+        try {
+            await onSave(requestId, trimmed)
+            setEditing(false)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to save request comment'
+            alert(message)
+            setText(value)
+            setEditing(false)
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
+    if (!editing) {
+        return (
+            <div
+                className={`whitespace-pre-wrap break-words min-h-[40px] ${editable ? 'cursor-pointer hover:bg-primary/5 rounded px-1 py-0.5 -mx-1 transition-colors' : 'text-gray-500'}`}
+                onClick={() => {
+                    if (editable) {
+                        setEditing(true)
+                    }
+                }}
+                title={editable ? 'Click to edit' : undefined}
+            >
+                {value}
+            </div>
+        )
+    }
+
+    return (
+        <textarea
+            autoFocus
+            value={text}
+            disabled={isSaving}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                    setText(value)
+                    setEditing(false)
+                }
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    e.preventDefault()
+                    handleSave()
+                }
+            }}
+            className="w-full border border-primary/30 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-y min-h-[80px]"
+        />
+    )
+}
+
 // ── Columns ───────────────────────────────────────────────────
 const columnHelper = createColumnHelper<RequestRow>()
+
+type RequestsTableMeta = {
+    canEditRequestComments?: boolean
+    saveRequestComment?: (requestId: number, commentText: string) => Promise<void>
+    isDateTimeHydrated?: boolean
+}
 
 const columns: ColumnDef<RequestRow, any>[] = [
     columnHelper.display({
@@ -156,10 +286,15 @@ const columns: ColumnDef<RequestRow, any>[] = [
         header: 'Comment',
         cell: (info) => {
             const text = info.getValue()
+            const tableMeta = info.table.options.meta as RequestsTableMeta | undefined
+
             return (
-                <div className="text-gray-500 whitespace-pre-wrap break-words min-h-[40px]">
-                    {text}
-                </div>
+                <EditableRequestCommentCell
+                    requestId={info.row.original.id}
+                    value={text}
+                    editable={Boolean(tableMeta?.canEditRequestComments)}
+                    onSave={tableMeta?.saveRequestComment}
+                />
             )
         },
         size: 300,
@@ -219,6 +354,26 @@ const columns: ColumnDef<RequestRow, any>[] = [
         header: 'Reported By',
         cell: (info) => info.getValue(),
     }),
+    columnHelper.accessor('downtimeStartAt', {
+        header: 'Downtime Start',
+        cell: (info) => {
+            const tableMeta = info.table.options.meta as RequestsTableMeta | undefined
+            const formatted = formatDateTimeForDisplay(info.getValue(), Boolean(tableMeta?.isDateTimeHydrated))
+            if (!formatted) return <span className="text-gray-400">—</span>
+            return <span className="text-gray-600 text-xs">{formatted}</span>
+        },
+        size: 170,
+    }),
+    columnHelper.accessor('downtimeEndAt', {
+        header: 'Downtime End',
+        cell: (info) => {
+            const tableMeta = info.table.options.meta as RequestsTableMeta | undefined
+            const formatted = formatDateTimeForDisplay(info.getValue(), Boolean(tableMeta?.isDateTimeHydrated))
+            if (!formatted) return <span className="text-gray-400">—</span>
+            return <span className="text-gray-600 text-xs">{formatted}</span>
+        },
+        size: 170,
+    }),
 
     columnHelper.accessor('engineerComment', {
         header: 'Engineer Note',
@@ -268,6 +423,7 @@ function RequestsPage() {
         dateFrom = '',
         dateTo = '',
         siteId,
+        assetId,
         notice,
     } = Route.useSearch()
     const { data: currentPermissions } = useQuery({
@@ -280,6 +436,15 @@ function RequestsPage() {
     const canCreateWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'create')
     const canMergeToWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'update')
     const canToggleMachineClinical = canPermissionMap(permissionMap, 'machineClinical', 'update')
+    const canEditRequestComments = canPermissionMap(permissionMap, 'requests', 'update') || canCreateRequests
+
+    const hasSelectedAsset = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
+    const { data: selectedAssetMachineStatus, isLoading: isLoadingSelectedAssetMachineStatus } = useQuery({
+        queryKey: ['machine-clinical-status', hasSelectedAsset ? assetId : null],
+        queryFn: async () => fetchMachineClinicalStatus({ data: { assetId: assetId as number } }),
+        enabled: hasSelectedAsset,
+    })
+    const isSelectedAssetDown = normalizeMachineClinicalStatus(selectedAssetMachineStatus?.status) === 'Down'
 
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
@@ -314,6 +479,11 @@ function RequestsPage() {
     const [selectedMergeWoId, setSelectedMergeWoId] = useState<number | null>(null)
     const [showNewRequestDialog, setShowNewRequestDialog] = useState(false)
     const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
+
+    useEffect(() => {
+        if (!isSelectedAssetDown || !showNewRequestDialog) return
+        setShowNewRequestDialog(false)
+    }, [isSelectedAssetDown, showNewRequestDialog])
 
     const { mutate: mutateCreateWO } = useMutation({
         mutationFn: async (data: { requestIds: number[] }) => {
@@ -406,7 +576,7 @@ function RequestsPage() {
             <div className="flex items-center gap-2">
                 <button
                     id="btn-new"
-                    disabled={!canCreateRequests}
+                    disabled={!canCreateRequests || (hasSelectedAsset && (isLoadingSelectedAssetMachineStatus || isSelectedAssetDown))}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-32 whitespace-nowrap disabled:opacity-50"
                     onClick={() => setShowNewRequestDialog(true)}
                 >
@@ -450,6 +620,9 @@ function RequestsPage() {
         selectedCount,
         siteId,
         canCreateRequests,
+        hasSelectedAsset,
+        isLoadingSelectedAssetMachineStatus,
+        isSelectedAssetDown,
         canCloseRequests,
         canCreateWorkOrders,
         canMergeToWorkOrders,
@@ -719,6 +892,7 @@ function RequestsPage() {
                         rowSelection={rowSelection}
                         setRowSelection={setRowSelection}
                         onSelectionChange={setSelectedItems}
+                        canEditRequestComments={canEditRequestComments}
                         canToggleMachineClinical={canToggleMachineClinical}
                         currentUserRole={currentPermissions?.role}
                     />
@@ -774,6 +948,7 @@ function RequestsTableView({
     rowSelection,
     setRowSelection,
     onSelectionChange,
+    canEditRequestComments,
     canToggleMachineClinical,
     currentUserRole,
 }: {
@@ -781,6 +956,7 @@ function RequestsTableView({
     rowSelection: Record<string, boolean>
     setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
     onSelectionChange: (items: RequestRow[]) => void
+    canEditRequestComments: boolean
     canToggleMachineClinical: boolean
     currentUserRole?: string
 }) {
@@ -800,6 +976,11 @@ function RequestsTableView({
     const [showModeConfirmDialog, setShowModeConfirmDialog] = useState(false)
     const [pendingModeStatus, setPendingModeStatus] = useState<MachineClinicalStatus | null>(null)
     const [modeDialogError, setModeDialogError] = useState<string | null>(null)
+    const [isDateTimeHydrated, setIsDateTimeHydrated] = useState(false)
+
+    useEffect(() => {
+        setIsDateTimeHydrated(true)
+    }, [])
 
     const hasSelectedAsset = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
     const selectedAssetId = hasSelectedAsset ? assetId : undefined
@@ -868,6 +1049,14 @@ function RequestsTableView({
         },
         onError: (error: Error) => {
             setModeDialogError(error.message || 'Failed to update machine mode.')
+        },
+    })
+
+    const { mutateAsync: mutateUpdateRequestComment } = useMutation({
+        mutationFn: async (payload: { requestId: number; commentText: string }) =>
+            updateRequestComment({ data: payload }),
+        onSuccess: async () => {
+            await router.invalidate()
         },
     })
 
@@ -1005,6 +1194,13 @@ function RequestsTableView({
         enableRowSelection: true,
         columnResizeMode,
         enableColumnResizing: true,
+        meta: {
+            canEditRequestComments,
+            isDateTimeHydrated,
+            saveRequestComment: async (requestId: number, commentText: string) => {
+                await mutateUpdateRequestComment({ requestId, commentText })
+            },
+        },
     })
 
     return (
@@ -1342,26 +1538,38 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
             }
 
             const hasDowntimeTime = value.downtimeTime.trim().length > 0
-            let downtimeStartAt: string | undefined
+            const hasDowntimeEndTime = value.downtimeEndTime.trim().length > 0
+
+            let parsedDowntimeStart: Date | null = null
             if (hasDowntimeTime) {
-                const parsedDowntime = new Date(`${value.downtimeDate}T${value.downtimeTime}`)
-                if (Number.isNaN(parsedDowntime.getTime())) {
+                parsedDowntimeStart = new Date(`${value.downtimeDate}T${value.downtimeTime}`)
+                if (Number.isNaN(parsedDowntimeStart.getTime())) {
                     showFormError('Downtime date/time is invalid')
                     return
                 }
-                downtimeStartAt = parsedDowntime.toISOString()
             }
 
-            const hasDowntimeEndTime = value.downtimeEndTime.trim().length > 0
-            let downtimeEndAt: string | undefined
+            if (hasDowntimeEndTime && !hasDowntimeTime) {
+                showFormError('Downtime start time is required when downtime end is provided')
+                return
+            }
+
+            let parsedDowntimeEnd: Date | null = null
             if (hasDowntimeEndTime) {
-                const parsedDowntimeEnd = new Date(`${value.downtimeEndDate}T${value.downtimeEndTime}`)
+                parsedDowntimeEnd = new Date(`${value.downtimeEndDate}T${value.downtimeEndTime}`)
                 if (Number.isNaN(parsedDowntimeEnd.getTime())) {
                     showFormError('Downtime end date/time is invalid')
                     return
                 }
-                downtimeEndAt = parsedDowntimeEnd.toISOString()
             }
+
+            if (parsedDowntimeStart && parsedDowntimeEnd && parsedDowntimeEnd.getTime() < parsedDowntimeStart.getTime()) {
+                showFormError('Downtime end cannot be earlier than downtime start')
+                return
+            }
+
+            const downtimeStartAt = parsedDowntimeStart?.toISOString()
+            const downtimeEndAt = parsedDowntimeEnd?.toISOString()
 
             await mutateCreateRequest({
                 systemId: parsed.data.systemId,

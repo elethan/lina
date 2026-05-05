@@ -25,6 +25,7 @@ cron.schedule('0 2 * * *', async () => {
   } catch (err) {
     console.error('Nightly backup failed:', err);
   }
+});
 
 
 const journalMode = String(

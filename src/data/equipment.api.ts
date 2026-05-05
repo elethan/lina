@@ -8,10 +8,10 @@ async function getEquipmentDbDeps() {
     ])
 
     const { db } = dbMod
-    const { systems, assets, assetSystems, sites } = schemaMod
-    const { eq, inArray, asc, and, ne } = ormMod
+    const { systems, assets, assetSystems, sites, userRequests } = schemaMod
+    const { eq, inArray, asc, and, ne, isNull, desc, sql } = ormMod
 
-    return { db, systems, assets, assetSystems, sites, eq, inArray, asc, and, ne }
+    return { db, systems, assets, assetSystems, sites, userRequests, eq, inArray, asc, and, ne, isNull, desc, sql }
 }
 
 export const fetchSites = authServerFn({ method: 'GET' }).handler(async () => {
@@ -66,6 +66,7 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
                 .from(assetSystems)
                 .leftJoin(systems, eq(assetSystems.systemId, systems.id))
                 .where(and(inArray(assetSystems.assetId, assetIds), eq(assetSystems.status, 'Operational')))
+                .orderBy(asc(systems.name))
 
             siteSystems = linkedSystems.filter((s): s is { systemId: number, name: string } => s.systemId !== null && s.name !== null)
         }
@@ -222,10 +223,15 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
         ])
 
         const user = await requirePermission('machineClinical', 'update')
-        const { db, assets, eq } = await getEquipmentDbDeps()
+        const { db, assets, assetSystems, systems, userRequests, eq, and, isNull, asc, desc, sql } = await getEquipmentDbDeps()
 
         const [existing] = await db
-            .select({ assetId: assets.id, status: assets.status })
+            .select({
+                assetId: assets.id,
+                status: assets.status,
+                serialNumber: assets.serialNumber,
+                modelName: assets.modelName,
+            })
             .from(assets)
             .where(eq(assets.id, data.assetId))
             .limit(1)
@@ -234,15 +240,98 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             throw new Error('Asset not found')
         }
 
-        await db
-            .update(assets)
-            .set({ status: data.status })
-            .where(eq(assets.id, data.assetId))
+        if (existing.status === data.status) {
+            return {
+                success: true,
+                assetId: data.assetId,
+                status: data.status,
+                requestAction: 'none' as const,
+                requestId: null,
+            }
+        }
+
+        const nowIso = new Date().toISOString()
+        const reportedBy = ((user as { name?: string | null }).name?.trim() || user.email || 'Clinical user')
+
+        let requestId: number | null = null
+        let requestAction: 'created-down-request' | 'updated-down-request-end' | 'none' = 'none'
+
+        db.transaction((tx) => {
+            tx.update(assets)
+                .set({ status: data.status })
+                .where(eq(assets.id, data.assetId))
+                .run()
+
+            if (data.status === 'Down') {
+                const firstSystem = tx
+                    .select({ systemId: systems.id })
+                    .from(assetSystems)
+                    .innerJoin(systems, eq(assetSystems.systemId, systems.id))
+                    .where(and(eq(assetSystems.assetId, data.assetId), eq(assetSystems.status, 'Operational')))
+                    .orderBy(asc(systems.name), asc(systems.id))
+                    .limit(1)
+                    .get()
+
+                if (!firstSystem?.systemId) {
+                    throw new Error('No operational system found for selected asset')
+                }
+
+                const createdRequest = tx
+                    .insert(userRequests)
+                    .values({
+                        assetId: data.assetId,
+                        systemId: firstSystem.systemId,
+                        reportedBy,
+                        commentText: 'Asset toggled to DOWN via machine clinical mode.',
+                        status: 'Open',
+                        downtimeStartAt: nowIso,
+                        downtimeEndAt: null,
+                        woId: null,
+                        createdAt: nowIso,
+                    })
+                    .returning({ id: userRequests.id })
+                    .get()
+
+                requestId = createdRequest?.id ?? null
+                requestAction = 'created-down-request'
+                return
+            }
+
+            const relevantRequest = tx
+                .select({ id: userRequests.id })
+                .from(userRequests)
+                .where(and(
+                    eq(userRequests.assetId, data.assetId),
+                    eq(userRequests.status, 'Open'),
+                    isNull(userRequests.woId),
+                    isNull(userRequests.downtimeEndAt),
+                    sql`${userRequests.downtimeStartAt} IS NOT NULL`,
+                ))
+                .orderBy(desc(userRequests.createdAt), desc(userRequests.id))
+                .limit(1)
+                .get()
+
+            if (!relevantRequest?.id) {
+                return
+            }
+
+            tx.update(userRequests)
+                .set({ downtimeEndAt: nowIso })
+                .where(eq(userRequests.id, relevantRequest.id))
+                .run()
+
+            requestId = relevantRequest.id
+            requestAction = 'updated-down-request-end'
+        })
 
         logger.info('MACHINE_CLINICAL_STATUS_UPDATED', {
             assetId: data.assetId,
             previousStatus: existing.status,
             nextStatus: data.status,
+            requestAction,
+            requestId,
+            serialNumber: existing.serialNumber,
+            modelName: existing.modelName ?? null,
             actorUserId: user.id,
             actorEmail: user.email ?? null,
             actorRole: user.role ?? null,
@@ -252,5 +341,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             success: true,
             assetId: data.assetId,
             status: data.status,
+            requestAction,
+            requestId,
         }
     })

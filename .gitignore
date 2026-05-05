@@ -21,3 +21,5 @@ src/db/seed*.ts
 local-md/
 deploy_key
 .codesight
+*.db-shm
+*.db-wal
