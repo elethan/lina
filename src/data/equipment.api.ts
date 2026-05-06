@@ -1,5 +1,21 @@
 import { authServerFn } from '../lib/server-utils'
 
+type ActorMeta = {
+    id: string
+    name?: string | null
+    email?: string | null
+    role?: string | null
+}
+
+function withActor(user: ActorMeta) {
+    return {
+        actorUserId: user.id,
+        actorName: user.name?.trim() || user.email || null,
+        actorEmail: user.email ?? null,
+        actorRole: user.role ?? null,
+    }
+}
+
 async function getEquipmentDbDeps() {
     const [dbMod, schemaMod, ormMod] = await Promise.all([
         import('../db/client'),
@@ -38,7 +54,7 @@ export const fetchSiteEquipment = authServerFn({ method: 'GET' })
     .handler(async ({ data }) => {
         const { requireSessionUser } = await import('../lib/auth-guards.server')
         await requireSessionUser()
-        const { db, systems, assets, assetSystems, eq, inArray, and, ne } = await getEquipmentDbDeps()
+        const { db, systems, assets, assetSystems, eq, inArray, and, ne, asc } = await getEquipmentDbDeps()
 
         const { siteId } = data
 
@@ -241,6 +257,14 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
         }
 
         if (existing.status === data.status) {
+            logger.info('MACHINE_CLINICAL_STATUS_NOOP', {
+                assetId: data.assetId,
+                status: data.status,
+                serialNumber: existing.serialNumber,
+                modelName: existing.modelName ?? null,
+                ...withActor(user),
+            })
+
             return {
                 success: true,
                 assetId: data.assetId,
@@ -251,7 +275,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
         }
 
         const nowIso = new Date().toISOString()
-        const reportedBy = ((user as { name?: string | null }).name?.trim() || user.email || 'Clinical user')
+        const reportedBy = user.name?.trim() || user.email || 'Clinical user'
 
         let requestId: number | null = null
         let requestAction: 'created-down-request' | 'updated-down-request-end' | 'none' = 'none'
@@ -332,9 +356,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             requestId,
             serialNumber: existing.serialNumber,
             modelName: existing.modelName ?? null,
-            actorUserId: user.id,
-            actorEmail: user.email ?? null,
-            actorRole: user.role ?? null,
+            ...withActor(user),
         })
 
         return {

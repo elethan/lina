@@ -28,7 +28,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import TableSkeleton from '../../components/TableSkeleton'
-import { fetchRequests, deleteRequests, createRequest, updateRequestComment, type RequestRow } from '../../data/requests.api'
+import {
+    fetchRequests,
+    deleteRequests,
+    createRequest,
+    updateRequestComment,
+    updateRequestEngineerComment,
+    type RequestRow,
+} from '../../data/requests.api'
 import { createWorkOrder, fetchOpenWorkOrdersByAsset, mergeRequestsToWo } from '../../data/workorders.api'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import { canPermissionMap } from '../../lib/role-permissions'
@@ -229,12 +236,106 @@ function EditableRequestCommentCell({
     )
 }
 
+function EditableRequestEngineerNoteCell({
+    requestId,
+    value,
+    editable,
+    onSave,
+}: {
+    requestId: number
+    value: string | null
+    editable: boolean
+    onSave?: (requestId: number, engineerComment: string | null) => Promise<void>
+}) {
+    const [editing, setEditing] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
+    const [text, setText] = useState(value ?? '')
+
+    useEffect(() => {
+        if (!editing) {
+            setText(value ?? '')
+        }
+    }, [value, editing])
+
+    const handleSave = async () => {
+        const trimmed = text.trim()
+        const original = value?.trim() ?? ''
+
+        if (trimmed === original) {
+            setText(value ?? '')
+            setEditing(false)
+            return
+        }
+
+        if (!onSave) {
+            setText(value ?? '')
+            setEditing(false)
+            return
+        }
+
+        setIsSaving(true)
+        try {
+            await onSave(requestId, trimmed || null)
+            setEditing(false)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to save engineer note'
+            alert(message)
+            setText(value ?? '')
+            setEditing(false)
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
+    if (!editing) {
+        const displayValue = value?.trim() ?? ''
+        const baseClass = `whitespace-pre-wrap break-words min-h-[40px] italic ${editable ? 'cursor-pointer hover:bg-primary/5 rounded px-1 py-0.5 -mx-1 transition-colors' : 'text-gray-600'}`
+
+        return (
+            <div
+                className={displayValue ? baseClass : `${baseClass} text-gray-400`}
+                onClick={() => {
+                    if (editable) {
+                        setEditing(true)
+                    }
+                }}
+                title={editable ? 'Click to edit' : undefined}
+            >
+                {displayValue || '—'}
+            </div>
+        )
+    }
+
+    return (
+        <textarea
+            autoFocus
+            value={text}
+            disabled={isSaving}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                    setText(value ?? '')
+                    setEditing(false)
+                }
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    e.preventDefault()
+                    handleSave()
+                }
+            }}
+            className="w-full border border-primary/30 rounded-md px-2 py-1.5 text-sm italic focus:outline-none focus:ring-2 focus:ring-primary/40 resize-y min-h-[80px]"
+        />
+    )
+}
+
 // ── Columns ───────────────────────────────────────────────────
 const columnHelper = createColumnHelper<RequestRow>()
 
 type RequestsTableMeta = {
     canEditRequestComments?: boolean
+    canEditRequestEngineerNotes?: boolean
     saveRequestComment?: (requestId: number, commentText: string) => Promise<void>
+    saveRequestEngineerComment?: (requestId: number, engineerComment: string | null) => Promise<void>
     isDateTimeHydrated?: boolean
 }
 
@@ -354,6 +455,24 @@ const columns: ColumnDef<RequestRow, any>[] = [
         header: 'Reported By',
         cell: (info) => info.getValue(),
     }),
+    columnHelper.accessor('engineerComment', {
+        header: 'Engineer Note',
+        cell: (info) => {
+            const text = info.getValue()
+            const tableMeta = info.table.options.meta as RequestsTableMeta | undefined
+
+            return (
+                <EditableRequestEngineerNoteCell
+                    requestId={info.row.original.id}
+                    value={text}
+                    editable={Boolean(tableMeta?.canEditRequestEngineerNotes)}
+                    onSave={tableMeta?.saveRequestEngineerComment}
+                />
+            )
+        },
+        size: 150,
+        enableResizing: false,
+    }),
     columnHelper.accessor('downtimeStartAt', {
         header: 'Downtime Start',
         cell: (info) => {
@@ -375,20 +494,6 @@ const columns: ColumnDef<RequestRow, any>[] = [
         size: 170,
     }),
 
-    columnHelper.accessor('engineerComment', {
-        header: 'Engineer Note',
-        cell: (info) => {
-            const text = info.getValue()
-            if (!text) return <span className="text-gray-400 italic">—</span>
-            return (
-                <div className="text-gray-600 whitespace-pre-wrap break-words min-h-[40px] italic">
-                    {text}
-                </div>
-            )
-        },
-        size: 150,
-        enableResizing: false,
-    }),
     columnHelper.accessor('woId', {
         header: 'WO #',
         cell: (info) => {
@@ -436,7 +541,9 @@ function RequestsPage() {
     const canCreateWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'create')
     const canMergeToWorkOrders = canPermissionMap(permissionMap, 'workOrders', 'update')
     const canToggleMachineClinical = canPermissionMap(permissionMap, 'machineClinical', 'update')
-    const canEditRequestComments = canPermissionMap(permissionMap, 'requests', 'update') || canCreateRequests
+    const canEditRequestComments = canPermissionMap(permissionMap, 'requests', 'update')
+    const isTherapistUser = String(currentPermissions?.role ?? '').toLowerCase() === 'therapist'
+    const canEditRequestEngineerNotes = canEditRequestComments && !isTherapistUser
 
     const hasSelectedAsset = typeof assetId === 'number' && Number.isInteger(assetId) && assetId > 0
     const { data: selectedAssetMachineStatus, isLoading: isLoadingSelectedAssetMachineStatus } = useQuery({
@@ -486,7 +593,7 @@ function RequestsPage() {
     }, [isSelectedAssetDown, showNewRequestDialog])
 
     const { mutate: mutateCreateWO } = useMutation({
-        mutationFn: async (data: { requestIds: number[] }) => {
+        mutationFn: async (data: { requestIds?: number[]; assetId?: number }) => {
             const result = await createWorkOrder({ data })
             return result
         },
@@ -524,10 +631,14 @@ function RequestsPage() {
     })
 
     const selectedCount = Object.keys(rowSelection).length
+    const canCreateWoFromAssetSelection = hasSelectedAsset && selectedCount === 0
 
     const handleConfirmCreateWO = () => {
         setShowCreateWODialog(false)
-        mutateCreateWO({ requestIds: selectedItems.map((r) => r.id) })
+        mutateCreateWO({
+            requestIds: selectedItems.map((r) => r.id),
+            assetId: canCreateWoFromAssetSelection ? (assetId as number) : undefined,
+        })
     }
 
     // ── Set toolbar content (synchronous — SSR-safe) ─────────────
@@ -586,7 +697,7 @@ function RequestsPage() {
                 <div className="w-px h-8 bg-gray-200" />
                 <button
                     id="btn-create-wo"
-                    disabled={selectedCount === 0 || !canCreateWorkOrders}
+                    disabled={(!canCreateWoFromAssetSelection && selectedCount === 0) || !canCreateWorkOrders}
                     onClick={() => setShowCreateWODialog(true)}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all w-32 whitespace-nowrap"
                 >
@@ -618,6 +729,7 @@ function RequestsPage() {
         dateFrom,
         dateTo,
         selectedCount,
+        canCreateWoFromAssetSelection,
         siteId,
         canCreateRequests,
         hasSelectedAsset,
@@ -847,11 +959,19 @@ function RequestsPage() {
                                 </>
                             ) : (
                                 <>
-                                    A new Work Order will be created and linked to{' '}
-                                    <span className="font-semibold text-gray-700">
-                                        {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
-                                    </span>
-                                    . This action will commit the Work Order to the database.
+                                    {selectedCount > 0 ? (
+                                        <>
+                                            A new Work Order will be created and linked to{' '}
+                                            <span className="font-semibold text-gray-700">
+                                                {selectedCount} selected request{selectedCount !== 1 ? 's' : ''}
+                                            </span>
+                                            . This action will commit the Work Order to the database.
+                                        </>
+                                    ) : (
+                                        <>
+                                            A new Work Order will be created for the currently selected asset without linking any existing request. This action will commit the Work Order to the database.
+                                        </>
+                                    )}
                                 </>
                             )}
                         </DialogDescription>
@@ -893,6 +1013,7 @@ function RequestsPage() {
                         setRowSelection={setRowSelection}
                         onSelectionChange={setSelectedItems}
                         canEditRequestComments={canEditRequestComments}
+                        canEditRequestEngineerNotes={canEditRequestEngineerNotes}
                         canToggleMachineClinical={canToggleMachineClinical}
                         currentUserRole={currentPermissions?.role}
                     />
@@ -949,6 +1070,7 @@ function RequestsTableView({
     setRowSelection,
     onSelectionChange,
     canEditRequestComments,
+    canEditRequestEngineerNotes,
     canToggleMachineClinical,
     currentUserRole,
 }: {
@@ -957,6 +1079,7 @@ function RequestsTableView({
     setRowSelection: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
     onSelectionChange: (items: RequestRow[]) => void
     canEditRequestComments: boolean
+    canEditRequestEngineerNotes: boolean
     canToggleMachineClinical: boolean
     currentUserRole?: string
 }) {
@@ -1055,6 +1178,14 @@ function RequestsTableView({
     const { mutateAsync: mutateUpdateRequestComment } = useMutation({
         mutationFn: async (payload: { requestId: number; commentText: string }) =>
             updateRequestComment({ data: payload }),
+        onSuccess: async () => {
+            await router.invalidate()
+        },
+    })
+
+    const { mutateAsync: mutateUpdateRequestEngineerComment } = useMutation({
+        mutationFn: async (payload: { requestId: number; engineerComment: string | null }) =>
+            updateRequestEngineerComment({ data: payload }),
         onSuccess: async () => {
             await router.invalidate()
         },
@@ -1196,9 +1327,13 @@ function RequestsTableView({
         enableColumnResizing: true,
         meta: {
             canEditRequestComments,
+            canEditRequestEngineerNotes,
             isDateTimeHydrated,
             saveRequestComment: async (requestId: number, commentText: string) => {
                 await mutateUpdateRequestComment({ requestId, commentText })
+            },
+            saveRequestEngineerComment: async (requestId: number, engineerComment: string | null) => {
+                await mutateUpdateRequestEngineerComment({ requestId, engineerComment })
             },
         },
     })

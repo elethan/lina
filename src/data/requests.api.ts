@@ -3,6 +3,7 @@ import { normalizeAppRole } from '../lib/role-permissions'
 
 type ActorMeta = {
     id: string
+    name?: string | null
     email?: string | null
     role?: string | null
 }
@@ -10,6 +11,7 @@ type ActorMeta = {
 function withActor(user: ActorMeta) {
     return {
         actorUserId: user.id,
+        actorName: user.name?.trim() || user.email || null,
         actorEmail: user.email ?? null,
         actorRole: user.role ?? null,
     }
@@ -201,24 +203,12 @@ export const updateRequestComment = authServerFn({ method: 'POST' })
         }
     })
     .handler(async ({ data }) => {
-        const [{ requireSessionUser }, { canRoleConfigured }, { logger }] = await Promise.all([
+        const [{ requirePermission }, { logger }] = await Promise.all([
             import('../lib/auth-guards.server'),
-            import('../lib/role-permissions.server'),
             import('../lib/logger'),
         ])
 
-        const user = await requireSessionUser()
-        const role = normalizeAppRole(user.role)
-
-        const [canUpdateRequests, canCreateRequests] = await Promise.all([
-            canRoleConfigured(role, 'requests', 'update'),
-            canRoleConfigured(role, 'requests', 'create'),
-        ])
-
-        // Therapists are expected to edit request comments; allow via requests.create fallback.
-        if (!canUpdateRequests && !canCreateRequests) {
-            throw new Error('Forbidden: missing permission requests.update or requests.create')
-        }
+        const user = await requirePermission('requests', 'update')
 
         const { db, userRequests, eq } = await getRequestDbDeps()
 
@@ -227,6 +217,44 @@ export const updateRequestComment = authServerFn({ method: 'POST' })
             .where(eq(userRequests.id, data.requestId))
 
         logger.info('REQUEST_COMMENT_UPDATED', {
+            requestId: data.requestId,
+            ...withActor(user),
+        })
+
+        return { success: true }
+    })
+
+export const updateRequestEngineerComment = authServerFn({ method: 'POST' })
+    .inputValidator((data: { requestId: number; engineerComment: string | null }) => {
+        if (!data.requestId) {
+            throw new Error('Request ID is required')
+        }
+
+        const trimmedEngineerComment = data.engineerComment?.trim() ?? ''
+
+        return {
+            requestId: data.requestId,
+            engineerComment: trimmedEngineerComment ? trimmedEngineerComment : null,
+        }
+    })
+    .handler(async ({ data }) => {
+        const [{ requirePermission }, { logger }] = await Promise.all([
+            import('../lib/auth-guards.server'),
+            import('../lib/logger'),
+        ])
+
+        const user = await requirePermission('requests', 'update')
+        if (normalizeAppRole(user.role) === 'therapist') {
+            throw new Error('Forbidden: therapists cannot update engineer notes')
+        }
+
+        const { db, userRequests, eq } = await getRequestDbDeps()
+
+        await db.update(userRequests)
+            .set({ engineerComment: data.engineerComment })
+            .where(eq(userRequests.id, data.requestId))
+
+        logger.info('REQUEST_ENGINEER_COMMENT_UPDATED', {
             requestId: data.requestId,
             ...withActor(user),
         })

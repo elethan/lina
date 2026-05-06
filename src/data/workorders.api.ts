@@ -2,6 +2,7 @@ import { authServerFn } from '../lib/server-utils'
 
 type ActorMeta = {
     id: string
+    name?: string | null
     email?: string | null
     role?: string | null
 }
@@ -9,6 +10,7 @@ type ActorMeta = {
 function withActor(user: ActorMeta) {
     return {
         actorUserId: user.id,
+        actorName: user.name?.trim() || user.email || null,
         actorEmail: user.email ?? null,
         actorRole: user.role ?? null,
     }
@@ -29,12 +31,13 @@ async function getWorkOrderDbDeps() {
         workOrderNotes,
         userRequests,
         assets,
+        assetSystems,
         sites,
         systems,
         engineers,
         downtimeEvents,
     } = schemaMod
-    const { eq, sql, inArray, desc, and, isNull } = ormMod
+    const { eq, sql, inArray, desc, and, isNull, asc } = ormMod
 
     return {
         db,
@@ -44,6 +47,7 @@ async function getWorkOrderDbDeps() {
         workOrderNotes,
         userRequests,
         assets,
+        assetSystems,
         sites,
         systems,
         engineers,
@@ -54,6 +58,7 @@ async function getWorkOrderDbDeps() {
         desc,
         and,
         isNull,
+        asc,
     }
 }
 
@@ -73,6 +78,11 @@ export type WorkOrderRow = {
     requestCount: number
     engineerId: number | null
     engineerName: string | null
+}
+
+export type WorkOrderSystemOption = {
+    systemId: number
+    systemName: string
 }
 
 // ── Fetch all work orders ─────────────────────────────────────
@@ -184,55 +194,113 @@ export const fetchWorkOrders = authServerFn({ method: 'GET' })
     })
 
 export const createWorkOrder = authServerFn({ method: 'POST' })
-    .inputValidator((data: { requestIds: number[] }) => {
-        if (!data.requestIds || data.requestIds.length === 0) {
-            throw new Error('At least one request must be selected')
+    .inputValidator((data: { requestIds?: number[]; assetId?: number }) => {
+        const requestIds = Array.isArray(data.requestIds)
+            ? data.requestIds.filter((id): id is number => Number.isInteger(id) && id > 0)
+            : []
+        const assetId = Number.isInteger(data.assetId) && (data.assetId as number) > 0
+            ? data.assetId
+            : undefined
+
+        if (requestIds.length === 0 && !assetId) {
+            throw new Error('At least one request or a selected asset is required')
         }
-        return data
+
+        return {
+            requestIds,
+            assetId,
+        }
     })
     .handler(async ({ data }) => {
         const {
             db,
             workOrders,
             userRequests,
-            engineers,
+            assets,
+            assetSystems,
+            systems,
+            downtimeEvents,
             eq,
             inArray,
+            and,
+            asc,
         } = await getWorkOrderDbDeps()
         const { requirePermission } = await import('../lib/auth-guards.server')
 
         const user = await requirePermission('workOrders', 'create')
         const { requestIds } = data
 
-        // Fetch the selected requests to get asset/system info
-        const requests = await db
-            .select({
-                id: userRequests.id,
-                assetId: userRequests.assetId,
-                systemId: userRequests.systemId,
-                commentText: userRequests.commentText,
-                downtimeStartAt: userRequests.downtimeStartAt,
-                downtimeEndAt: userRequests.downtimeEndAt,
-            })
-            .from(userRequests)
-            .where(inArray(userRequests.id, requestIds))
+        let workOrderAssetId: number | null = null
+        let workOrderSystemId: number | null = null
+        let description = ''
+        let inheritedDowntimeStartAt: string | null = null
+        let inheritedDowntimeEndAt: string | null = null
 
-        if (requests.length === 0) {
-            throw new Error('No matching requests found')
+        if (requestIds.length > 0) {
+            const requests = await db
+                .select({
+                    id: userRequests.id,
+                    assetId: userRequests.assetId,
+                    systemId: userRequests.systemId,
+                    commentText: userRequests.commentText,
+                    downtimeStartAt: userRequests.downtimeStartAt,
+                    downtimeEndAt: userRequests.downtimeEndAt,
+                })
+                .from(userRequests)
+                .where(inArray(userRequests.id, requestIds))
+
+            if (requests.length === 0) {
+                throw new Error('No matching requests found')
+            }
+
+            const firstRequest = requests[0]
+            workOrderAssetId = firstRequest.assetId ?? null
+            workOrderSystemId = firstRequest.systemId ?? null
+            description = requests.map((r) => r.commentText).join(' | ')
+            inheritedDowntimeStartAt = firstRequest.downtimeStartAt ?? null
+            inheritedDowntimeEndAt = firstRequest.downtimeEndAt ?? null
+        } else {
+            const selectedAssetId = data.assetId
+            if (!selectedAssetId) {
+                throw new Error('Selected asset is required')
+            }
+
+            const [asset] = await db
+                .select({
+                    assetId: assets.id,
+                    serialNumber: assets.serialNumber,
+                })
+                .from(assets)
+                .where(eq(assets.id, selectedAssetId))
+                .limit(1)
+
+            if (!asset) {
+                throw new Error('Selected asset not found')
+            }
+
+            const [resolvedSystem] = await db
+                .select({ systemId: systems.id })
+                .from(assetSystems)
+                .innerJoin(systems, eq(assetSystems.systemId, systems.id))
+                .where(and(eq(assetSystems.assetId, selectedAssetId), eq(assetSystems.status, 'Operational')))
+                .orderBy(asc(systems.name), asc(systems.id))
+                .limit(1)
+
+            if (!resolvedSystem?.systemId) {
+                throw new Error('No operational system found for selected asset')
+            }
+
+            workOrderAssetId = asset.assetId
+            workOrderSystemId = resolvedSystem.systemId
+            description = 'Manual work order created from Requests page.'
         }
-
-        // Use the first request's asset/system as the WO's asset/system
-        const firstRequest = requests[0]
-        const description = requests
-            .map((r) => r.commentText)
-            .join(' | ')
 
         // Create the work order
         const [wo] = await db
             .insert(workOrders)
             .values({
-                assetId: firstRequest.assetId,
-                systemId: firstRequest.systemId,
+                assetId: workOrderAssetId,
+                systemId: workOrderSystemId,
                 description,
                 physicsHandOver: 'Pending',
                 status: 'Open',
@@ -241,21 +309,21 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
             })
             .returning({ id: workOrders.id })
 
-        // Link all selected requests to the new WO and update their status to 'Active'
-        await db
-            .update(userRequests)
-            .set({ status: 'Active', woId: wo.id })
-            .where(inArray(userRequests.id, requestIds))
+        if (requestIds.length > 0) {
+            await db
+                .update(userRequests)
+                .set({ status: 'Active', woId: wo.id })
+                .where(inArray(userRequests.id, requestIds))
+        }
 
         // Inherit downtime values from the source request when downtime start exists.
-        if (firstRequest.downtimeStartAt && firstRequest.assetId && firstRequest.systemId) {
-            const { downtimeEvents } = await getWorkOrderDbDeps()
+        if (inheritedDowntimeStartAt && workOrderAssetId && workOrderSystemId) {
             await db.insert(downtimeEvents).values({
-                assetId: firstRequest.assetId,
-                systemId: firstRequest.systemId,
+                assetId: workOrderAssetId,
+                systemId: workOrderSystemId,
                 woId: wo.id,
-                startAt: firstRequest.downtimeStartAt,
-                endAt: firstRequest.downtimeEndAt,
+                startAt: inheritedDowntimeStartAt,
+                endAt: inheritedDowntimeEndAt,
             })
         }
 
@@ -263,8 +331,9 @@ export const createWorkOrder = authServerFn({ method: 'POST' })
         logger.info('WORK_ORDER_CREATED', {
             woId: wo.id,
             requestIds,
-            assetId: firstRequest.assetId ?? null,
-            systemId: firstRequest.systemId ?? null,
+            assetId: workOrderAssetId,
+            systemId: workOrderSystemId,
+            creationSource: requestIds.length > 0 ? 'requests' : 'asset-selection',
             ...withActor(user),
         })
         return { woId: wo.id }
@@ -302,6 +371,125 @@ export const fetchOpenWorkOrdersByAsset = authServerFn({ method: 'GET' })
             .orderBy(desc(workOrders.createdAt))
 
         return rows
+    })
+
+export const fetchWorkOrderSystemsByAsset = authServerFn({ method: 'GET' })
+    .inputValidator((data: { assetId: number }) => {
+        if (!data.assetId) throw new Error('Asset ID is required')
+        return data
+    })
+    .handler(async ({ data }): Promise<WorkOrderSystemOption[]> => {
+        const { requireSessionUser } = await import('../lib/auth-guards.server')
+        await requireSessionUser()
+
+        const { db, assetSystems, systems, eq, and, asc } = await getWorkOrderDbDeps()
+
+        const rows = await db
+            .selectDistinct({
+                systemId: systems.id,
+                systemName: systems.name,
+            })
+            .from(assetSystems)
+            .innerJoin(systems, eq(assetSystems.systemId, systems.id))
+            .where(and(eq(assetSystems.assetId, data.assetId), eq(assetSystems.status, 'Operational')))
+            .orderBy(asc(systems.name), asc(systems.id))
+
+        return rows.filter(
+            (row): row is WorkOrderSystemOption => row.systemId !== null && row.systemName !== null,
+        )
+    })
+
+export const updateWorkOrderSystem = authServerFn({ method: 'POST' })
+    .inputValidator((data: { woId: number; systemId: number }) => {
+        if (!data.woId) throw new Error('Work Order ID is required')
+        if (!data.systemId) throw new Error('System ID is required')
+        return data
+    })
+    .handler(async ({ data }) => {
+        const {
+            db,
+            workOrders,
+            assetSystems,
+            systems,
+            downtimeEvents,
+            eq,
+            and,
+        } = await getWorkOrderDbDeps()
+        const { requirePermission } = await import('../lib/auth-guards.server')
+
+        const user = await requirePermission('workOrders', 'update')
+
+        const [existing] = await db
+            .select({
+                woId: workOrders.id,
+                assetId: workOrders.assetId,
+                systemId: workOrders.systemId,
+            })
+            .from(workOrders)
+            .where(eq(workOrders.id, data.woId))
+            .limit(1)
+
+        if (!existing) {
+            throw new Error('Work Order not found')
+        }
+
+        if (!existing.assetId) {
+            throw new Error('Work Order has no asset context')
+        }
+
+        const [allowedSystem] = await db
+            .select({
+                systemId: systems.id,
+                systemName: systems.name,
+            })
+            .from(assetSystems)
+            .innerJoin(systems, eq(assetSystems.systemId, systems.id))
+            .where(and(
+                eq(assetSystems.assetId, existing.assetId),
+                eq(assetSystems.systemId, data.systemId),
+                eq(assetSystems.status, 'Operational'),
+            ))
+            .limit(1)
+
+        if (!allowedSystem?.systemId || !allowedSystem.systemName) {
+            throw new Error('Selected system is not available for this asset')
+        }
+
+        if (existing.systemId === data.systemId) {
+            return {
+                success: true,
+                systemId: data.systemId,
+                systemName: allowedSystem.systemName,
+            }
+        }
+
+        db.transaction((tx) => {
+            tx.update(workOrders)
+                .set({ systemId: data.systemId })
+                .where(eq(workOrders.id, data.woId))
+                .run()
+
+            tx.update(downtimeEvents)
+                .set({ systemId: data.systemId })
+                .where(eq(downtimeEvents.woId, data.woId))
+                .run()
+        })
+
+        const { logger } = await import('../lib/logger')
+        logger.info('WORK_ORDER_SYSTEM_UPDATED', {
+            woId: data.woId,
+            assetId: existing.assetId,
+            previousSystemId: existing.systemId ?? null,
+            nextSystemId: data.systemId,
+            syncedDowntimeEvents: true,
+            ...withActor(user),
+        })
+
+        return {
+            success: true,
+            systemId: data.systemId,
+            systemName: allowedSystem.systemName,
+        }
     })
 
 export const mergeRequestsToWo = authServerFn({ method: 'POST' })

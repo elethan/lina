@@ -18,11 +18,23 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useDynamicPageSize } from '../../hooks/useDynamicPageSize'
 import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus, Clock } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
-import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow } from '../../data/workorders.api'
+import { fetchWorkOrders, deleteWorkOrders, type WorkOrderRow, type WorkOrderSystemOption } from '../../data/workorders.api'
 import { fetchEngineers, assignWorkOrdersToEngineer } from '../../data/engineers.api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog'
-import { fetchWorkOrderNotes, addWorkOrderNote, closeWorkOrder, reopenWorkOrder, updateWorkOrderNote, startWorkOrder, fetchDowntimeByWoId, createDowntimeEvent, updateDowntimeEvent } from '../../data/workorders.api'
+import {
+  fetchWorkOrderNotes,
+  addWorkOrderNote,
+  closeWorkOrder,
+  reopenWorkOrder,
+  updateWorkOrderNote,
+  updateWorkOrderSystem,
+  startWorkOrder,
+  fetchDowntimeByWoId,
+  fetchWorkOrderSystemsByAsset,
+  createDowntimeEvent,
+  updateDowntimeEvent,
+} from '../../data/workorders.api'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
@@ -876,6 +888,8 @@ function WorkOrderExecutionDialog({
   const [displayStartAt, setDisplayStartAt] = useState<string | null>(wo?.startAt ?? null)
   const [displayEndAt, setDisplayEndAt] = useState<string | null>(wo?.endAt ?? null)
   const [displayStatus, setDisplayStatus] = useState<string>(wo?.status ?? 'Open')
+  const [displaySystemId, setDisplaySystemId] = useState<number | null>(wo?.systemId ?? null)
+  const [displaySystemName, setDisplaySystemName] = useState<string | null>(wo?.systemName ?? null)
   const isClosedWorkOrder = displayStatus === 'Closed'
   const [showStartAssignDialog, setShowStartAssignDialog] = useState(false)
   const [startEngineerId, setStartEngineerId] = useState<number>(
@@ -891,6 +905,8 @@ function WorkOrderExecutionDialog({
     setDisplayStartAt(wo?.startAt ?? null)
     setDisplayEndAt(wo?.endAt ?? null)
     setDisplayStatus(wo?.status ?? 'Open')
+    setDisplaySystemId(wo?.systemId ?? null)
+    setDisplaySystemName(wo?.systemName ?? null)
     setShowCloseConfirmDialog(false)
     setShowStartAssignDialog(false)
     setStartAssignError(null)
@@ -980,7 +996,31 @@ function WorkOrderExecutionDialog({
     queryFn: () => wo ? fetchDowntimeByWoId({ data: { woId: wo.id } }) : Promise.resolve([]),
     enabled: !!wo && open,
   })
+  const { data: rawSystemOptions, isLoading: isLoadingSystemOptions } = useQuery({
+    queryKey: ['wo-systems-by-asset', wo?.assetId],
+    queryFn: () => wo?.assetId
+      ? fetchWorkOrderSystemsByAsset({ data: { assetId: wo.assetId } })
+      : Promise.resolve([] as WorkOrderSystemOption[]),
+    enabled: !!wo?.assetId && open,
+  })
   const downtimeEvent = downtimeData?.[0] ?? null
+
+  const systemOptions = useMemo(() => {
+    const options = rawSystemOptions ?? []
+    if (
+      displaySystemId &&
+      !options.some((option) => option.systemId === displaySystemId)
+    ) {
+      return [
+        {
+          systemId: displaySystemId,
+          systemName: displaySystemName ?? `System ${displaySystemId}`,
+        },
+        ...options,
+      ]
+    }
+    return options
+  }, [rawSystemOptions, displaySystemId, displaySystemName])
 
   // Local downtime form state
   const [dtStartAt, setDtStartAt] = useState('')
@@ -1002,7 +1042,7 @@ function WorkOrderExecutionDialog({
 
   const createDtMutation = useMutation({
     mutationFn: async (vals: { startAt: string; endAt?: string }) =>
-      await createDowntimeEvent({ data: { assetId: wo!.assetId!, systemId: wo!.systemId!, woId: wo!.id, ...vals } }),
+      await createDowntimeEvent({ data: { assetId: wo!.assetId!, systemId: (displaySystemId ?? wo!.systemId)!, woId: wo!.id, ...vals } }),
     onSuccess: () => { refetchDowntime(); setShowDowntimeForm(false) },
   })
 
@@ -1010,6 +1050,21 @@ function WorkOrderExecutionDialog({
     mutationFn: async (vals: { id: number; endAt?: string }) =>
       await updateDowntimeEvent({ data: vals }),
     onSuccess: () => refetchDowntime(),
+  })
+
+  const updateSystemMutation = useMutation({
+    mutationFn: async (payload: { systemId: number; previousSystemId: number | null; previousSystemName: string | null }) =>
+      await updateWorkOrderSystem({ data: { woId: wo!.id, systemId: payload.systemId } }),
+    onSuccess: (result) => {
+      setDisplaySystemId(result.systemId)
+      setDisplaySystemName(result.systemName)
+      router.invalidate()
+    },
+    onError: (err: Error, payload) => {
+      setDisplaySystemId(payload.previousSystemId)
+      setDisplaySystemName(payload.previousSystemName)
+      alert(err.message || 'Failed to update work order system')
+    },
   })
 
   // Mini table setup for Notes
@@ -1087,7 +1142,7 @@ function WorkOrderExecutionDialog({
                   WO-{String(wo.id).padStart(4, '0')} Execution
                 </DialogTitle>
                 <DialogDescription className="text-sm text-gray-500 mt-1">
-                  {wo.siteName} &middot; {wo.systemName} &middot; {wo.serialNumber || 'No Serial'}
+                  {wo.siteName} &middot; {(displaySystemName ?? wo.systemName ?? 'No System')} &middot; {wo.serialNumber || 'No Serial'}
                 </DialogDescription>
               </div>
             </div>
@@ -1101,6 +1156,40 @@ function WorkOrderExecutionDialog({
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{wo.description}</p>
               </div>
               <div className="flex flex-col gap-3">
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">System</h4>
+                  <select
+                    value={displaySystemId ?? ''}
+                    onChange={(e) => {
+                      const nextSystemId = Number(e.target.value)
+                      const nextSystemName = systemOptions.find((option) => option.systemId === nextSystemId)?.systemName ?? null
+                      const previousSystemId = displaySystemId
+                      const previousSystemName = displaySystemName
+
+                      setDisplaySystemId(nextSystemId)
+                      setDisplaySystemName(nextSystemName)
+
+                      updateSystemMutation.mutate({
+                        systemId: nextSystemId,
+                        previousSystemId,
+                        previousSystemName,
+                      })
+                    }}
+                    disabled={!canUpdateWorkOrders || updateSystemMutation.isPending || systemOptions.length === 0}
+                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    {isLoadingSystemOptions && systemOptions.length === 0 ? (
+                      <option value="">Loading systems...</option>
+                    ) : systemOptions.length === 0 ? (
+                      <option value="">No systems available</option>
+                    ) : null}
+                    {systemOptions.map((option) => (
+                      <option key={option.systemId} value={option.systemId}>
+                        {option.systemName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Start Date</h4>
                   <p className="text-sm text-gray-800 font-medium">

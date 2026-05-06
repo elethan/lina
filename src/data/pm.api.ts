@@ -2,6 +2,7 @@ import { authServerFn } from '../lib/server-utils'
 
 type ActorMeta = {
     id: string
+    name?: string | null
     email?: string | null
     role?: string | null
 }
@@ -9,6 +10,7 @@ type ActorMeta = {
 function withActor(user: ActorMeta) {
     return {
         actorUserId: user.id,
+        actorName: user.name?.trim() || user.email || null,
         actorEmail: user.email ?? null,
         actorRole: user.role ?? null,
     }
