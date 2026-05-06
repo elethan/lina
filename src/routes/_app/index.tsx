@@ -1357,8 +1357,8 @@ function RequestsTableView({
                         </DialogTitle>
                         <DialogDescription>
                             {pendingModeStatus
-                                ? `Are you sure you want to switch this machine to ${pendingModeStatus.toUpperCase()} mode?`
-                                : 'Are you sure you want to change this machine mode?'}
+                                ? `Are you sure you want to switch this machine status to ${pendingModeStatus.toUpperCase()} ?`
+                                : 'Are you sure you want to change this machine status?'}
                         </DialogDescription>
                     </DialogHeader>
 
