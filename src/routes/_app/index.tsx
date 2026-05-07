@@ -141,6 +141,11 @@ const formatDateTimeForDisplay = (value: string | null | undefined, isHydrated: 
     )
 }
 
+const hasValidTimestamp = (value: string | null | undefined): boolean => {
+    if (!value) return false
+    return !Number.isNaN(new Date(value).getTime())
+}
+
 function EditableRequestCommentCell({
     requestId,
     value,
@@ -1350,12 +1355,12 @@ function RequestsTableView({
                     }
                 }}
             >
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
                         <DialogTitle>
-                            Confirm Linac Mode Change
+                            Confirm Linac Status Change
                         </DialogTitle>
-                        <DialogDescription>
+                        <DialogDescription className="text-base leading-relaxed">
                             {pendingModeStatus
                                 ? `Are you sure you want to switch this machine status to ${pendingModeStatus.toUpperCase()} ?`
                                 : 'Are you sure you want to change this machine status?'}
@@ -1531,29 +1536,38 @@ function RequestsTableView({
                                 </td>
                             </tr>
                         ) : (
-                            table.getRowModel().rows.map((row) => (
-                                <tr
-                                    key={row.id}
-                                    className={`transition-colors cursor-pointer ${row.getIsSelected()
-                                        ? 'bg-primary/5 hover:bg-primary/8'
-                                        : 'hover:bg-gray-50'
-                                        }`}
-                                    onClick={row.getToggleSelectedHandler()}
-                                >
-                                    {row.getVisibleCells().map((cell) => (
-                                        <td
-                                            key={cell.id}
-                                            className="px-4 py-3.5 text-sm text-gray-600"
-                                            style={{ width: cell.column.getSize() }}
-                                        >
-                                            {flexRender(
-                                                cell.column.columnDef.cell,
-                                                cell.getContext(),
-                                            )}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))
+                            table.getRowModel().rows.map((row) => {
+                                const isSelected = row.getIsSelected()
+                                const hasDowntimeStart = hasValidTimestamp(row.original.downtimeStartAt)
+                                const hasDowntimeEnd = hasValidTimestamp(row.original.downtimeEndAt)
+
+                                const rowColorClass = hasDowntimeStart && hasDowntimeEnd
+                                    ? (isSelected ? 'bg-orange-100 hover:bg-orange-200' : 'bg-orange-50 hover:bg-orange-100')
+                                    : hasDowntimeStart
+                                        ? (isSelected ? 'bg-red-200 hover:bg-red-300' : 'bg-red-100 hover:bg-red-200')
+                                        : (isSelected ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50')
+
+                                return (
+                                    <tr
+                                        key={row.id}
+                                        className={`transition-colors cursor-pointer ${rowColorClass}`}
+                                        onClick={row.getToggleSelectedHandler()}
+                                    >
+                                        {row.getVisibleCells().map((cell) => (
+                                            <td
+                                                key={cell.id}
+                                                className="px-4 py-3.5 text-sm text-gray-600"
+                                                style={{ width: cell.column.getSize() }}
+                                            >
+                                                {flexRender(
+                                                    cell.column.columnDef.cell,
+                                                    cell.getContext(),
+                                                )}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                )
+                            })
                         )}
                     </tbody>
                 </table>
