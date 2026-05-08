@@ -1344,7 +1344,7 @@ function RequestsTableView({
     })
 
     return (
-        <div ref={containerRef} className="flex-1 overflow-auto px-6 py-4">
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
             <Dialog
                 open={showModeConfirmDialog}
                 onOpenChange={(nextOpen) => {
@@ -1395,225 +1395,229 @@ function RequestsTableView({
                 </DialogContent>
             </Dialog>
 
-            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-                <div className="w-full shrink-0 space-y-2 lg:w-72">
-                    <div className="space-y-1">
-                        <label htmlFor="linac-site" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Site
-                        </label>
-                        <select
-                            id="linac-site"
-                            value={resolvedSiteId ?? ''}
-                            onChange={(e) => handleSiteComboChange(e.target.value)}
-                            disabled={isTherapist || isModeSitesLoading}
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-                        >
-                            <option value="">Select a site</option>
-                            {modeSites?.map((site) => (
-                                <option key={site.siteId} value={site.siteId}>
-                                    {site.name}
+            <div className="px-6 pt-4">
+                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+                    <div className="w-full shrink-0 space-y-2 lg:w-72">
+                        <div className="space-y-1">
+                            <label htmlFor="linac-site" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                Site
+                            </label>
+                            <select
+                                id="linac-site"
+                                value={resolvedSiteId ?? ''}
+                                onChange={(e) => handleSiteComboChange(e.target.value)}
+                                disabled={isTherapist || isModeSitesLoading}
+                                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                            >
+                                <option value="">Select a site</option>
+                                {modeSites?.map((site) => (
+                                    <option key={site.siteId} value={site.siteId}>
+                                        {site.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label htmlFor="linac-asset" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                Asset
+                            </label>
+                            <select
+                                id="linac-asset"
+                                value={selectedAssetId ?? ''}
+                                onChange={(e) => handleAssetComboChange(e.target.value)}
+                                disabled={isTherapist || typeof resolvedSiteId !== 'number' || isModeAssetsLoading}
+                                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                            >
+                                <option value="">
+                                    {typeof resolvedSiteId === 'number' ? 'Select an asset' : 'Select a site first'}
                                 </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="space-y-1">
-                        <label htmlFor="linac-asset" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Asset
-                        </label>
-                        <select
-                            id="linac-asset"
-                            value={selectedAssetId ?? ''}
-                            onChange={(e) => handleAssetComboChange(e.target.value)}
-                            disabled={isTherapist || typeof resolvedSiteId !== 'number' || isModeAssetsLoading}
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-                        >
-                            <option value="">
-                                {typeof resolvedSiteId === 'number' ? 'Select an asset' : 'Select a site first'}
-                            </option>
-                            {(modeAssets ?? []).map((asset) => (
-                                <option key={asset.assetId} value={asset.assetId}>
-                                    {(asset.modelName || 'Unknown Model')} (SN: {asset.serialNumber})
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-
-                <button
-                    type="button"
-                    disabled={isToggleDisabled}
-                    aria-pressed={isLinacDown}
-                    aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
-                    onClick={openModeDialog}
-                    className="group relative h-32 w-full max-w-156 overflow-hidden rounded-full border border-gray-300/80 bg-white shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-sm [--linac-rail-y:clamp(0.375rem,6%,1rem)]"
-                >
-                    <svg
-                        aria-hidden="true"
-                        viewBox="0 0 1000 160"
-                        preserveAspectRatio="none"
-                        className="absolute inset-0 h-full w-full"
-                    >
-                        <defs>
-                            <linearGradient id="linac-track" x1="0" y1="0" x2="1" y2="0">
-                                <stop offset="0%" stopColor="#ecfdf3" />
-                                <stop offset="50%" stopColor="#f5f7fa" />
-                                <stop offset="100%" stopColor="#fff1f2" />
-                            </linearGradient>
-                        </defs>
-                        <rect x="6" y="6" width="988" height="148" rx="74" fill="url(#linac-track)" />
-                    </svg>
-
-                    <div className="absolute inset-x-1.5 top-[var(--linac-rail-y)] bottom-[var(--linac-rail-y)] overflow-hidden rounded-full">
-                        <div
-                            className="h-full w-1/2 rounded-full transition-transform duration-300 ease-out"
-                            style={{ transform: isLinacDown ? 'translateX(100%)' : 'translateX(0)' }}
-                        >
-                            <svg aria-hidden="true" viewBox="0 0 500 148" preserveAspectRatio="none" className="h-full w-full">
-                                <defs>
-                                    <linearGradient id="linac-thumb" x1="0" y1="0" x2="1" y2="0">
-                                        <stop offset="0%" stopColor={isLinacDown ? '#ef4444' : '#059669'} />
-                                        <stop offset="100%" stopColor={isLinacDown ? '#dc2626' : '#047857'} />
-                                    </linearGradient>
-                                </defs>
-                                <rect x="4" y="4" width="492" height="140" rx="68" fill="url(#linac-thumb)" />
-                            </svg>
+                                {(modeAssets ?? []).map((asset) => (
+                                    <option key={asset.assetId} value={asset.assetId}>
+                                        {(asset.modelName || 'Unknown Model')} (SN: {asset.serialNumber})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
-                    <div className="relative z-10 grid h-full grid-cols-2 items-center px-8 text-lg font-bold uppercase tracking-[0.16em] md:text-2xl">
-                        <span className="flex justify-center">
-                            <span className={`px-4 py-2 transition-opacity duration-200 ${!isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
-                                CLINICAL
+                    <button
+                        type="button"
+                        disabled={isToggleDisabled}
+                        aria-pressed={isLinacDown}
+                        aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
+                        onClick={openModeDialog}
+                        className="group relative h-32 w-full max-w-156 overflow-hidden rounded-full border border-gray-300/80 bg-white shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-sm [--linac-rail-y:clamp(0.375rem,6%,1rem)]"
+                    >
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 1000 160"
+                            preserveAspectRatio="none"
+                            className="absolute inset-0 h-full w-full"
+                        >
+                            <defs>
+                                <linearGradient id="linac-track" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stopColor="#ecfdf3" />
+                                    <stop offset="50%" stopColor="#f5f7fa" />
+                                    <stop offset="100%" stopColor="#fff1f2" />
+                                </linearGradient>
+                            </defs>
+                            <rect x="6" y="6" width="988" height="148" rx="74" fill="url(#linac-track)" />
+                        </svg>
+
+                        <div className="absolute inset-x-1.5 top-[var(--linac-rail-y)] bottom-[var(--linac-rail-y)] overflow-hidden rounded-full">
+                            <div
+                                className="h-full w-1/2 rounded-full transition-transform duration-300 ease-out"
+                                style={{ transform: isLinacDown ? 'translateX(100%)' : 'translateX(0)' }}
+                            >
+                                <svg aria-hidden="true" viewBox="0 0 500 148" preserveAspectRatio="none" className="h-full w-full">
+                                    <defs>
+                                        <linearGradient id="linac-thumb" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0%" stopColor={isLinacDown ? '#ef4444' : '#059669'} />
+                                            <stop offset="100%" stopColor={isLinacDown ? '#dc2626' : '#047857'} />
+                                        </linearGradient>
+                                    </defs>
+                                    <rect x="4" y="4" width="492" height="140" rx="68" fill="url(#linac-thumb)" />
+                                </svg>
+                            </div>
+                        </div>
+
+                        <div className="relative z-10 grid h-full grid-cols-2 items-center px-8 text-lg font-bold uppercase tracking-[0.16em] md:text-2xl">
+                            <span className="flex justify-center">
+                                <span className={`px-4 py-2 transition-opacity duration-200 ${!isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
+                                    CLINICAL
+                                </span>
                             </span>
-                        </span>
-                        <span className="flex justify-center">
-                            <span className={`px-4 py-2 transition-opacity duration-200 ${isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
-                                DOWN
+                            <span className="flex justify-center">
+                                <span className={`px-4 py-2 transition-opacity duration-200 ${isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
+                                    DOWN
+                                </span>
                             </span>
-                        </span>
-                    </div>
-                </button>
+                        </div>
+                    </button>
+                </div>
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
-                <table className="min-w-full" style={{ width: table.getTotalSize() }}>
-                    <thead>
-                        {table.getHeaderGroups().map((headerGroup) => (
-                            <tr key={headerGroup.id}>
-                                {headerGroup.headers.map((header) => (
-                                    <th
-                                        key={header.id}
-                                        className="px-4 py-3 text-left text-xs font-semibold text-primary-900 uppercase tracking-wider bg-primary-100 border-b border-primary-200/50 relative"
-                                        style={{ width: header.getSize() }}
-                                    >
-                                        {header.isPlaceholder
-                                            ? null
-                                            : flexRender(
-                                                header.column.columnDef.header,
-                                                header.getContext(),
-                                            )}
-                                        {header.column.getCanResize() && (
-                                            <div
-                                                onMouseDown={header.getResizeHandler()}
-                                                onTouchStart={header.getResizeHandler()}
-                                                className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-primary/40 transition-colors ${header.column.getIsResizing() ? 'bg-primary/60' : ''}`}
-                                            />
-                                        )}
-                                    </th>
-                                ))}
-                            </tr>
-                        ))}
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {table.getRowModel().rows.length === 0 ? (
-                            <tr>
-                                <td
-                                    colSpan={columns.length}
-                                    className="px-6 py-16 text-center text-gray-400"
-                                >
-                                    No requests found.
-                                </td>
-                            </tr>
-                        ) : (
-                            table.getRowModel().rows.map((row) => {
-                                const isSelected = row.getIsSelected()
-                                const hasDowntimeStart = hasValidTimestamp(row.original.downtimeStartAt)
-                                const hasDowntimeEnd = hasValidTimestamp(row.original.downtimeEndAt)
-
-                                const rowColorClass = hasDowntimeStart && hasDowntimeEnd
-                                    ? (isSelected ? 'bg-orange-100 hover:bg-orange-200' : 'bg-orange-50 hover:bg-orange-100')
-                                    : hasDowntimeStart
-                                        ? (isSelected ? 'bg-red-200 hover:bg-red-300' : 'bg-red-100 hover:bg-red-200')
-                                        : (isSelected ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50')
-
-                                return (
-                                    <tr
-                                        key={row.id}
-                                        className={`transition-colors cursor-pointer ${rowColorClass}`}
-                                        onClick={row.getToggleSelectedHandler()}
-                                    >
-                                        {row.getVisibleCells().map((cell) => (
-                                            <td
-                                                key={cell.id}
-                                                className="px-4 py-3.5 text-sm text-gray-600"
-                                                style={{ width: cell.column.getSize() }}
-                                            >
-                                                {flexRender(
-                                                    cell.column.columnDef.cell,
-                                                    cell.getContext(),
+            <div ref={containerRef} className="flex-1 min-h-0 overflow-auto px-6 py-4">
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+                    <table className="min-w-full" style={{ width: table.getTotalSize() }}>
+                        <thead>
+                            {table.getHeaderGroups().map((headerGroup) => (
+                                <tr key={headerGroup.id}>
+                                    {headerGroup.headers.map((header) => (
+                                        <th
+                                            key={header.id}
+                                            className="px-4 py-3 text-left text-xs font-semibold text-primary-900 uppercase tracking-wider bg-primary-100 border-b border-primary-200/50 relative"
+                                            style={{ width: header.getSize() }}
+                                        >
+                                            {header.isPlaceholder
+                                                ? null
+                                                : flexRender(
+                                                    header.column.columnDef.header,
+                                                    header.getContext(),
                                                 )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                )
-                            })
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                                            {header.column.getCanResize() && (
+                                                <div
+                                                    onMouseDown={header.getResizeHandler()}
+                                                    onTouchStart={header.getResizeHandler()}
+                                                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-primary/40 transition-colors ${header.column.getIsResizing() ? 'bg-primary/60' : ''}`}
+                                                />
+                                            )}
+                                        </th>
+                                    ))}
+                                </tr>
+                            ))}
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {table.getRowModel().rows.length === 0 ? (
+                                <tr>
+                                    <td
+                                        colSpan={columns.length}
+                                        className="px-6 py-16 text-center text-gray-400"
+                                    >
+                                        No requests found.
+                                    </td>
+                                </tr>
+                            ) : (
+                                table.getRowModel().rows.map((row) => {
+                                    const isSelected = row.getIsSelected()
+                                    const hasDowntimeStart = hasValidTimestamp(row.original.downtimeStartAt)
+                                    const hasDowntimeEnd = hasValidTimestamp(row.original.downtimeEndAt)
 
-            {/* Footer — Pagination */}
-            <div className="mt-3 flex items-center justify-between text-xs text-gray-500 px-1">
-                <span>
-                    {table.getFilteredRowModel().rows.length} of{' '}
-                    {data.length} requests
-                    {selectedCount > 0 && ` · ${selectedCount} selected`}
-                </span>
+                                    const rowColorClass = hasDowntimeStart && hasDowntimeEnd
+                                        ? (isSelected ? 'bg-orange-100 hover:bg-orange-200' : 'bg-orange-50 hover:bg-orange-100')
+                                        : hasDowntimeStart
+                                            ? (isSelected ? 'bg-red-200 hover:bg-red-300' : 'bg-red-100 hover:bg-red-200')
+                                            : (isSelected ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-gray-50')
 
-                <div className="flex items-center gap-1.5">
-                    <button
-                        onClick={() => table.firstPage()}
-                        disabled={!table.getCanPreviousPage()}
-                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <ChevronsLeft size={14} />
-                    </button>
-                    <button
-                        onClick={() => table.previousPage()}
-                        disabled={!table.getCanPreviousPage()}
-                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <ChevronLeft size={14} />
-                    </button>
-                    <span className="px-2 text-gray-600 font-medium">
-                        Page {table.getState().pagination.pageIndex + 1} of{' '}
-                        {table.getPageCount()}
+                                    return (
+                                        <tr
+                                            key={row.id}
+                                            className={`transition-colors cursor-pointer ${rowColorClass}`}
+                                            onClick={row.getToggleSelectedHandler()}
+                                        >
+                                            {row.getVisibleCells().map((cell) => (
+                                                <td
+                                                    key={cell.id}
+                                                    className="px-4 py-3.5 text-sm text-gray-600"
+                                                    style={{ width: cell.column.getSize() }}
+                                                >
+                                                    {flexRender(
+                                                        cell.column.columnDef.cell,
+                                                        cell.getContext(),
+                                                    )}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    )
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Footer — Pagination */}
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500 px-1">
+                    <span>
+                        {table.getFilteredRowModel().rows.length} of{' '}
+                        {data.length} requests
+                        {selectedCount > 0 && ` · ${selectedCount} selected`}
                     </span>
-                    <button
-                        onClick={() => table.nextPage()}
-                        disabled={!table.getCanNextPage()}
-                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <ChevronRight size={14} />
-                    </button>
-                    <button
-                        onClick={() => table.lastPage()}
-                        disabled={!table.getCanNextPage()}
-                        className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <ChevronsRight size={14} />
-                    </button>
+
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => table.firstPage()}
+                            disabled={!table.getCanPreviousPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronsLeft size={14} />
+                        </button>
+                        <button
+                            onClick={() => table.previousPage()}
+                            disabled={!table.getCanPreviousPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronLeft size={14} />
+                        </button>
+                        <span className="px-2 text-gray-600 font-medium">
+                            Page {table.getState().pagination.pageIndex + 1} of{' '}
+                            {table.getPageCount()}
+                        </span>
+                        <button
+                            onClick={() => table.nextPage()}
+                            disabled={!table.getCanNextPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronRight size={14} />
+                        </button>
+                        <button
+                            onClick={() => table.lastPage()}
+                            disabled={!table.getCanNextPage()}
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ChevronsRight size={14} />
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
