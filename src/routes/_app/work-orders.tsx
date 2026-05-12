@@ -14,7 +14,7 @@ import {
   type ColumnResizeMode,
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
 import { useDynamicPageSize } from '../../hooks/useDynamicPageSize'
 import { Search, Calendar, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Play, XCircle, UserPlus, Clock } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
@@ -1027,6 +1027,14 @@ function WorkOrderExecutionDialog({
   const [dtEndAt, setDtEndAt] = useState('')
   const [showDowntimeForm, setShowDowntimeForm] = useState(false)
 
+  const handleDateTimeChangeAndClose = (
+    event: ChangeEvent<HTMLInputElement>,
+    onChange: (value: string) => void,
+  ) => {
+    onChange(event.target.value)
+    event.currentTarget.blur()
+  }
+
   // Sync local state when downtime data loads
   useEffect(() => {
     if (downtimeEvent) {
@@ -1242,7 +1250,7 @@ function WorkOrderExecutionDialog({
                         <input
                           type="datetime-local"
                           value={dtEndAt}
-                          onChange={(e) => setDtEndAt(e.target.value)}
+                          onChange={(e) => handleDateTimeChangeAndClose(e, setDtEndAt)}
                           disabled={!canUpdateWorkOrders}
                           className="text-sm border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
                         />
@@ -1284,7 +1292,7 @@ function WorkOrderExecutionDialog({
                     <input
                       type="datetime-local"
                       value={dtStartAt}
-                      onChange={(e) => setDtStartAt(e.target.value)}
+                      onChange={(e) => handleDateTimeChangeAndClose(e, setDtStartAt)}
                       disabled={!canUpdateWorkOrders}
                       className="w-full text-sm border border-gray-300 rounded-md py-1.5 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
@@ -1294,7 +1302,7 @@ function WorkOrderExecutionDialog({
                     <input
                       type="datetime-local"
                       value={dtEndAt}
-                      onChange={(e) => setDtEndAt(e.target.value)}
+                      onChange={(e) => handleDateTimeChangeAndClose(e, setDtEndAt)}
                       disabled={!canUpdateWorkOrders}
                       className="w-full text-sm border border-gray-300 rounded-md py-1.5 px-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />

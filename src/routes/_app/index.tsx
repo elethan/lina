@@ -14,7 +14,7 @@ import {
     type ColumnResizeMode,
 } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, type ChangeEvent } from 'react'
 import { useDynamicPageSize } from '../../hooks/useDynamicPageSize'
 import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react'
 import {
@@ -1638,6 +1638,14 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
         setFormErrorToast(message)
     }
 
+    const handleTimeChangeAndClose = (
+        event: ChangeEvent<HTMLInputElement>,
+        onChange: (value: string) => void,
+    ) => {
+        onChange(event.target.value)
+        event.currentTarget.blur()
+    }
+
     const { data: sites, isLoading: isLoadingSites } = useQuery({
         queryKey: ['sites'],
         queryFn: async () => fetchSites(),
@@ -1958,7 +1966,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
                                             type="time"
                                             step={60}
                                             value={field.state.value}
-                                            onChange={(e) => field.handleChange(e.target.value)}
+                                            onChange={(e) => handleTimeChangeAndClose(e, field.handleChange)}
                                             className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                                         />
                                     )}
@@ -1988,7 +1996,7 @@ function NewRequestDialog({ initialSiteId, open, onOpenChange, onAutoWoCreated }
                                             type="time"
                                             step={60}
                                             value={field.state.value}
-                                            onChange={(e) => field.handleChange(e.target.value)}
+                                            onChange={(e) => handleTimeChangeAndClose(e, field.handleChange)}
                                             className="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                                         />
                                     )}
