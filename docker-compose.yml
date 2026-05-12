@@ -1,7 +1,6 @@
 services:
   lina:
-    image: ghcr.io/elethan/lina:latest
-    build: .                          # used by: docker compose up --build
+    image: ghcr.io/genesiscare-eu/engineering:latest
     container_name: lina-container
     restart: always
     volumes:
@@ -18,6 +17,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
+      # - ./corp-certs:/etc/caddy/certs   # Uncomment if using Corporate Certificates (Option B below)
       - caddy_data:/data
       - caddy_config:/config
 

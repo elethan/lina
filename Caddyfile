@@ -1,3 +1,4 @@
-46.101.53.201.sslip.io {
-        reverse_proxy lina:3000
+lina.corp.local {
+    tls internal
+    reverse_proxy lina-container:3000
 }

@@ -53,12 +53,21 @@ const resolveRoleFromEntraProfile = (profile: Record<string, unknown>): AppRole 
     throw new Error("User is not in an authorized Entra group");
 };
 
+const trustedOrigins = Array.from(
+    new Set(
+        [
+            process.env.VITE_APP_URL,
+            process.env.BETTER_AUTH_URL,
+            process.env.NODE_ENV !== "production" ? "http://localhost:3000" : undefined,
+        ].filter((origin): origin is string => Boolean(origin)),
+    ),
+);
+
 export const auth = betterAuth({
-    // 1. Explicitly trust your magic domain
-  trustedOrigins: ['https://46.101.53.201.sslip.io'], 
-  
+    ...(trustedOrigins.length > 0 ? { trustedOrigins } : {}),
+
   advanced: {
-    // 2. Tell Better Auth to trust Caddy's X-Forwarded-* headers
+    // Tell Better Auth to trust Caddy's X-Forwarded-* headers
     trustedProxyHeaders: true,
     useSecureCookies: process.env.NODE_ENV === 'production',
         // Explicit hardened defaults for all auth cookies.
@@ -97,9 +106,6 @@ export const auth = betterAuth({
         expiresIn: 60 * 60 * 2,  // 2 hours
         updateAge: 60 * 60,       // extend token on activity after 1 hour
     },
-    ...(process.env.VITE_APP_URL
-        ? { trustedOrigins: [process.env.VITE_APP_URL] }
-        : {}),
 
     // 4. Microsoft Entra ID SSO — only enabled when all three env vars are present.
     //    Without them the app starts normally and falls back to email/password login.
