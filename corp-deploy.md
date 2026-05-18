@@ -2,6 +2,8 @@
 
 This document defines the corporate deployment standard for Lina.
 
+For company laptop repo setup, PR creation/merge workflow, and troubleshooting missing Create/Merge buttons, see [make-changes-request.md](make-changes-request.md).
+
 ## 1. Deployment Strategy
 
 Chosen model:

@@ -6,6 +6,8 @@ This runbook defines the selected delivery model:
 2. Deployment to the VM is manual.
 3. No runner SSH deployment step is used.
 
+For company laptop setup, PR creation/merge steps, and missing button troubleshooting, see [make-changes-request.md](make-changes-request.md).
+
 ## Selected Model
 
 Build only from GitHub Actions, then manual deploy on server.
