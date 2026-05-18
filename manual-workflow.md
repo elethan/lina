@@ -1,184 +1,250 @@
-# Lina Manual Workflow (No GitHub Actions Runners)
+# Lina Manual Workflow
 
-This guide explains how to work with the company GitHub repository and deploy manually without using GitHub Actions runners.
+This runbook defines the selected delivery model:
 
-## Goal
+1. GitHub Actions builds and publishes the container image.
+2. Deployment to the VM is manual.
+3. No runner SSH deployment step is used.
 
-Use this flow:
+## Selected Model
 
-1. Code lives in the company GitHub repo.
-2. Developers make changes from work laptops and merge to main.
-3. A developer manually builds and pushes a Docker image to GHCR.
-4. The server pulls the new image and restarts the app container.
+Build only from GitHub Actions, then manual deploy on server.
 
-No runner is required for this workflow.
+- Build trigger: push to main or manual workflow dispatch from a work laptop.
+- Deploy trigger: operator runs docker compose pull and restart commands on the VM.
 
-## Does docker-compose stay the same?
+## Compose and Image Mapping
 
-Short answer: yes, and it is now aligned for pull-only deployments.
+In docker-compose, `lina` is the service name and `image` is the registry image.
 
-Current compose behavior:
+- `docker compose pull lina` means: pull the image configured under the `lina` service.
+- If the company repo slug is `genesiscare-eu/engineering`, image should be `ghcr.io/genesiscare-eu/engineering:latest`.
+- Keep the compose image name aligned with the workflow output image name.
 
-- lina service uses only the GHCR image reference.
-- deployments run docker compose pull lina then docker compose up -d.
+## Build Workflow File
 
-This prevents accidental server-side local builds and keeps deploys predictable.
+Path: `.github/workflows/deploy.yml`
 
-## 1) Initial transfer to company repo
+Use this build-only workflow:
 
-Run on your current machine in this repo:
+```yaml
+name: Build Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+```
+
+Notes:
+
+- `${{ github.repository }}` becomes `<org>/<repo>` for the current repository.
+- In `genesiscare-eu/engineering`, the workflow publishes to `ghcr.io/genesiscare-eu/engineering`.
+
+## 1) Initial Transfer to Company Repo
+
+If repo access works from this machine:
 
 ```powershell
-git remote -v
 git remote add company https://github.com/genesiscare-eu/engineering.git
 git push -u company corp-transfer-repo
 ```
 
-Then:
+Then open a PR from `corp-transfer-repo` to `main` in the company repo and merge.
 
-1. Open a PR in the company repo from corp-transfer-repo to main.
-2. Get review and merge.
-3. Treat company main as the source of truth going forward.
+If access only works from work laptop:
 
-## 2) Day-to-day development from work laptop
+```powershell
+git bundle create corp-transfer-repo.bundle corp-transfer-repo
+```
 
-### First-time setup on work laptop
+Copy the bundle to the work laptop, then:
 
 ```powershell
 git clone https://github.com/genesiscare-eu/engineering.git
 cd engineering
-git checkout main
-git pull --ff-only
+git fetch C:\path\to\corp-transfer-repo.bundle corp-transfer-repo:corp-transfer-repo
+git checkout corp-transfer-repo
+git push -u origin corp-transfer-repo
 ```
 
-### For each change
+## 2) Day-to-Day Dev Flow (Work Laptop)
 
 ```powershell
+git checkout main
+git pull --ff-only
 git checkout -b feature/short-description
-# make changes
+# edit files
 git add -A
-git commit -m "Describe the change"
+git commit -m "Describe change"
 git push -u origin feature/short-description
 ```
 
-Then:
+Open PR to `main`, review, merge.
 
-1. Open PR to main.
-2. Merge after review.
+## 3) Build Trigger From Work Laptop
 
-## 3) Build and publish Docker image manually
+Option A: automatic build
 
-Run this on a machine with Docker (usually your work laptop or a build VM).
+- Merge PR to `main`.
+- Workflow runs automatically on push to `main`.
 
-### 3.1 Login to GHCR
+Option B: manual build
 
-You need a GitHub token with package write access.
-
-```powershell
-echo YOUR_GHCR_WRITE_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
-```
-
-### 3.2 Build and push image
-
-From repo root:
+- Open Actions in GitHub and run `Build Image` with `main` selected.
+- Or use GitHub CLI:
 
 ```powershell
-docker buildx build --platform linux/amd64 -t ghcr.io/genesiscare-eu/engineering:latest --push .
+gh workflow run "Build Image" --ref main
 ```
 
-Recommended stronger tagging (optional):
+## 4) First-Time Database Seed (one-time)
 
-```powershell
-git rev-parse --short HEAD
-docker buildx build --platform linux/amd64 -t ghcr.io/genesiscare-eu/engineering:latest -t ghcr.io/genesiscare-eu/engineering:COMMIT_SHA --push .
-```
-
-Why this matters:
-
-- latest gives a simple deploy target.
-- commit tag gives rollback safety.
-
-## 4) Deploy on server (pull + restart)
-
-SSH into server:
+Prepare and copy the initial database from your trusted source machine:
 
 ```bash
-ssh root@<SERVER_IP>
+node prepare4export-db.js
+scp lina-prod.db VM_USER@VM_HOST:/lina_app/lina-local.db
+```
+
+On the VM, import it into the persistent `lina_data` volume used by the container:
+
+```bash
 cd /lina_app
+docker volume create lina_data
+docker run --rm \
+  -v lina_data:/vol \
+  -v /lina_app/lina-local.db:/src/db:ro \
+  alpine sh -c '
+    cp /src/db /vol/lina_prod.db
+    chown 1000:1000 /vol/lina_prod.db
+    chmod 600 /vol/lina_prod.db
+    chown 1000:1000 /vol
+    chmod 700 /vol
+  '
+docker run --rm -v lina_data:/vol alpine ls -l /vol
 ```
 
-Login to GHCR (read token is enough on server):
+Expected result: `/vol/lina_prod.db` exists with owner `1000:1000` and mode `-rw-------`.
+
+## 5) Manual Deploy on VM
+
+On the VM:
 
 ```bash
-echo YOUR_GHCR_READ_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
-```
-
-Pull and restart only lina:
-
-```bash
+cd /lina_app
+echo SERVER_GHCR_READ_TOKEN | docker login ghcr.io -u SERVER_GHCR_USER --password-stdin
 docker compose pull lina
 docker compose up -d --no-deps lina
 docker compose ps
 docker compose logs --tail=100 lina
 ```
 
-If you changed Caddyfile or docker-compose.yml too, run:
+If compose or caddy config changed, use:
 
 ```bash
 docker compose up -d
 ```
 
-## 5) Optional rollback
+## 6) Tokens, Scopes, and Login Commands
 
-If you pushed commit-tagged images:
+Use classic PATs for GHCR package auth.
 
-1. Edit docker-compose.yml image tag from latest to the previous known-good tag.
-2. Deploy again:
+### Laptop Build Token
 
-```bash
-docker compose pull lina
-docker compose up -d --no-deps lina
-```
+Purpose:
 
-## 6) Optional hard switch away from runners
+- Push image to GHCR from laptop/CLI.
 
-If you want zero runner usage in this repo:
+Minimum scope:
 
-1. Delete or disable .github/workflows/deploy.yml.
-2. Remove deploy-related Actions secrets:
-   - SERVER_HOST
-   - SERVER_USER
-   - SERVER_SSH_KEY
-3. Remove old deploy key from server authorized_keys if it was only used by Actions.
+- `write:packages`
 
-## 7) Quick command checklist
-
-Developer side:
+Command:
 
 ```powershell
-# update code
-git checkout main
-git pull --ff-only
-
-# feature branch work
-git checkout -b feature/my-change
-# edit files
-git add -A
-git commit -m "My change"
-git push -u origin feature/my-change
-
-# after merge to main, build and push image
-echo YOUR_GHCR_WRITE_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
-docker buildx build --platform linux/amd64 -t ghcr.io/genesiscare-eu/engineering:latest --push .
+echo LAPTOP_GHCR_WRITE_TOKEN | docker login ghcr.io -u LAPTOP_GHCR_USER --password-stdin
 ```
 
-Server side:
+### Server Pull Token
+
+Purpose:
+
+- Pull image on VM during manual deploy.
+
+Minimum scope:
+
+- `read:packages`
+
+Command:
 
 ```bash
-ssh root@<SERVER_IP>
-cd /lina_app
-echo YOUR_GHCR_READ_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
-docker compose pull lina
-docker compose up -d --no-deps lina
-docker compose logs --tail=100 lina
+echo SERVER_GHCR_READ_TOKEN | docker login ghcr.io -u SERVER_GHCR_USER --password-stdin
 ```
+
+Important:
+
+- Token owner must have package access to `ghcr.io/<org>/<repo>`.
+- If organization uses SSO/SAML, token must be SSO-authorized.
+
+## 7) What to Ask IT For
+
+1. Repo access
+- Write access to `genesiscare-eu/engineering` for developers who push branches and create PRs.
+
+2. Package access
+- Confirm package read/write permissions for the relevant accounts.
+
+3. Tokens
+- One build token for laptop/build machine: classic PAT with `write:packages`.
+- One server token for VM: classic PAT with `read:packages` only.
+- Prefer service account for server token, not personal account.
+
+4. VM/network
+- SSH access from IT/admin source IPs to server.
+- Outbound HTTPS from server to `ghcr.io` and `login.microsoftonline.com`.
+
+5. Security policy
+- Token expiry policy and rotation process.
+- SSO authorization requirements for PATs.
+
+6. Ops ownership
+- Who runs manual deploy commands.
+- Who handles rollback and incident response.
+
+## 8) Quick Checklist
+
+1. Merge PR to main.
+2. Confirm build workflow completed and image tag exists.
+3. On first deployment only, run the one-time DB seed steps above.
+4. SSH to VM.
+5. Run GHCR login with server read token.
+6. Pull and restart `lina` service.
+7. Validate app health and logs.

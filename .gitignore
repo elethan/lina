@@ -13,8 +13,7 @@ local-md
 .vinxi
 __unconfig*
 todos.json
-*.db
-*.db-journal
+*-local.db
 *.csv
 *.log
 src/db/seed*.ts
