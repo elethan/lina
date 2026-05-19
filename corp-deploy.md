@@ -84,7 +84,81 @@ Compose runs two services:
 - `lina` (app container)
 - `caddy` (reverse proxy)
 
-Deploy commands target the service name:
+### 4.1 Full `docker-compose.yml` with line-by-line comments
+
+Use this layout in `/lina_app/docker-compose.yml`:
+
+```yaml
+services: # Define all runtime services managed by Docker Compose.
+  lina: # Application service for Lina.
+    image: ghcr.io/genesiscare-eu/engineering:latest # Image built by the GitHub build workflow.
+    container_name: lina-container # Stable container name used by Caddy reverse_proxy target.
+    restart: always # Keep container running across restarts and transient failures.
+    volumes: # Declare container volume mounts.
+      - lina_data:/app/shared-lina-db-vol # Persist SQLite DB files outside the container filesystem.
+    env_file: # Load environment variables from a file.
+      - ./lina.env # Runtime app config and secrets for production.
+
+  caddy: # Reverse proxy service handling inbound HTTP/HTTPS.
+    image: caddy:latest # Official Caddy image.
+    container_name: caddy-container # Stable container name for ops/debugging.
+    restart: always # Keep proxy online after host/container restarts.
+    ports: # Expose web ports on the VM.
+      - "80:80" # HTTP ingress.
+      - "443:443" # HTTPS ingress.
+    volumes: # Mount Caddy config and persistent state.
+      - ./Caddyfile:/etc/caddy/Caddyfile 
+      # - ./corp-certs:/etc/caddy/certs # Uncomment only when using company-issued certificate files.
+      - caddy_data:/data # Caddy-managed certificate and state data.
+      - caddy_config:/config # Caddy runtime config storage.
+
+volumes: # Declare named volumes used above.
+  lina_data: # Persistent application database volume.
+    name: lina_data # Keep fixed name for seed/restore commands and cross-compose consistency.
+    external: true # Volume must exist already and is not recreated by compose up.
+  caddy_data: # Persistent Caddy data volume.
+  caddy_config: # Persistent Caddy config volume.
+```
+
+### 4.2 `Caddyfile` behavior and certificate choices
+
+Current runtime behavior is a single site block for `lina.corp.local` that proxies traffic to the `lina-container` app on port `3000`.
+
+Recommended baseline `Caddyfile`:
+
+```caddy
+lina.corp.local {
+    tls internal
+    reverse_proxy lina-container:3000
+}
+```
+
+Certificate options:
+
+1. Option A: Internal certificate (`tls internal`)
+- Caddy issues and rotates certificates from its internal CA.
+- Best for internal-only environments where IT can trust the internal CA root on managed clients.
+- No certificate files need to be mounted in compose.
+
+2. Option B: Company-issued certificate files
+- Use corporate PKI-managed cert and key files mounted into Caddy.
+- Uncomment cert mount in compose:
+  `- ./corp-certs:/etc/caddy/certs`
+- Update `Caddyfile` to point to mounted certificate files:
+
+```caddy
+lina.corp.local {
+    tls /etc/caddy/certs/lina.crt /etc/caddy/certs/lina.key
+    reverse_proxy lina-container:3000
+}
+```
+
+Deployment note:
+
+- If `docker-compose.yml` or `Caddyfile` changes, run:
+  `docker compose up -d`
+
+Deploy commands still target the `lina` service for app-only refreshes:
 
 - `docker compose pull lina`
 - `docker compose up -d --no-deps lina`
