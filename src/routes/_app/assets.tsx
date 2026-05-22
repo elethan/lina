@@ -23,108 +23,45 @@ import {
 import { Input } from '../../components/ui/input'
 import {
   createAssetAdmin,
-  createAssetSystemLinkAdmin,
-  createSiteAdmin,
   deleteAssetAdmin,
-  deleteAssetSystemEntryAdmin,
-  deleteSiteAdmin,
   decommissionAssetAdmin,
   previewCloseWarningsAdmin,
-  type AssetSystemLinkRow,
   fetchAssetsAdminData,
   updateAssetAdmin,
-  updateAssetSystemLinkAdmin,
-  updateSiteAdmin,
   type AssetAdminRow,
-  type SiteAdminRow,
 } from '../../data/assets.api'
+import {
+  createSiteAdmin,
+  deleteSiteAdmin,
+  updateSiteAdmin,
+  type SiteAdminRow,
+} from '../../data/sites.api'
+import {
+  createAssetSystemLinkAdmin,
+  deleteAssetSystemEntryAdmin,
+  updateAssetSystemLinkAdmin,
+  type AssetSystemLinkRow,
+} from '../../data/asset-systems.api'
 import { fetchCurrentUserPermissions } from '../../data/current-user-permissions.api'
 import { canPermissionMap } from '../../lib/role-permissions'
 import {
   buildRedirectTargetFromLocation,
   UNAUTHORIZED_REDIRECT_NOTICE,
 } from '../../lib/redirect-target'
-
-type DialogMode = 'create' | 'edit'
-type AssetStatus = 'Operational' | 'De-commissioned'
-
-type AssetFormState = {
-  serialNumber: string
-  modelName: string
-  warrantyYears: string
-  catDate: string
-  installationDate: string
-  status: AssetStatus
-  siteId: string
-  systemIds: number[]
-}
-
-type SystemFormState = {
-  systemId: string
-  serialNumber: string
-  swVersion: string
-  userCredentials: string
-  adminCredentials: string
-  status: AssetStatus
-}
-
-type CloseTarget =
-  | {
-      kind: 'system'
-      label: string
-      assetId: number
-      systemId: number
-    }
-  | {
-      kind: 'asset'
-      label: string
-      assetId: number
-    }
-  | {
-      kind: 'site'
-      label: string
-      siteId: number
-    }
+import {
+  EMPTY_ASSET_FORM,
+  EMPTY_SYSTEM_FORM,
+  type AssetFormState,
+  type AssetStatus,
+  type CloseTarget,
+  type DialogMode,
+  type SystemFormState,
+} from '../../features/assets/types'
+import { statusBadge, toDateInputValue, toYmd } from '../../features/assets/format'
 
 const siteColumnHelper = createColumnHelper<SiteAdminRow>()
 const assetColumnHelper = createColumnHelper<AssetAdminRow>()
 const systemColumnHelper = createColumnHelper<AssetSystemLinkRow>()
-
-const EMPTY_ASSET_FORM: AssetFormState = {
-  serialNumber: '',
-  modelName: '',
-  warrantyYears: '',
-  catDate: '',
-  installationDate: '',
-  status: 'Operational',
-  siteId: '',
-  systemIds: [],
-}
-
-const EMPTY_SYSTEM_FORM: SystemFormState = {
-  systemId: '',
-  serialNumber: '',
-  swVersion: '',
-  userCredentials: '',
-  adminCredentials: '',
-  status: 'Operational',
-}
-
-function toYmd(value: string | null): string {
-  if (!value) return '—'
-
-  const ymd = value.match(/^(\d{4}-\d{2}-\d{2})/)
-  if (ymd) return ymd[1]
-
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toISOString().slice(0, 10)
-}
-
-function toDateInputValue(value: string | null): string {
-  if (!value) return ''
-  return toYmd(value)
-}
 
 export const Route = createFileRoute('/_app/assets')({
   beforeLoad: ({ context, location }) => {
@@ -148,21 +85,6 @@ export const Route = createFileRoute('/_app/assets')({
   },
   component: AssetsPage,
 })
-
-function statusBadge(status: string) {
-  const normalized = status.trim().toLowerCase()
-
-  if (normalized === 'de-commissioned' || normalized === 'decommissioned') {
-    return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200'
-  }
-
-  if (normalized === 'down') {
-    return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200'
-  }
-
-  // Treat Clinical and legacy Operational as healthy status.
-  return 'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
-}
 
 function AssetsPage() {
   const queryClient = useQueryClient()
