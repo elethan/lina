@@ -1,4 +1,5 @@
 import { authServerFn } from '../lib/server-utils'
+import { MACHINE_CLINICAL_STATUS } from '../lib/machine-clinical-status'
 
 type ActorMeta = {
     id: string
@@ -911,7 +912,7 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
 
             if (openDowntimeForAsset.length === 0) {
                 await db.update(assets)
-                    .set({ status: 'Clinical' })
+                    .set({ status: MACHINE_CLINICAL_STATUS.clinical })
                     .where(eq(assets.id, existingDowntime.assetId))
                 syncedAssetClinical = true
             }

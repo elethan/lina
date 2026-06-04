@@ -57,7 +57,7 @@ import {
   type DialogMode,
   type SystemFormState,
 } from '../../features/assets/types'
-import { statusBadge, toDateInputValue, toYmd } from '../../features/assets/format'
+import { displayAssetStatus, statusBadge, toDateInputValue, toYmd } from '../../features/assets/format'
 
 const siteColumnHelper = createColumnHelper<SiteAdminRow>()
 const assetColumnHelper = createColumnHelper<AssetAdminRow>()
@@ -744,7 +744,7 @@ function AssetsPage() {
       }),
       assetColumnHelper.accessor('status', {
         header: 'Status',
-        cell: (info) => <span className={statusBadge(info.getValue())}>{info.getValue()}</span>,
+        cell: (info) => <span className={statusBadge(info.getValue())}>{displayAssetStatus(info.getValue())}</span>,
       }),
     ]
 
@@ -1067,7 +1067,7 @@ function AssetsPage() {
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{field.label}</p>
                     {field.label === 'Status' ? (
                       <div className="mt-1">
-                        <span className={statusBadge(field.value)}>{field.value}</span>
+                        <span className={statusBadge(field.value)}>{displayAssetStatus(field.value)}</span>
                       </div>
                     ) : (
                       <p className="mt-1 text-sm text-gray-900 break-words">{field.value}</p>
@@ -1375,7 +1375,7 @@ function AssetsPage() {
                           className="h-4 w-4"
                         />
                         <span className="text-sm text-gray-800">{system.name}</span>
-                        <span className={statusBadge(system.status)}>{system.status}</span>
+                        <span className={statusBadge(system.status)}>{displayAssetStatus(system.status)}</span>
                       </label>
                     )
                   })

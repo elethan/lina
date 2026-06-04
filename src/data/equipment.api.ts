@@ -1,4 +1,10 @@
 import { authServerFn } from '../lib/server-utils'
+import {
+    getMachineClinicalStatusLabel,
+    MACHINE_CLINICAL_STATUS,
+    normalizeMachineClinicalStatus,
+    type MachineClinicalStatus,
+} from '../lib/machine-clinical-status'
 
 type ActorMeta = {
     id: string
@@ -124,12 +130,6 @@ export type MachineClinicalAssetOption = {
     status: string
 }
 
-export type MachineClinicalStatus = 'Clinical' | 'Down'
-
-function normalizeMachineClinicalStatus(status: string): MachineClinicalStatus {
-    return status.toLowerCase() === 'down' ? 'Down' : 'Clinical'
-}
-
 export const fetchMachineClinicalAssetContext = authServerFn({ method: 'GET' })
     .inputValidator((data: { assetId: number }) => {
         if (!data.assetId) throw new Error('assetId is required')
@@ -226,8 +226,10 @@ export const fetchMachineClinicalStatus = authServerFn({ method: 'GET' })
 export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
     .inputValidator((data: { assetId: number; status: MachineClinicalStatus }) => {
         if (!data.assetId) throw new Error('assetId is required')
-        if (!['Clinical', 'Down'].includes(data.status)) {
-            throw new Error('status must be Clinical or Down')
+        if (![MACHINE_CLINICAL_STATUS.clinical, MACHINE_CLINICAL_STATUS.nonClinical].includes(data.status)) {
+            throw new Error(
+                `status must be ${MACHINE_CLINICAL_STATUS.clinical} or ${MACHINE_CLINICAL_STATUS.nonClinical}`,
+            )
         }
 
         return data
@@ -256,7 +258,11 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             throw new Error('Asset not found')
         }
 
-        if (existing.status === data.status) {
+        const currentStatus = normalizeMachineClinicalStatus(existing.status)
+        const isSameLogicalStatus = currentStatus === data.status
+        const shouldSyncStoredStatus = existing.status !== data.status
+
+        if (isSameLogicalStatus && !shouldSyncStoredStatus) {
             logger.info('MACHINE_CLINICAL_STATUS_NOOP', {
                 assetId: data.assetId,
                 status: data.status,
@@ -278,7 +284,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
         const reportedBy = user.name?.trim() || user.email || 'Clinical user'
 
         let requestId: number | null = null
-        let requestAction: 'created-down-request' | 'updated-down-request-end' | 'none' = 'none'
+        let requestAction: 'created-non-clinical-request' | 'updated-non-clinical-request-end' | 'none' = 'none'
 
         db.transaction((tx) => {
             tx.update(assets)
@@ -286,7 +292,11 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
                 .where(eq(assets.id, data.assetId))
                 .run()
 
-            if (data.status === 'Down') {
+            if (isSameLogicalStatus) {
+                return
+            }
+
+            if (data.status === MACHINE_CLINICAL_STATUS.nonClinical) {
                 const firstSystem = tx
                     .select({ systemId: systems.id })
                     .from(assetSystems)
@@ -306,7 +316,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
                         assetId: data.assetId,
                         systemId: firstSystem.systemId,
                         reportedBy,
-                        commentText: 'Asset toggled to DOWN via machine clinical mode.',
+                        commentText: `Asset toggled to ${getMachineClinicalStatusLabel(data.status, { uppercase: true })} via machine clinical mode.`,
                         status: 'Open',
                         downtimeStartAt: nowIso,
                         downtimeEndAt: null,
@@ -317,7 +327,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
                     .get()
 
                 requestId = createdRequest?.id ?? null
-                requestAction = 'created-down-request'
+                requestAction = 'created-non-clinical-request'
                 return
             }
 
@@ -345,12 +355,12 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
                 .run()
 
             requestId = relevantRequest.id
-            requestAction = 'updated-down-request-end'
+            requestAction = 'updated-non-clinical-request-end'
         })
 
         logger.info('MACHINE_CLINICAL_STATUS_UPDATED', {
             assetId: data.assetId,
-            previousStatus: existing.status,
+            previousStatus: currentStatus,
             nextStatus: data.status,
             requestAction,
             requestId,

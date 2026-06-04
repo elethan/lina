@@ -13,6 +13,10 @@ import {
 } from '../../../components/ui/dialog'
 import { createRequest } from '../../../data/requests.api'
 import { fetchSiteEquipment, fetchSites } from '../../../data/equipment.api'
+import {
+    getMachineClinicalStatusLabel,
+    MACHINE_CLINICAL_STATUS,
+} from '../../../lib/machine-clinical-status'
 
 export function NewRequestDialog({
     initialSiteId,
@@ -344,7 +348,9 @@ export function NewRequestDialog({
                         </form.Field>
 
                         <div className="space-y-1.5">
-                            <label className="text-sm font-medium text-gray-700">System Down Since <span className="text-gray-400 font-normal">(optional)</span></label>
+                            <label className="text-sm font-medium text-gray-700">
+                                System {getMachineClinicalStatusLabel(MACHINE_CLINICAL_STATUS.nonClinical)} Since <span className="text-gray-400 font-normal">(optional)</span>
+                            </label>
                             <div className="grid grid-cols-2 gap-2">
                                 <form.Field name="downtimeDate">
                                     {(field) => (

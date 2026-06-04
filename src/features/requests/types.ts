@@ -8,7 +8,7 @@ export type RequestSearchParams = {
     notice?: string
 }
 
-export type MachineClinicalStatus = 'Clinical' | 'Down'
+export type { MachineClinicalStatus } from '../../lib/machine-clinical-status'
 
 export type RequestsTableMeta = {
     canEditRequestComments?: boolean

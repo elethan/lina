@@ -24,12 +24,12 @@ import { fetchCurrentUserPermissions } from '../../data/current-user-permissions
 import { canPermissionMap } from '../../lib/role-permissions'
 import { pushClientErrorNotice } from '../../lib/client-error-logger'
 import { UNAUTHORIZED_REDIRECT_NOTICE } from '../../lib/redirect-target'
+import { isNonClinicalMachineStatus } from '../../lib/machine-clinical-status'
 import { fetchMachineClinicalStatus } from '../../data/equipment.api'
 
 import type { RequestSearchParams } from '../../features/requests/types'
 import {
     getDefaultDateFrom,
-    normalizeMachineClinicalStatus,
     parseOptionalNumber,
 } from '../../features/requests/format'
 import { RequestsTableView } from '../../features/requests/components/RequestsTableView'
@@ -100,7 +100,7 @@ function RequestsPage() {
         queryFn: async () => fetchMachineClinicalStatus({ data: { assetId: assetId as number } }),
         enabled: hasSelectedAsset,
     })
-    const isSelectedAssetDown = normalizeMachineClinicalStatus(selectedAssetMachineStatus?.status) === 'Down'
+    const isSelectedAssetNonClinical = isNonClinicalMachineStatus(selectedAssetMachineStatus?.status)
 
     const setGlobalFilter = (value: string) =>
         navigate({ search: (prev: RequestSearchParams) => ({ ...prev, search: value || undefined }) })
@@ -137,9 +137,9 @@ function RequestsPage() {
     const [autoWoNotice, setAutoWoNotice] = useState<{ woId: number; isNew: boolean } | null>(null)
 
     useEffect(() => {
-        if (!isSelectedAssetDown || !showNewRequestDialog) return
+        if (!isSelectedAssetNonClinical || !showNewRequestDialog) return
         setShowNewRequestDialog(false)
-    }, [isSelectedAssetDown, showNewRequestDialog])
+    }, [isSelectedAssetNonClinical, showNewRequestDialog])
 
     const { mutate: mutateCreateWO } = useMutation({
         mutationFn: async (data: { requestIds?: number[]; assetId?: number }) => {
@@ -233,7 +233,7 @@ function RequestsPage() {
             <div className="flex items-center gap-2">
                 <button
                     id="btn-new"
-                    disabled={!canCreateRequests || (hasSelectedAsset && (isLoadingSelectedAssetMachineStatus || isSelectedAssetDown))}
+                    disabled={!canCreateRequests || (hasSelectedAsset && (isLoadingSelectedAssetMachineStatus || isSelectedAssetNonClinical))}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-32 whitespace-nowrap disabled:opacity-50"
                     onClick={() => setShowNewRequestDialog(true)}
                 >
@@ -280,7 +280,7 @@ function RequestsPage() {
         canCreateRequests,
         hasSelectedAsset,
         isLoadingSelectedAssetMachineStatus,
-        isSelectedAssetDown,
+        isSelectedAssetNonClinical,
         canCloseRequests,
         canCreateWorkOrders,
         canMergeToWorkOrders,

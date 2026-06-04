@@ -39,9 +39,15 @@ import {
     fetchSites,
     updateMachineClinicalStatus,
 } from '../../../data/equipment.api'
+import {
+    getMachineClinicalStatusLabel,
+    getNextMachineClinicalStatus,
+    isNonClinicalMachineStatus,
+    MACHINE_CLINICAL_STATUS,
+} from '../../../lib/machine-clinical-status'
 
 import { requestColumns } from '../columns'
-import { hasValidTimestamp, normalizeMachineClinicalStatus } from '../format'
+import { hasValidTimestamp } from '../format'
 import type { MachineClinicalStatus, RequestSearchParams } from '../types'
 
 export function RequestsTableView({
@@ -133,7 +139,7 @@ export function RequestsTableView({
         enabled: hasSelectedAsset,
     })
 
-    const isLinacDown = normalizeMachineClinicalStatus(machineStatus?.status) === 'Down'
+    const isMachineNonClinical = isNonClinicalMachineStatus(machineStatus?.status)
 
     const { mutate: mutateMachineClinicalStatus, isPending: isUpdatingMachineStatus } = useMutation({
         mutationFn: async (payload: { assetId: number; status: MachineClinicalStatus }) =>
@@ -248,7 +254,7 @@ export function RequestsTableView({
     const openModeDialog = () => {
         if (!canToggleMachineClinical || !hasSelectedAsset) return
 
-        setPendingModeStatus(isLinacDown ? 'Clinical' : 'Down')
+        setPendingModeStatus(getNextMachineClinicalStatus(machineStatus?.status))
         setModeDialogError(null)
 
         setShowModeConfirmDialog(true)
@@ -343,7 +349,7 @@ export function RequestsTableView({
                         </DialogTitle>
                         <DialogDescription className="text-base leading-relaxed">
                             {pendingModeStatus
-                                ? `Are you sure you want to switch this machine status to ${pendingModeStatus.toUpperCase()} ?`
+                                ? `Are you sure you want to switch this machine status to ${getMachineClinicalStatusLabel(pendingModeStatus, { uppercase: true })}?`
                                 : 'Are you sure you want to change this machine status?'}
                         </DialogDescription>
                     </DialogHeader>
@@ -425,10 +431,10 @@ export function RequestsTableView({
                     <button
                         type="button"
                         disabled={isToggleDisabled}
-                        aria-pressed={isLinacDown}
-                        aria-label={`Set Linac mode to ${isLinacDown ? 'CLINICAL' : 'DOWN'}`}
+                        aria-pressed={isMachineNonClinical}
+                        aria-label={`Set Linac mode to ${getMachineClinicalStatusLabel(getNextMachineClinicalStatus(machineStatus?.status), { uppercase: true })}`}
                         onClick={openModeDialog}
-                        className="group relative h-32 w-full max-w-156 overflow-hidden rounded-full border border-gray-300/80 bg-white shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-sm [--linac-rail-y:clamp(0.375rem,6%,1rem)]"
+                        className="group relative h-32 w-full max-w-156 overflow-hidden rounded-full border-2 border-slate-400/85 bg-gradient-to-b from-white via-slate-50 to-slate-100 shadow-[0_8px_18px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(148,163,184,0.22)] transition-all hover:shadow-[0_12px_22px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(148,163,184,0.22)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:shadow-[0_8px_18px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(148,163,184,0.22)] [--linac-rail-y:clamp(0.55rem,7%,1rem)]"
                     >
                         <svg
                             aria-hidden="true"
@@ -443,35 +449,65 @@ export function RequestsTableView({
                                     <stop offset="100%" stopColor="#fff1f2" />
                                 </linearGradient>
                             </defs>
-                            <rect x="6" y="6" width="988" height="148" rx="74" fill="url(#linac-track)" />
+                            <rect
+                                x="6"
+                                y="6"
+                                width="988"
+                                height="148"
+                                rx="74"
+                                fill="url(#linac-track)"
+                                stroke="#94a3b8"
+                                strokeOpacity="0.35"
+                                strokeWidth="3"
+                            />
                         </svg>
 
-                        <div className="absolute inset-x-1.5 top-[var(--linac-rail-y)] bottom-[var(--linac-rail-y)] overflow-hidden rounded-full">
+                        <div
+                            aria-hidden="true"
+                            className="absolute inset-[4px] rounded-full border border-white/65 shadow-[inset_0_2px_3px_rgba(255,255,255,0.85),inset_0_-6px_10px_rgba(100,116,139,0.12)]"
+                        />
+
+                        <div
+                            aria-hidden="true"
+                            className="absolute inset-x-14 top-3 h-5 rounded-full bg-white/35 blur-md"
+                        />
+
+                        <div className="absolute inset-x-1.5 top-[calc(var(--linac-rail-y)-2px)] bottom-[calc(var(--linac-rail-y)+2px)] overflow-hidden rounded-full border border-white/60 shadow-[inset_0_2px_5px_rgba(255,255,255,0.5),inset_0_-6px_10px_rgba(15,23,42,0.08)]">
                             <div
-                                className="h-full w-1/2 rounded-full transition-transform duration-300 ease-out"
-                                style={{ transform: isLinacDown ? 'translateX(100%)' : 'translateX(0)' }}
+                                className="h-full w-1/2 rounded-full shadow-[0_5px_12px_rgba(15,23,42,0.22),inset_0_1px_3px_rgba(255,255,255,0.3)] transition-transform duration-300 ease-out"
+                                style={{ transform: isMachineNonClinical ? 'translateX(100%)' : 'translateX(0)' }}
                             >
                                 <svg aria-hidden="true" viewBox="0 0 500 148" preserveAspectRatio="none" className="h-full w-full">
                                     <defs>
                                         <linearGradient id="linac-thumb" x1="0" y1="0" x2="1" y2="0">
-                                            <stop offset="0%" stopColor={isLinacDown ? '#ef4444' : '#059669'} />
-                                            <stop offset="100%" stopColor={isLinacDown ? '#dc2626' : '#047857'} />
+                                            <stop offset="0%" stopColor={isMachineNonClinical ? '#ef4444' : '#059669'} />
+                                            <stop offset="100%" stopColor={isMachineNonClinical ? '#dc2626' : '#047857'} />
                                         </linearGradient>
                                     </defs>
-                                    <rect x="4" y="4" width="492" height="140" rx="68" fill="url(#linac-thumb)" />
+                                    <rect
+                                        x="4"
+                                        y="4"
+                                        width="492"
+                                        height="140"
+                                        rx="68"
+                                        fill="url(#linac-thumb)"
+                                        stroke="#f8fafc"
+                                        strokeOpacity="0.7"
+                                        strokeWidth="3"
+                                    />
                                 </svg>
                             </div>
                         </div>
 
                         <div className="relative z-10 grid h-full grid-cols-2 items-center px-8 text-lg font-bold uppercase tracking-[0.16em] md:text-2xl">
                             <span className="flex justify-center">
-                                <span className={`px-4 py-2 transition-opacity duration-200 ${!isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
-                                    CLINICAL
+                                <span className={`px-4 py-2 transition-opacity duration-200 ${!isMachineNonClinical ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
+                                    {getMachineClinicalStatusLabel(MACHINE_CLINICAL_STATUS.clinical, { uppercase: true })}
                                 </span>
                             </span>
                             <span className="flex justify-center">
-                                <span className={`px-4 py-2 transition-opacity duration-200 ${isLinacDown ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
-                                    DOWN
+                                <span className={`px-4 py-2 transition-opacity duration-200 ${isMachineNonClinical ? 'text-white opacity-100' : 'text-transparent opacity-0'}`}>
+                                    {getMachineClinicalStatusLabel(MACHINE_CLINICAL_STATUS.nonClinical, { uppercase: true })}
                                 </span>
                             </span>
                         </div>

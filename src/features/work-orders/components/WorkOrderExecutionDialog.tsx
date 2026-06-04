@@ -30,6 +30,10 @@ import {
     type WorkOrderSystemOption,
 } from '../../../data/workorders.api'
 import { assignWorkOrdersToEngineer } from '../../../data/engineers.api'
+import {
+    getMachineClinicalStatusLabel,
+    MACHINE_CLINICAL_STATUS,
+} from '../../../lib/machine-clinical-status'
 import { toLocalDatetime } from '../format'
 import { HydratedDateText } from '../../../components/HydratedDateText'
 import { EditableNoteCell } from './EditableNoteCell'
@@ -462,7 +466,9 @@ export function WorkOrderExecutionDialog({
                             {downtimeEvent ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="text-xs font-medium text-gray-500">Down Since</label>
+                                        <label className="text-xs font-medium text-gray-500">
+                                            {getMachineClinicalStatusLabel(MACHINE_CLINICAL_STATUS.nonClinical)} Since
+                                        </label>
                                         <p className="text-sm text-gray-800 font-medium mt-0.5">
                                             <HydratedDateText value={downtimeEvent.startAt} />
                                         </p>
@@ -525,7 +531,9 @@ export function WorkOrderExecutionDialog({
                             ) : showDowntimeForm ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1">
-                                        <label className="text-xs font-medium text-gray-500">Down Since</label>
+                                        <label className="text-xs font-medium text-gray-500">
+                                            {getMachineClinicalStatusLabel(MACHINE_CLINICAL_STATUS.nonClinical)} Since
+                                        </label>
                                         <input
                                             type="datetime-local"
                                             value={dtStartAt}
