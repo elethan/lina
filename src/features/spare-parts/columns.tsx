@@ -17,6 +17,40 @@ export type SparePartsTableMeta = {
 const columnHelper = createColumnHelper<SparePartRow>()
 
 export const sparePartColumns: ColumnDef<SparePartRow, any>[] = [
+    columnHelper.display({
+        id: 'select',
+        header: ({ table }) => (
+            <div className="flex justify-center">
+                <input
+                    type="checkbox"
+                    className="accent-primary rounded"
+                    checked={table.getIsAllPageRowsSelected()}
+                    ref={(element) => {
+                        if (element) {
+                            element.indeterminate = table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
+                        }
+                    }}
+                    onChange={table.getToggleAllPageRowsSelectedHandler()}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label="Select current page spare parts"
+                />
+            </div>
+        ),
+        cell: ({ row }) => (
+            <div className="flex justify-center">
+                <input
+                    type="checkbox"
+                    className="accent-primary rounded"
+                    checked={row.getIsSelected()}
+                    onChange={row.getToggleSelectedHandler()}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`Select spare part ${row.original.code}`}
+                />
+            </div>
+        ),
+        size: 48,
+        enableResizing: false,
+    }),
     columnHelper.accessor('code', {
         header: 'Code',
         size: 150,
@@ -50,7 +84,28 @@ export const sparePartColumns: ColumnDef<SparePartRow, any>[] = [
         },
     }),
     columnHelper.accessor('siteName', {
-        header: 'Site',
+        header: ({ column, table }) => {
+            const meta = table.options.meta as SparePartsTableMeta
+
+            return (
+                <div className="flex flex-col items-center gap-1">
+                    <span>Site</span>
+                    <select
+                        value={(column.getFilterValue() ?? '') as string}
+                        onChange={(event) => column.setFilterValue(event.target.value || undefined)}
+                        onClick={(event) => event.stopPropagation()}
+                        className="w-full max-w-40 rounded border border-primary-200 bg-white px-1.5 py-1 text-center text-xs font-normal text-gray-700 outline-none focus:border-primary/60"
+                    >
+                        <option value="">All</option>
+                        {meta.siteOptions.map((site) => (
+                            <option key={site.id} value={site.name}>
+                                {site.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )
+        },
         size: 180,
         cell: (info) => {
             const meta = info.table.options.meta as SparePartsTableMeta
@@ -65,6 +120,10 @@ export const sparePartColumns: ColumnDef<SparePartRow, any>[] = [
                     onSave={meta.onRefresh}
                 />
             )
+        },
+        filterFn: (row, columnId, filterValue) => {
+            if (!filterValue) return true
+            return row.getValue(columnId) === filterValue
         },
     }),
     columnHelper.accessor('quantity', {

@@ -46,7 +46,7 @@ async function getSparePartsDbDeps() {
 
     const { db } = dbMod
     const { spareParts, sites, locations } = schemaMod
-    const { eq, asc, and, isNull } = ormMod
+    const { eq, asc, and, inArray, isNull } = ormMod
 
     return {
         db,
@@ -56,6 +56,7 @@ async function getSparePartsDbDeps() {
         eq,
         asc,
         and,
+        inArray,
         isNull,
     }
 }
@@ -391,4 +392,69 @@ export const deleteSparePart = authServerFn({ method: 'POST' })
         })
 
         return { success: true }
+    })
+
+export const moveSpareParts = authServerFn({ method: 'POST' })
+    .inputValidator((data: { partIds: number[]; siteId: number }) => {
+        const partIds = Array.from(
+            new Set(
+                (data.partIds ?? [])
+                    .map((partId) => Number(partId))
+                    .filter((partId) => Number.isInteger(partId) && partId > 0),
+            ),
+        )
+
+        if (partIds.length === 0) {
+            throw new Error('Select at least one spare part')
+        }
+
+        if (!data.siteId) {
+            throw new Error('Site is required')
+        }
+
+        return {
+            partIds,
+            siteId: Number(data.siteId),
+        }
+    })
+    .handler(async ({ data }) => {
+        const [user, { logger }] = await Promise.all([
+            ensureSparePartsPermission('update'),
+            import('../lib/logger'),
+        ])
+        const deps = await getSparePartsDbDeps()
+
+        await ensureSiteExists(deps, data.siteId)
+
+        const existingParts = await deps.db
+            .select({
+                id: deps.spareParts.id,
+                code: deps.spareParts.code,
+                siteId: deps.spareParts.siteId,
+            })
+            .from(deps.spareParts)
+            .where(deps.and(deps.inArray(deps.spareParts.id, data.partIds), deps.isNull(deps.spareParts.deletedAt)))
+
+        if (existingParts.length !== data.partIds.length) {
+            throw new Error('One or more spare parts could not be found')
+        }
+
+        await deps.db
+            .update(deps.spareParts)
+            .set({ siteId: data.siteId })
+            .where(deps.inArray(deps.spareParts.id, data.partIds))
+
+        logger.info('SPARE_PARTS_MOVED', {
+            partIds: data.partIds,
+            targetSiteId: data.siteId,
+            changes: existingParts.map((part) => ({
+                partId: part.id,
+                code: part.code,
+                fromSiteId: part.siteId,
+                toSiteId: data.siteId,
+            })),
+            ...withActor(user),
+        })
+
+        return { success: true, movedCount: existingParts.length }
     })

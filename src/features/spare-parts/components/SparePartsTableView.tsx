@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+    type ColumnFiltersState,
     flexRender,
     getCoreRowModel,
     getFilteredRowModel,
@@ -44,16 +45,20 @@ export function SparePartsTableView({
     const [columnResizeMode] = useState<ColumnResizeMode>('onChange')
     const { containerRef, pageSize } = useDynamicPageSize()
     const [pageIndex, setPageIndex] = useState(0)
+    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
     const table = useReactTable({
         data,
         columns: sparePartColumns,
+        getRowId: (row) => String(row.id),
         state: {
             globalFilter,
             rowSelection,
+            columnFilters,
             pagination: { pageIndex, pageSize },
         },
         onGlobalFilterChange: onGlobalFilterChange,
+        onColumnFiltersChange: setColumnFilters,
         onPaginationChange: (updater) => {
             const next = typeof updater === 'function' ? updater({ pageIndex, pageSize }) : updater
             setPageIndex(next.pageIndex)
@@ -74,7 +79,7 @@ export function SparePartsTableView({
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
         enableRowSelection: true,
-        enableMultiRowSelection: false,
+        enableMultiRowSelection: true,
         columnResizeMode,
         enableColumnResizing: true,
         meta: {
@@ -102,7 +107,7 @@ export function SparePartsTableView({
                                 {headerGroup.headers.map((header) => (
                                     <th
                                         key={header.id}
-                                        className="relative border-b border-primary-200/50 bg-primary-100 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-primary-900"
+                                        className="relative border-b border-primary-200/50 bg-primary-100 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-primary-900"
                                         style={{ width: header.getSize() }}
                                     >
                                         {header.isPlaceholder
@@ -131,8 +136,7 @@ export function SparePartsTableView({
                             table.getRowModel().rows.map((row) => (
                                 <tr
                                     key={row.id}
-                                    className={`cursor-pointer transition-colors ${row.getIsSelected() ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-gray-50'}`}
-                                    onClick={row.getToggleSelectedHandler()}
+                                    className={`transition-colors ${row.getIsSelected() ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-gray-50'}`}
                                 >
                                     {row.getVisibleCells().map((cell) => (
                                         <td

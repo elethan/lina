@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { PlusCircle, Search, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, PlusCircle, Search, Trash2 } from 'lucide-react'
 import TableSkeleton from '../../components/TableSkeleton'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import {
@@ -18,6 +18,7 @@ import {
     deleteSparePart,
     fetchSparePartOptions,
     fetchSpareParts,
+    moveSpareParts,
     type SparePartRow,
 } from '../../data/spare-parts.api'
 import { SparePartsTableView } from '../../features/spare-parts/components/SparePartsTableView'
@@ -59,7 +60,8 @@ function SparePartsPage() {
     const [selectedParts, setSelectedParts] = useState<SparePartRow[]>([])
     const [createDialogOpen, setCreateDialogOpen] = useState(false)
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-    const [deleteTarget, setDeleteTarget] = useState<SparePartRow | null>(null)
+    const [moveDialogOpen, setMoveDialogOpen] = useState(false)
+    const [deleteTargets, setDeleteTargets] = useState<SparePartRow[]>([])
 
     const { data: currentPermissions } = useQuery({
         queryKey: ['current-user-permissions'],
@@ -76,7 +78,6 @@ function SparePartsPage() {
         queryFn: () => fetchSparePartOptions(),
     })
 
-    const selectedPart = selectedParts[0] ?? null
     const permissionMap = currentPermissions?.permissions
     const canCreateSpareParts = canPermissionMap(permissionMap, 'spareParts', 'create')
     const canUpdateSpareParts = canPermissionMap(permissionMap, 'spareParts', 'update')
@@ -89,6 +90,7 @@ function SparePartsPage() {
         quantity: '0',
         locationId: '',
     })
+    const [moveSiteId, setMoveSiteId] = useState('')
 
     const refresh = async () => {
         await queryClient.invalidateQueries({ queryKey: ['spare-parts'] })
@@ -123,11 +125,13 @@ function SparePartsPage() {
     })
 
     const deleteMutation = useMutation({
-        mutationFn: async (partId: number) => deleteSparePart({ data: { partId } }),
+        mutationFn: async (partIds: number[]) => {
+            await Promise.all(partIds.map((partId) => deleteSparePart({ data: { partId } })))
+        },
         onSuccess: async () => {
             await refresh()
             setDeleteDialogOpen(false)
-            setDeleteTarget(null)
+            setDeleteTargets([])
             setRowSelection({})
         },
         onError: (error: Error) => {
@@ -135,12 +139,37 @@ function SparePartsPage() {
         },
     })
 
-    const requestDelete = useCallback((row?: SparePartRow | null) => {
-        const target = row ?? selectedPart
-        if (!target) return
-        setDeleteTarget(target)
+    const moveMutation = useMutation({
+        mutationFn: async (payload: { partIds: number[]; siteId: number }) =>
+            moveSpareParts({ data: payload }),
+        onSuccess: async () => {
+            await refresh()
+            setMoveDialogOpen(false)
+            setMoveSiteId('')
+            setRowSelection({})
+        },
+        onError: (error: Error) => {
+            alert(error.message || 'Failed to move spare parts')
+        },
+    })
+
+    const requestDelete = useCallback((rows?: SparePartRow[] | SparePartRow | null) => {
+        const targets = Array.isArray(rows)
+            ? rows
+            : rows
+                ? [rows]
+                : selectedParts
+
+        if (targets.length === 0) return
+        setDeleteTargets(targets)
         setDeleteDialogOpen(true)
-    }, [selectedPart])
+    }, [selectedParts])
+
+    const requestMove = useCallback(() => {
+        if (selectedParts.length === 0) return
+        setMoveSiteId(selectedParts[0]?.siteId ? String(selectedParts[0].siteId) : options?.sites[0]?.id ? String(options.sites[0].id) : '')
+        setMoveDialogOpen(true)
+    }, [options, selectedParts])
 
     const toolbarConfig = useMemo(
         () => ({
@@ -166,12 +195,23 @@ function SparePartsPage() {
                     {canDeleteSpareParts && (
                         <button
                             type="button"
-                            disabled={!selectedPart || deleteMutation.isPending}
-                            onClick={() => requestDelete(selectedPart)}
+                            disabled={selectedParts.length === 0 || deleteMutation.isPending}
+                            onClick={() => requestDelete(selectedParts)}
                             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
                         >
                             <Trash2 size={16} />
                             Delete
+                        </button>
+                    )}
+                    {canUpdateSpareParts && (
+                        <button
+                            type="button"
+                            disabled={selectedParts.length === 0 || moveMutation.isPending || !options || options.sites.length === 0}
+                            onClick={requestMove}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary-darker disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                            <ArrowRightLeft size={16} />
+                            Move
                         </button>
                     )}
                     {canCreateSpareParts && (
@@ -194,13 +234,16 @@ function SparePartsPage() {
         [
             canCreateSpareParts,
             canDeleteSpareParts,
+            canUpdateSpareParts,
             createMutation.isPending,
             deleteMutation.isPending,
             globalFilter,
+            moveMutation.isPending,
             options,
+            requestMove,
             requestDelete,
             resetForm,
-            selectedPart,
+            selectedParts,
         ],
     )
 
@@ -353,7 +396,7 @@ function SparePartsPage() {
                 onOpenChange={(open) => {
                     setDeleteDialogOpen(open)
                     if (!open) {
-                        setDeleteTarget(null)
+                        setDeleteTargets([])
                     }
                 }}
             >
@@ -363,7 +406,7 @@ function SparePartsPage() {
                         <DialogDescription>
                             Delete{' '}
                             <span className="font-semibold text-gray-700">
-                                {deleteTarget?.code ?? 'this spare part'}
+                                {deleteTargets.length === 1 ? deleteTargets[0]?.code : `${deleteTargets.length} spare parts`}
                             </span>{' '}
                             from the spare parts table?
                         </DialogDescription>
@@ -379,14 +422,75 @@ function SparePartsPage() {
                         </button>
                         <button
                             type="button"
-                            disabled={!deleteTarget || deleteMutation.isPending}
+                            disabled={deleteTargets.length === 0 || deleteMutation.isPending}
                             onClick={() => {
-                                if (!deleteTarget) return
-                                deleteMutation.mutate(deleteTarget.id)
+                                if (deleteTargets.length === 0) return
+                                deleteMutation.mutate(deleteTargets.map((part) => part.id))
                             }}
                             className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-30"
                         >
                             Delete
+                        </button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={moveDialogOpen}
+                onOpenChange={(open) => {
+                    setMoveDialogOpen(open)
+                    if (!open) {
+                        setMoveSiteId('')
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Move Spare Parts</DialogTitle>
+                        <DialogDescription>
+                            Move <span className="font-semibold text-gray-700">{selectedParts.length} spare part{selectedParts.length === 1 ? '' : 's'}</span> to another site.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-2">
+                        <label className="flex flex-col gap-1.5 text-sm text-gray-600">
+                            Site
+                            <select
+                                value={moveSiteId}
+                                onChange={(event) => setMoveSiteId(event.target.value)}
+                                className="rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-800 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15"
+                            >
+                                <option value="">Select a site</option>
+                                {options.sites.map((site) => (
+                                    <option key={site.id} value={site.id}>
+                                        {site.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+
+                    <DialogFooter>
+                        <button
+                            type="button"
+                            onClick={() => setMoveDialogOpen(false)}
+                            className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!moveSiteId || selectedParts.length === 0 || moveMutation.isPending}
+                            onClick={() => {
+                                if (!moveSiteId || selectedParts.length === 0) return
+                                moveMutation.mutate({
+                                    partIds: selectedParts.map((part) => part.id),
+                                    siteId: Number(moveSiteId),
+                                })
+                            }}
+                            className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                            Move
                         </button>
                     </DialogFooter>
                 </DialogContent>
