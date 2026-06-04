@@ -5,6 +5,7 @@ import {
     ClipboardList,
     CalendarCheck2,
     Boxes,
+    Package,
     ShieldCheck,
     SlidersHorizontal,
     ChevronDown,
@@ -30,6 +31,7 @@ const navItems = [
     { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, resource: 'workOrders' as PermissionResource },
     { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, resource: 'pmInstances' as PermissionResource },
     { to: '/assets' as string, label: 'Assets', icon: Boxes, resource: 'assetsSystems' as PermissionResource },
+    { to: '/spare-parts' as string, label: 'Spare Parts', icon: Package, resource: 'spareParts' as PermissionResource },
     { to: '/config' as string, label: 'Config', icon: SlidersHorizontal, adminOnly: true },
 ]
 
@@ -88,13 +90,19 @@ export default function Sidebar({ userRole }: SidebarProps) {
         }
     }, [collapsed])
 
-    const visibleNavItems = navItems.filter((item) =>
-        item.adminOnly
-            ? (currentPermissions?.role ?? currentRole) === 'admin'
-            : currentPermissions
-                ? canPermissionMap(currentPermissions.permissions, item.resource, 'read')
-                : canRole(currentRole, item.resource, 'read')
-    )
+    const visibleNavItems = navItems.filter((item) => {
+        if (item.adminOnly) {
+            return (currentPermissions?.role ?? currentRole) === 'admin'
+        }
+
+        if (!item.resource) {
+            return false
+        }
+
+        return currentPermissions
+            ? canPermissionMap(currentPermissions.permissions, item.resource, 'read')
+            : canRole(currentRole, item.resource, 'read')
+    })
 
     const handleSignOut = async () => {
         await authClient.signOut()

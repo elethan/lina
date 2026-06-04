@@ -13,6 +13,7 @@ export type PermissionResource =
     | 'pmInstances'
     | 'assetsSystems'
     | 'pmTasks'
+    | 'spareParts'
     | 'machineClinical'
 
 export const PERMISSION_RESOURCES = [
@@ -21,6 +22,7 @@ export const PERMISSION_RESOURCES = [
     'pmInstances',
     'assetsSystems',
     'pmTasks',
+    'spareParts',
     'machineClinical',
 ] as const
 
@@ -53,6 +55,7 @@ export const ROLE_CAPABILITIES: Record<
         pmInstances: ['read', 'create', 'update', 'delete', 'assign'],
         assetsSystems: ['read', 'create', 'update', 'delete'],
         pmTasks: ['read', 'create', 'update', 'delete'],
+        spareParts: ['read', 'create', 'update', 'delete'],
     },
     engineer: {
         requests: ['read', 'create', 'update', 'delete', 'assign'],
@@ -60,6 +63,7 @@ export const ROLE_CAPABILITIES: Record<
         pmInstances: ['read', 'create', 'update', 'delete', 'assign'],
         assetsSystems: ['read'],
         pmTasks: ['read'],
+        spareParts: ['read', 'create', 'update', 'delete'],
     },
     scientist: {
         requests: ['read', 'create'],
@@ -77,11 +81,12 @@ export const ROLE_CAPABILITIES: Record<
 
 export const ROLE_DETAILS: Record<AppRole, string[]> = {
     admin: [
-        'Full access to requests, work orders, PMs, assets, systems, and PM tasks',
+        'Full access to requests, work orders, PMs, assets, systems, PM tasks, and spare parts',
     ],
     engineer: [
         'Can create/edit operational records (requests, work orders, PM instances)',
         'Can view assets, systems, and PM tasks but cannot create/edit them',
+        'Can fully manage spare parts',
     ],
     scientist: [
         'Can view all modules',
@@ -89,10 +94,12 @@ export const ROLE_DETAILS: Record<AppRole, string[]> = {
         'Can execute and edit existing PM instances',
         'Cannot create, delete, or assign work orders',
         'Can view assets and systems but cannot create/edit them',
+        'No access to spare parts',
     ],
     therapist: [
         'Can create and view requests only',
         'No access to work orders, PMs, assets, systems, or PM tasks',
+        'No access to spare parts',
     ],
 }
 

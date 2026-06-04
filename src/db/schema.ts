@@ -88,6 +88,12 @@ export const sites = sqliteTable('sites', {
   ...commonCols,
 });
 
+export const locations = sqliteTable('locations', {
+  id: integer('location_id').primaryKey({ autoIncrement: true }),
+  name: text('location_name').notNull().unique(),
+  ...commonCols,
+});
+
 export const systems = sqliteTable('systems', {
   id: integer('system_id').primaryKey({ autoIncrement: true }),
   name: text('system_name').notNull().unique(), // [cite: 18]
@@ -241,11 +247,15 @@ export const downtimeEvents = sqliteTable('downtime_events', {
 export const spareParts = sqliteTable('spare_parts', {
   id: integer('part_id').primaryKey({ autoIncrement: true }),
   siteId: integer('site_id').references(() => sites.id).notNull(),
-  description: text('description').notNull(),
-  location: text('location'),
-  stockLevel: integer('stock_level').default(0),
+  code: text('part_code').notNull(),
+  name: text('part_name').notNull(),
+  quantity: integer('quantity').notNull().default(0),
+  locationId: integer('location_id').references(() => locations.id),
   ...commonCols,
-});
+}, (t) => ({
+  siteIdx: index('spare_parts_site_idx').on(t.siteId),
+  locationIdx: index('spare_parts_location_idx').on(t.locationId),
+}));
 
 export const workOrderParts = sqliteTable('work_order_parts', {
   woId: integer('wo_id').references(() => workOrders.id).notNull(),
