@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as ApiRealtimeRouteImport } from './routes/api/realtime'
 import { Route as AppWorkOrdersRouteImport } from './routes/_app/work-orders'
 import { Route as AppSparePartsRouteImport } from './routes/_app/spare-parts'
 import { Route as AppPmRouteImport } from './routes/_app/pm'
@@ -32,6 +33,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiRealtimeRoute = ApiRealtimeRouteImport.update({
+  id: '/api/realtime',
+  path: '/api/realtime',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppWorkOrdersRoute = AppWorkOrdersRouteImport.update({
   id: '/work-orders',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/pm': typeof AppPmRoute
   '/spare-parts': typeof AppSparePartsRoute
   '/work-orders': typeof AppWorkOrdersRoute
+  '/api/realtime': typeof ApiRealtimeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/pm': typeof AppPmRoute
   '/spare-parts': typeof AppSparePartsRoute
   '/work-orders': typeof AppWorkOrdersRoute
+  '/api/realtime': typeof ApiRealtimeRoute
   '/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/_app/pm': typeof AppPmRoute
   '/_app/spare-parts': typeof AppSparePartsRoute
   '/_app/work-orders': typeof AppWorkOrdersRoute
+  '/api/realtime': typeof ApiRealtimeRoute
   '/_app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/pm'
     | '/spare-parts'
     | '/work-orders'
+    | '/api/realtime'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/pm'
     | '/spare-parts'
     | '/work-orders'
+    | '/api/realtime'
     | '/'
     | '/api/auth/$'
   id:
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/_app/pm'
     | '/_app/spare-parts'
     | '/_app/work-orders'
+    | '/api/realtime'
     | '/_app/'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
@@ -133,6 +145,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiRealtimeRoute: typeof ApiRealtimeRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/realtime': {
+      id: '/api/realtime'
+      path: '/api/realtime'
+      fullPath: '/api/realtime'
+      preLoaderRoute: typeof ApiRealtimeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/work-orders': {
       id: '/_app/work-orders'
@@ -227,6 +247,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiRealtimeRoute: ApiRealtimeRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

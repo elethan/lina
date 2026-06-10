@@ -384,6 +384,37 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             ...withActor(user),
         })
 
+        try {
+            const [{ createRealtimeEventId, publishRealtimeEvent }, { REALTIME_EVENT_TYPES }] = await Promise.all([
+                import('../lib/realtime-events.server'),
+                import('../lib/realtime-events'),
+            ])
+
+            publishRealtimeEvent({
+                id: createRealtimeEventId('machine-status'),
+                type: REALTIME_EVENT_TYPES.machineClinicalStatusChanged,
+                assetId: data.assetId,
+                previousStatus: currentStatus,
+                status: data.status,
+                requestAction,
+                requestId,
+                changedAt: nowIso,
+                serialNumber: existing.serialNumber,
+                modelName: existing.modelName ?? null,
+            }, withActor(user))
+        } catch (error) {
+            logger.error('MACHINE_CLINICAL_STATUS_REALTIME_PUBLISH_FAILED', {
+                assetId: data.assetId,
+                previousStatus: currentStatus,
+                nextStatus: data.status,
+                requestAction,
+                requestId,
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                ...withActor(user),
+            })
+        }
+
         return {
             success: true,
             assetId: data.assetId,

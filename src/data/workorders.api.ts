@@ -1,5 +1,5 @@
 import { authServerFn } from '../lib/server-utils'
-import { MACHINE_CLINICAL_STATUS } from '../lib/machine-clinical-status'
+import { MACHINE_CLINICAL_STATUS, normalizeMachineClinicalStatus } from '../lib/machine-clinical-status'
 
 type ActorMeta = {
     id: string
@@ -903,6 +903,14 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
         }
 
         let syncedAssetClinical = false
+        let syncedAsset: {
+            previousStatus: ReturnType<typeof normalizeMachineClinicalStatus>
+            rawPreviousStatus: string
+            serialNumber: string
+            modelName: string | null
+            changedAt: string
+        } | null = null
+
         if (data.endAt !== undefined) {
             const openDowntimeForAsset = await db
                 .select({ id: downtimeEvents.id })
@@ -911,10 +919,30 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
                 .limit(1)
 
             if (openDowntimeForAsset.length === 0) {
+                const [assetBeforeSync] = await db
+                    .select({
+                        status: assets.status,
+                        serialNumber: assets.serialNumber,
+                        modelName: assets.modelName,
+                    })
+                    .from(assets)
+                    .where(eq(assets.id, existingDowntime.assetId))
+                    .limit(1)
+
                 await db.update(assets)
                     .set({ status: MACHINE_CLINICAL_STATUS.clinical })
                     .where(eq(assets.id, existingDowntime.assetId))
                 syncedAssetClinical = true
+
+                if (assetBeforeSync && assetBeforeSync.status !== MACHINE_CLINICAL_STATUS.clinical) {
+                    syncedAsset = {
+                        previousStatus: normalizeMachineClinicalStatus(assetBeforeSync.status),
+                        rawPreviousStatus: assetBeforeSync.status,
+                        serialNumber: assetBeforeSync.serialNumber,
+                        modelName: assetBeforeSync.modelName ?? null,
+                        changedAt: new Date().toISOString(),
+                    }
+                }
             }
         }
 
@@ -927,6 +955,40 @@ export const updateDowntimeEvent = authServerFn({ method: 'POST' })
             syncedAssetClinical,
             ...withActor(user),
         })
+
+        if (syncedAsset) {
+            try {
+                const [{ createRealtimeEventId, publishRealtimeEvent }, { REALTIME_EVENT_TYPES }] = await Promise.all([
+                    import('../lib/realtime-events.server'),
+                    import('../lib/realtime-events'),
+                ])
+
+                publishRealtimeEvent({
+                    id: createRealtimeEventId('machine-status'),
+                    type: REALTIME_EVENT_TYPES.machineClinicalStatusChanged,
+                    assetId: existingDowntime.assetId,
+                    previousStatus: syncedAsset.previousStatus,
+                    status: MACHINE_CLINICAL_STATUS.clinical,
+                    requestAction: 'none',
+                    requestId: null,
+                    changedAt: syncedAsset.changedAt,
+                    serialNumber: syncedAsset.serialNumber,
+                    modelName: syncedAsset.modelName,
+                }, {
+                    source: 'work-order-downtime-sync',
+                    rawPreviousStatus: syncedAsset.rawPreviousStatus,
+                    ...withActor(user),
+                })
+            } catch (error) {
+                logger.error('WORK_ORDER_DOWNTIME_REALTIME_PUBLISH_FAILED', {
+                    downtimeEventId: data.id,
+                    assetId: existingDowntime.assetId,
+                    message: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                    ...withActor(user),
+                })
+            }
+        }
 
         return { success: true }
     })
