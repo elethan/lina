@@ -92,6 +92,8 @@ export function RequestsTableView({
     const [showModeConfirmDialog, setShowModeConfirmDialog] = useState(false)
     const [pendingModeStatus, setPendingModeStatus] = useState<MachineClinicalStatus | null>(null)
     const [modeDialogError, setModeDialogError] = useState<string | null>(null)
+    const [clinicalConfirmationPhysicist, setClinicalConfirmationPhysicist] = useState('')
+    const [isClinicalConfirmationChecked, setIsClinicalConfirmationChecked] = useState(false)
     const [isDateTimeHydrated, setIsDateTimeHydrated] = useState(false)
 
     useEffect(() => {
@@ -142,7 +144,7 @@ export function RequestsTableView({
     const isMachineNonClinical = isNonClinicalMachineStatus(machineStatus?.status)
 
     const { mutate: mutateMachineClinicalStatus, isPending: isUpdatingMachineStatus } = useMutation({
-        mutationFn: async (payload: { assetId: number; status: MachineClinicalStatus }) =>
+        mutationFn: async (payload: { assetId: number; status: MachineClinicalStatus; physicistConfirmationName?: string }) =>
             updateMachineClinicalStatus({ data: payload }),
         onSuccess: async (_result, vars) => {
             await queryClient.invalidateQueries({
@@ -161,6 +163,8 @@ export function RequestsTableView({
             setShowModeConfirmDialog(false)
             setPendingModeStatus(null)
             setModeDialogError(null)
+            setClinicalConfirmationPhysicist('')
+            setIsClinicalConfirmationChecked(false)
             router.invalidate()
         },
         onError: (error: Error) => {
@@ -256,16 +260,38 @@ export function RequestsTableView({
 
         setPendingModeStatus(getNextMachineClinicalStatus(machineStatus?.status))
         setModeDialogError(null)
+        setClinicalConfirmationPhysicist('')
+        setIsClinicalConfirmationChecked(false)
 
         setShowModeConfirmDialog(true)
     }
 
+    const requiresTherapistClinicalConfirmation =
+        isTherapist && pendingModeStatus === MACHINE_CLINICAL_STATUS.clinical
+
+    const physicistConfirmationName = clinicalConfirmationPhysicist.trim()
+
     const handleConfirmModeToggle = () => {
         if (!pendingModeStatus || !selectedAssetId) return
+
+        if (requiresTherapistClinicalConfirmation) {
+            if (!physicistConfirmationName) {
+                setModeDialogError('Enter the confirming physicist name before returning this equipment to Clinical.')
+                return
+            }
+
+            if (!isClinicalConfirmationChecked) {
+                setModeDialogError('Check the physicist confirmation before returning this equipment to Clinical.')
+                return
+            }
+        }
 
         mutateMachineClinicalStatus({
             assetId: selectedAssetId,
             status: pendingModeStatus,
+            physicistConfirmationName: requiresTherapistClinicalConfirmation
+                ? physicistConfirmationName
+                : undefined,
         })
     }
 
@@ -274,6 +300,10 @@ export function RequestsTableView({
         !hasSelectedAsset ||
         isMachineStatusLoading ||
         isUpdatingMachineStatus
+
+    const isConfirmModeDisabled =
+        isUpdatingMachineStatus ||
+        (requiresTherapistClinicalConfirmation && (!physicistConfirmationName || !isClinicalConfirmationChecked))
 
     useEffect(() => {
         const selected = Object.keys(rowSelection)
@@ -339,10 +369,12 @@ export function RequestsTableView({
                     if (!nextOpen) {
                         setPendingModeStatus(null)
                         setModeDialogError(null)
+                        setClinicalConfirmationPhysicist('')
+                        setIsClinicalConfirmationChecked(false)
                     }
                 }}
             >
-                <DialogContent className="sm:max-w-sm">
+                <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>
                             Confirm Linac Status Change
@@ -353,6 +385,44 @@ export function RequestsTableView({
                                 : 'Are you sure you want to change this machine status?'}
                         </DialogDescription>
                     </DialogHeader>
+
+                    {requiresTherapistClinicalConfirmation && (
+                        <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                            <div className="space-y-1.5">
+                                <label htmlFor="clinical-confirmation-physicist" className="text-sm font-medium text-gray-800">
+                                    Physicist
+                                </label>
+                                <input
+                                    id="clinical-confirmation-physicist"
+                                    type="text"
+                                    value={clinicalConfirmationPhysicist}
+                                    onChange={(event) => {
+                                        setClinicalConfirmationPhysicist(event.target.value)
+                                        setModeDialogError(null)
+                                    }}
+                                    placeholder="Physicist name"
+                                    disabled={isUpdatingMachineStatus}
+                                    className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                                />
+                            </div>
+
+                            <label className="flex items-start gap-3 text-sm text-gray-800">
+                                <input
+                                    type="checkbox"
+                                    checked={isClinicalConfirmationChecked}
+                                    onChange={(event) => {
+                                        setIsClinicalConfirmationChecked(event.target.checked)
+                                        setModeDialogError(null)
+                                    }}
+                                    disabled={isUpdatingMachineStatus}
+                                    className="mt-1 h-4 w-4 rounded border-amber-400 text-primary focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
+                                />
+                                <span>
+                                    Physicist {physicistConfirmationName || 'named above'} has confirmed that this equipment is clinical.
+                                </span>
+                            </label>
+                        </div>
+                    )}
 
                     {modeDialogError && (
                         <p className="text-sm text-red-600">{modeDialogError}</p>
@@ -365,6 +435,8 @@ export function RequestsTableView({
                                 setShowModeConfirmDialog(false)
                                 setPendingModeStatus(null)
                                 setModeDialogError(null)
+                                setClinicalConfirmationPhysicist('')
+                                setIsClinicalConfirmationChecked(false)
                             }}
                             className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
                         >
@@ -373,7 +445,7 @@ export function RequestsTableView({
                         <button
                             type="button"
                             onClick={handleConfirmModeToggle}
-                            disabled={isUpdatingMachineStatus}
+                            disabled={isConfirmModeDisabled}
                             className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md shadow-sm transition-colors"
                         >
                             {isUpdatingMachineStatus ? 'Updating...' : 'Confirm'}

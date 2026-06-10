@@ -224,7 +224,7 @@ export const fetchMachineClinicalStatus = authServerFn({ method: 'GET' })
     })
 
 export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
-    .inputValidator((data: { assetId: number; status: MachineClinicalStatus }) => {
+    .inputValidator((data: { assetId: number; status: MachineClinicalStatus; physicistConfirmationName?: string }) => {
         if (!data.assetId) throw new Error('assetId is required')
         if (![MACHINE_CLINICAL_STATUS.clinical, MACHINE_CLINICAL_STATUS.nonClinical].includes(data.status)) {
             throw new Error(
@@ -232,7 +232,14 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             )
         }
 
-        return data
+        const physicistConfirmationName = typeof data.physicistConfirmationName === 'string'
+            ? data.physicistConfirmationName.trim()
+            : undefined
+
+        return {
+            ...data,
+            physicistConfirmationName: physicistConfirmationName || undefined,
+        }
     })
     .handler(async ({ data }) => {
         const [{ requirePermission }, { logger }] = await Promise.all([
@@ -261,11 +268,18 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
         const currentStatus = normalizeMachineClinicalStatus(existing.status)
         const isSameLogicalStatus = currentStatus === data.status
         const shouldSyncStoredStatus = existing.status !== data.status
+        const isTherapist = String(user.role ?? '').trim().toLowerCase() === 'therapist'
+        const isReturningToClinical = currentStatus !== MACHINE_CLINICAL_STATUS.clinical && data.status === MACHINE_CLINICAL_STATUS.clinical
+
+        if (isTherapist && isReturningToClinical && !data.physicistConfirmationName) {
+            throw new Error('Physicist confirmation is required before returning equipment to Clinical.')
+        }
 
         if (isSameLogicalStatus && !shouldSyncStoredStatus) {
             logger.info('MACHINE_CLINICAL_STATUS_NOOP', {
                 assetId: data.assetId,
                 status: data.status,
+                physicistConfirmationName: data.physicistConfirmationName ?? null,
                 serialNumber: existing.serialNumber,
                 modelName: existing.modelName ?? null,
                 ...withActor(user),
@@ -364,6 +378,7 @@ export const updateMachineClinicalStatus = authServerFn({ method: 'POST' })
             nextStatus: data.status,
             requestAction,
             requestId,
+            physicistConfirmationName: data.physicistConfirmationName ?? null,
             serialNumber: existing.serialNumber,
             modelName: existing.modelName ?? null,
             ...withActor(user),
