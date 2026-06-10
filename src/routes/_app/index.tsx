@@ -100,6 +100,7 @@ function RequestsPage() {
         queryFn: async () => fetchMachineClinicalStatus({ data: { assetId: assetId as number } }),
         enabled: hasSelectedAsset,
     })
+    const hasSelectedAssetMachineStatus = selectedAssetMachineStatus !== undefined
     const isSelectedAssetNonClinical = isNonClinicalMachineStatus(selectedAssetMachineStatus?.status)
 
     const setGlobalFilter = (value: string) =>
@@ -233,7 +234,7 @@ function RequestsPage() {
             <div className="flex items-center gap-2">
                 <button
                     id="btn-new"
-                    disabled={!canCreateRequests || (hasSelectedAsset && (isLoadingSelectedAssetMachineStatus || isSelectedAssetNonClinical))}
+                    disabled={!canCreateRequests || (hasSelectedAsset && ((isLoadingSelectedAssetMachineStatus && !hasSelectedAssetMachineStatus) || isSelectedAssetNonClinical))}
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white shadow-sm hover:bg-primary-dark transition-all w-32 whitespace-nowrap disabled:opacity-50"
                     onClick={() => setShowNewRequestDialog(true)}
                 >
@@ -279,6 +280,7 @@ function RequestsPage() {
         siteId,
         canCreateRequests,
         hasSelectedAsset,
+        hasSelectedAssetMachineStatus,
         isLoadingSelectedAssetMachineStatus,
         isSelectedAssetNonClinical,
         canCloseRequests,

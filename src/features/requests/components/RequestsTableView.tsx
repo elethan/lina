@@ -146,17 +146,22 @@ export function RequestsTableView({
     const { mutate: mutateMachineClinicalStatus, isPending: isUpdatingMachineStatus } = useMutation({
         mutationFn: async (payload: { assetId: number; status: MachineClinicalStatus; physicistConfirmationName?: string }) =>
             updateMachineClinicalStatus({ data: payload }),
-        onSuccess: async (_result, vars) => {
-            await queryClient.invalidateQueries({
+        onSuccess: (_result, vars) => {
+            queryClient.setQueryData(['machine-clinical-status', vars.assetId], {
+                assetId: vars.assetId,
+                status: vars.status,
+            })
+
+            void queryClient.invalidateQueries({
                 queryKey: ['machine-clinical-status', vars.assetId],
             })
-            await queryClient.invalidateQueries({
+            void queryClient.invalidateQueries({
                 queryKey: ['machine-clinical-asset-context', vars.assetId],
             })
-            await queryClient.invalidateQueries({
+            void queryClient.invalidateQueries({
                 queryKey: ['machine-clinical-assets-by-site'],
             })
-            await queryClient.invalidateQueries({
+            void queryClient.invalidateQueries({
                 queryKey: ['siteEquipment'],
             })
 
@@ -165,7 +170,7 @@ export function RequestsTableView({
             setModeDialogError(null)
             setClinicalConfirmationPhysicist('')
             setIsClinicalConfirmationChecked(false)
-            router.invalidate()
+            void router.invalidate()
         },
         onError: (error: Error) => {
             setModeDialogError(error.message || 'Failed to update machine mode.')
@@ -298,7 +303,7 @@ export function RequestsTableView({
     const isToggleDisabled =
         !canToggleMachineClinical ||
         !hasSelectedAsset ||
-        isMachineStatusLoading ||
+        (isMachineStatusLoading && !machineStatus) ||
         isUpdatingMachineStatus
 
     const isConfirmModeDisabled =

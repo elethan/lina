@@ -138,7 +138,45 @@ function RealtimeEventSubscriber({
     let errorReportedForConnection = false
     let hasOpened = false
 
+    const patchMachineClinicalStatusCache = (event: MachineClinicalStatusChangedEvent) => {
+      queryClient.setQueryData(['machine-clinical-status', event.assetId], {
+        assetId: event.assetId,
+        status: event.status,
+      })
+
+      queryClient.setQueryData(
+        ['machine-clinical-asset-context', event.assetId],
+        (current: { assetId: number; status: string } | undefined) => current
+          ? { ...current, status: event.status }
+          : current,
+      )
+
+      queryClient.setQueriesData(
+        { queryKey: ['machine-clinical-assets-by-site'] },
+        (current: Array<{ assetId: number; status: string }> | undefined) => current?.map((asset) => (
+          asset.assetId === event.assetId
+            ? { ...asset, status: event.status }
+            : asset
+        )),
+      )
+
+      queryClient.setQueriesData(
+        { queryKey: ['siteEquipment'] },
+        (current: { assets?: Array<{ assetId: number; status: string }> } | undefined) => current
+          ? {
+            ...current,
+            assets: current.assets?.map((asset) => (
+              asset.assetId === event.assetId
+                ? { ...asset, status: event.status }
+                : asset
+            )),
+          }
+          : current,
+      )
+    }
+
     const invalidateMachineClinicalStatus = (event: MachineClinicalStatusChangedEvent) => {
+      patchMachineClinicalStatusCache(event)
       void queryClient.invalidateQueries({ queryKey: ['machine-clinical-status', event.assetId] })
       void queryClient.invalidateQueries({ queryKey: ['machine-clinical-asset-context', event.assetId] })
       void queryClient.invalidateQueries({ queryKey: ['machine-clinical-assets-by-site'] })

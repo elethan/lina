@@ -50,7 +50,7 @@ export const Route = createFileRoute('/api/realtime')({
                 const streamId = `sse-${Date.now()}-${Math.random().toString(36).slice(2)}`
                 const encoder = new TextEncoder()
 
-                let cleanup: (reason: string) => void = () => undefined
+                let cleanup: () => void = () => undefined
 
                 const stream = new ReadableStream<Uint8Array>({
                     start(controller) {
@@ -60,7 +60,7 @@ export const Route = createFileRoute('/api/realtime')({
                             unsubscribe?: () => void
                         } = {}
 
-                        const close = (reason: string) => {
+                        const close = () => {
                             if (closed) return
                             closed = true
 
@@ -75,12 +75,6 @@ export const Route = createFileRoute('/api/realtime')({
                             } catch {
                                 // Stream may already be closed by the runtime.
                             }
-
-                            logger.info('REALTIME_STREAM_CLOSED', {
-                                streamId,
-                                reason,
-                                ...actorMeta,
-                            })
                         }
 
                         cleanup = close
@@ -97,32 +91,25 @@ export const Route = createFileRoute('/api/realtime')({
                                     stack: error instanceof Error ? error.stack : undefined,
                                     ...actorMeta,
                                 })
-                                close('write-failed')
+                                close()
                             }
                         }
-
-                        logger.info('REALTIME_STREAM_OPENED', {
-                            streamId,
-                            path: requestUrl.pathname,
-                            ...actorMeta,
-                        })
 
                         write(`: connected ${new Date().toISOString()}\n\n`)
                         if (closed) return
 
                         cleanupHandles.unsubscribe = subscribeRealtimeEvents(
                             (event) => write(formatSseEvent(event)),
-                            actorMeta,
                         )
 
                         cleanupHandles.heartbeatTimer = setInterval(() => {
                             write(`: heartbeat ${new Date().toISOString()}\n\n`)
                         }, HEARTBEAT_INTERVAL_MS)
 
-                        request.signal.addEventListener('abort', () => close('client-abort'), { once: true })
+                        request.signal.addEventListener('abort', () => close(), { once: true })
                     },
-                    cancel(reason) {
-                        cleanup(`stream-cancelled:${String(reason ?? 'unknown')}`)
+                    cancel() {
+                        cleanup()
                     },
                 })
 

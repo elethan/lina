@@ -3,13 +3,6 @@ import { REALTIME_EVENT_TYPES, type RealtimeEvent } from './realtime-events'
 
 type RealtimeListener = (event: RealtimeEvent) => void
 
-type SubscriberMeta = {
-    actorUserId?: string | null
-    actorName?: string | null
-    actorEmail?: string | null
-    actorRole?: string | null
-}
-
 const listeners = new Map<number, RealtimeListener>()
 let nextSubscriberId = 1
 let nextEventSequence = 1
@@ -35,28 +28,12 @@ function getEventLogMeta(event: RealtimeEvent): Record<string, unknown> {
     return {}
 }
 
-export function subscribeRealtimeEvents(
-    listener: RealtimeListener,
-    meta: SubscriberMeta = {},
-) {
+export function subscribeRealtimeEvents(listener: RealtimeListener) {
     const subscriberId = nextSubscriberId++
     listeners.set(subscriberId, listener)
 
-    logger.info('REALTIME_SUBSCRIBER_ADDED', {
-        subscriberId,
-        subscriberCount: listeners.size,
-        ...meta,
-    })
-
     return () => {
-        const removed = listeners.delete(subscriberId)
-        if (!removed) return
-
-        logger.info('REALTIME_SUBSCRIBER_REMOVED', {
-            subscriberId,
-            subscriberCount: listeners.size,
-            ...meta,
-        })
+        listeners.delete(subscriberId)
     }
 }
 
