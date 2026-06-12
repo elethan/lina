@@ -2,6 +2,10 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 
+import {
+  ASSET_STATUS_DASHBOARD_QUERY_KEY,
+  type AssetStatusDashboardRow,
+} from '../data/dashboard.api'
 import { reportClientError } from '../lib/client-error-logger'
 import {
   REALTIME_EVENT_TYPES,
@@ -66,6 +70,15 @@ export default function RealtimeEventSubscriber() {
           }
           : current,
       )
+
+      queryClient.setQueriesData(
+        { queryKey: ASSET_STATUS_DASHBOARD_QUERY_KEY },
+        (current: AssetStatusDashboardRow[] | undefined) => current?.map((asset) => (
+          asset.assetId === event.assetId
+            ? { ...asset, status: event.status }
+            : asset
+        )),
+      )
     }
 
     const invalidateMachineClinicalStatus = (event: MachineClinicalStatusChangedEvent) => {
@@ -75,6 +88,7 @@ export default function RealtimeEventSubscriber() {
       void queryClient.invalidateQueries({ queryKey: ['machine-clinical-assets-by-site'] })
       void queryClient.invalidateQueries({ queryKey: ['siteEquipment'] })
       void queryClient.invalidateQueries({ queryKey: ['assets-admin-data'] })
+      void queryClient.invalidateQueries({ queryKey: ASSET_STATUS_DASHBOARD_QUERY_KEY })
       void router.invalidate()
     }
 
@@ -98,6 +112,7 @@ export default function RealtimeEventSubscriber() {
       if (!isReconnect) return
 
       void queryClient.invalidateQueries({ queryKey: ['machine-clinical-status'] })
+      void queryClient.invalidateQueries({ queryKey: ASSET_STATUS_DASHBOARD_QUERY_KEY })
       void router.invalidate()
     }
 
@@ -114,6 +129,7 @@ export default function RealtimeEventSubscriber() {
       }
 
       void queryClient.invalidateQueries({ queryKey: ['machine-clinical-status'] })
+      void queryClient.invalidateQueries({ queryKey: ASSET_STATUS_DASHBOARD_QUERY_KEY })
       void router.invalidate()
     }
 

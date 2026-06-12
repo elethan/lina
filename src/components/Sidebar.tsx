@@ -1,6 +1,7 @@
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import {
+    LayoutDashboard,
     MessageSquareText,
     ClipboardList,
     CalendarCheck2,
@@ -27,6 +28,7 @@ import { fetchCurrentUserPermissions } from '../data/current-user-permissions.ap
 import { loadRequestsUrlState, pickRequestsUrlState, saveRequestsUrlState, type RequestsUrlState } from '../lib/requests-url-state'
 
 const navItems = [
+    { to: '/dashboard' as string, label: 'Dashboard', icon: LayoutDashboard, resource: 'dashboard' as PermissionResource },
     { to: '/', label: 'Requests', icon: MessageSquareText, resource: 'requests' as PermissionResource },
     { to: '/work-orders' as string, label: 'Work Orders', icon: ClipboardList, resource: 'workOrders' as PermissionResource },
     { to: '/pm' as string, label: 'PM', icon: CalendarCheck2, resource: 'pmInstances' as PermissionResource },

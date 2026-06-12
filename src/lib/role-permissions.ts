@@ -8,6 +8,7 @@ export const APP_ROLES = [
 ] as const
 
 export type PermissionResource =
+    | 'dashboard'
     | 'requests'
     | 'workOrders'
     | 'pmInstances'
@@ -17,6 +18,7 @@ export type PermissionResource =
     | 'machineClinical'
 
 export const PERMISSION_RESOURCES = [
+    'dashboard',
     'requests',
     'workOrders',
     'pmInstances',
@@ -50,6 +52,7 @@ export const ROLE_CAPABILITIES: Record<
     Partial<Record<PermissionResource, PermissionAction[]>>
 > = {
     admin: {
+        dashboard: ['read'],
         requests: ['read', 'create', 'update', 'delete', 'assign'],
         workOrders: ['read', 'create', 'update', 'delete', 'assign'],
         pmInstances: ['read', 'create', 'update', 'delete', 'assign'],
@@ -58,6 +61,7 @@ export const ROLE_CAPABILITIES: Record<
         spareParts: ['read', 'create', 'update', 'delete'],
     },
     engineer: {
+        dashboard: ['read'],
         requests: ['read', 'create', 'update', 'delete', 'assign'],
         workOrders: ['read', 'create', 'update', 'delete', 'assign'],
         pmInstances: ['read', 'create', 'update', 'delete', 'assign'],
@@ -66,6 +70,7 @@ export const ROLE_CAPABILITIES: Record<
         spareParts: ['read', 'create', 'update', 'delete'],
     },
     scientist: {
+        dashboard: ['read'],
         requests: ['read', 'create'],
         workOrders: ['read', 'update'],
         pmInstances: ['read', 'update'],
