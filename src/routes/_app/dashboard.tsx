@@ -67,6 +67,13 @@ function DashboardPage() {
 
   useSetToolbar(toolbarConfig)
 
+  const { data: currentPermissions } = useQuery({
+    queryKey: ['current-user-permissions'],
+    queryFn: () => fetchCurrentUserPermissions(),
+  })
+  const permissionMap = currentPermissions?.permissions
+  const canUpdateDashboard = canPermissionMap(permissionMap, 'dashboard', 'update')
+
   const updateDetailMutation = useMutation({
     mutationFn: async (payload: {
       assetId: number
@@ -84,6 +91,8 @@ function DashboardPage() {
       field: AssetStatusDashboardEditableField
       value: string | null
     }) => {
+      if (!canUpdateDashboard) return
+
       const savingKey = toSavingFieldKey(payload.assetId, payload.field)
       setSavingFieldKeys((previous) => {
         const next = new Set(previous)
@@ -101,7 +110,7 @@ function DashboardPage() {
         })
       }
     },
-    [updateDetailMutation],
+    [canUpdateDashboard, updateDetailMutation],
   )
 
   const isDetailSaving = useCallback(
@@ -120,7 +129,8 @@ function DashboardPage() {
       rows={data ?? []}
       isLoading={isLoading}
       errorMessage={error instanceof Error ? error.message : null}
-      onDetailCommit={handleDetailCommit}
+      canEditDetails={canUpdateDashboard}
+      onDetailCommit={canUpdateDashboard ? handleDetailCommit : undefined}
       isDetailSaving={isDetailSaving}
     />
   )

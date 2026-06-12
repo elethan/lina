@@ -40,9 +40,9 @@ async function getDashboardDbDeps() {
 
   const { db } = dbMod
   const { assets, assetInfo, sites } = schemaMod
-  const { eq, asc, sql } = ormMod
+  const { eq, ne, asc } = ormMod
 
-  return { db, assets, assetInfo, sites, eq, asc, sql }
+  return { db, assets, assetInfo, sites, eq, ne, asc }
 }
 
 function withActor(user: {
@@ -84,7 +84,7 @@ export const fetchAssetStatusDashboard = authServerFn({ method: 'GET' }).handler
     const { requirePermission } = await import('../lib/auth-guards.server')
     await requirePermission('dashboard', 'read')
 
-    const { db, assets, assetInfo, sites, eq, asc, sql } = await getDashboardDbDeps()
+    const { db, assets, assetInfo, sites, eq, ne, asc } = await getDashboardDbDeps()
 
     const rows = await db
       .select({
@@ -106,8 +106,8 @@ export const fetchAssetStatusDashboard = authServerFn({ method: 'GET' }).handler
       .from(assets)
       .leftJoin(assetInfo, eq(assets.infoId, assetInfo.id))
       .leftJoin(sites, eq(assets.siteId, sites.id))
+      .where(ne(assets.status, 'De-commissioned'))
       .orderBy(
-        sql`CASE WHEN ${assets.status} = 'De-commissioned' THEN 1 ELSE 0 END`,
         asc(sites.name),
         asc(assets.modelName),
         asc(assets.serialNumber),
@@ -158,7 +158,7 @@ export const updateAssetStatusDashboardField = authServerFn({ method: 'POST' })
       import('../lib/logger'),
     ])
 
-    const user = await requirePermission('dashboard', 'read')
+    const user = await requirePermission('dashboard', 'update')
     const { db, assets, assetInfo, eq } = await getDashboardDbDeps()
 
     const [assetRow] = await db

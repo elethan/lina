@@ -19,12 +19,14 @@ export function AssetStatusDashboard({
   rows,
   isLoading,
   errorMessage,
+  canEditDetails,
   onDetailCommit,
   isDetailSaving,
 }: {
   rows: AssetStatusDashboardRow[]
   isLoading: boolean
   errorMessage: string | null
+  canEditDetails?: boolean
   onDetailCommit?: (payload: {
     assetId: number
     field: AssetStatusDashboardEditableField
@@ -220,6 +222,7 @@ export function AssetStatusDashboard({
                             row={entry}
                             isExpanded={isExpanded}
                             isCompressed={isSqueezed}
+                            canEditFields={canEditDetails ?? false}
                             onCommitField={onDetailCommit}
                             isFieldSaving={({ assetId, field }) =>
                               isDetailSaving?.(assetId, field) ?? false

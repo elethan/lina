@@ -7,8 +7,8 @@ import type {
 import { getDashboardStatusLight } from '../format'
 
 export const DASHBOARD_DETAIL_GRID_CONFIG = {
-  columns: 3,
-  rows: 3,
+  columns: 4,
+  rows: 2,
 } as const
 
 type DashboardDetailDraft = Record<AssetStatusDashboardEditableField, string>
@@ -93,6 +93,7 @@ export function AssetStatusCard({
   row,
   isExpanded,
   isCompressed = false,
+  canEditFields = false,
   onToggle,
   onCommitField,
   isFieldSaving,
@@ -100,6 +101,7 @@ export function AssetStatusCard({
   row: AssetStatusDashboardRow
   isExpanded: boolean
   isCompressed?: boolean
+  canEditFields?: boolean
   onToggle: () => void
   onCommitField?: (payload: {
     assetId: number
@@ -144,23 +146,23 @@ export function AssetStatusCard({
       : 'h-12 w-12'
 
   const siteClassName = isExpandedLayout
-    ? 'text-[clamp(1.2rem,2.8vh,2.2rem)] font-black text-gray-900 truncate leading-tight tracking-tight'
+    ? 'max-w-[clamp(10rem,34vw,24rem)] text-[clamp(1.05rem,2.2vh,1.75rem)] font-black text-gray-900 truncate leading-tight tracking-tight'
     : isCompressed
       ? 'text-sm font-bold text-gray-900 truncate leading-tight'
       : 'text-[clamp(1.05rem,2.2vh,1.75rem)] font-extrabold text-gray-900 truncate leading-tight'
 
   const modelClassName = isExpandedLayout
-    ? 'text-[clamp(1rem,2.1vh,1.45rem)] text-gray-700 truncate mt-1'
+    ? 'shrink-0 max-w-[14rem] text-[clamp(0.9rem,1.7vh,1.1rem)] text-gray-700 truncate font-semibold'
     : 'text-[clamp(0.95rem,1.8vh,1.2rem)] text-gray-600 truncate mt-0.5'
 
   const serialClassName = isExpandedLayout
-    ? 'text-[clamp(0.9rem,1.7vh,1.2rem)] text-gray-700 truncate mt-1 font-semibold'
+    ? 'shrink-0 text-[clamp(0.85rem,1.5vh,1rem)] text-gray-700 truncate font-semibold'
     : isCompressed
       ? 'text-[11px] text-gray-500 truncate mt-1 font-semibold'
       : 'text-[clamp(0.85rem,1.4vh,1.05rem)] text-gray-500 truncate mt-1 font-semibold'
 
   const commitField = async (field: AssetStatusDashboardEditableField) => {
-    if (!onCommitField) return
+    if (!canEditFields || !onCommitField) return
 
     const next = normalizeEditableInput(field, draftValues[field])
     const prev = normalizeEditableInput(field, serverDraft[field])
@@ -210,17 +212,106 @@ export function AssetStatusCard({
     }
   }
 
+  if (isExpanded && !isCompressed) {
+    return (
+      <article className="h-full min-h-0 rounded-xl border border-primary/40 bg-white shadow-sm transition-colors flex flex-col overflow-hidden">
+        <div className="h-full min-h-0 flex flex-col gap-2 p-3">
+          <div className="shrink-0 flex items-start gap-3">
+            <button
+              type="button"
+              onClick={onToggle}
+              className="min-w-0 flex-1 text-left"
+              aria-expanded={isExpanded}
+            >
+              <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <p className={siteClassName} title={row.siteName ?? 'No site'}>
+                  {row.siteName ?? 'No site'}
+                </p>
+                <p className={modelClassName} title={row.modelName ?? 'Unknown model'}>
+                  {row.modelName ?? 'Unknown model'}
+                </p>
+                <p className={serialClassName} title={`SN: ${row.serialNumber}`}>
+                  SN: {row.serialNumber}
+                </p>
+              </div>
+            </button>
+
+            <div className="shrink-0 w-[4.75rem] flex flex-col items-center gap-1 ml-auto">
+              <div className="flex items-center gap-2">
+                <div className={`${dotSizeClass} rounded-full ${statusLight.dotClassName} ring-4 ${statusLight.ringClassName}`} />
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  className="inline-flex items-center justify-center rounded-md p-1 hover:bg-gray-100 transition-colors"
+                  aria-label="Collapse card details"
+                >
+                  <ChevronUp size={16} className="text-gray-500" />
+                </button>
+              </div>
+
+              <p className={`text-[10px] leading-tight text-center font-semibold uppercase ${statusLight.textClassName}`}>
+                {statusLight.label}
+              </p>
+            </div>
+          </div>
+
+          <dl
+            className="w-full min-w-0 grid gap-x-1.5 gap-y-1.5"
+            style={{
+              gridTemplateColumns: `repeat(${DASHBOARD_DETAIL_GRID_CONFIG.columns}, 10rem)`,
+              gridTemplateRows: `repeat(${DASHBOARD_DETAIL_GRID_CONFIG.rows}, minmax(0, 1fr))`,
+            }}
+          >
+            {detailCells.map((item, index) => {
+              if (!item) {
+                return (
+                  <div
+                    key={`detail-empty-${index}`}
+                    className="rounded-md border border-gray-100/60 bg-gray-50/30 min-h-16 h-full"
+                    aria-hidden
+                  />
+                )
+              }
+
+              return (
+                <InlineDetailItem
+                  key={item.field}
+                  label={item.label}
+                  value={draftValues[item.field]}
+                  inputType={item.inputType}
+                  inputMode={item.inputMode}
+                  step={item.step}
+                  placeholder={item.placeholder}
+                  isEditable={canEditFields}
+                  isSaving={isFieldSaving?.({ assetId: row.assetId, field: item.field }) ?? false}
+                  onChange={(next) =>
+                    setDraftValues((current) => ({
+                      ...current,
+                      [item.field]: next,
+                    }))
+                  }
+                  onBlur={() => void commitField(item.field)}
+                  onKeyDown={(event) => handleFieldKeyDown(event, item.field)}
+                />
+              )
+            })}
+          </dl>
+        </div>
+      </article>
+    )
+  }
+
   return (
     <article
       className={`h-full min-h-0 rounded-xl border bg-white shadow-sm transition-colors flex flex-col overflow-hidden ${
         isExpanded ? 'border-primary/40' : 'border-gray-200 hover:border-gray-300'
       }`}
     >
-      <div className={`h-full flex items-start gap-3 ${isCompressed || isExpanded ? 'p-3' : 'p-4'}`}>
+      <div className={`h-full flex items-start gap-2 ${isCompressed ? 'p-3' : 'p-4'}`}>
         <button
           type="button"
           onClick={onToggle}
-          className={`min-w-0 text-left ${isExpanded ? 'w-[clamp(8.75rem,18vw,14rem)] shrink-0' : 'flex-1'}`}
+          className="min-w-0 text-left flex-1"
           aria-expanded={isExpanded}
         >
           <div className="min-w-0">
@@ -237,49 +328,6 @@ export function AssetStatusCard({
             </p>
           </div>
         </button>
-
-        {isExpanded && !isCompressed && (
-          <dl
-            className="flex-1 min-w-0 grid gap-2"
-            style={{
-              gridTemplateColumns: `repeat(${DASHBOARD_DETAIL_GRID_CONFIG.columns}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${DASHBOARD_DETAIL_GRID_CONFIG.rows}, minmax(0, 1fr))`,
-            }}
-          >
-            {detailCells.map((item, index) => {
-                if (!item) {
-                  return (
-                    <div
-                      key={`detail-empty-${index}`}
-                      className="rounded-md border border-gray-100/60 bg-gray-50/30 min-h-16 h-full"
-                      aria-hidden
-                    />
-                  )
-                }
-
-                return (
-                  <InlineDetailItem
-                    key={item.field}
-                    label={item.label}
-                    value={draftValues[item.field]}
-                    inputType={item.inputType}
-                    inputMode={item.inputMode}
-                    step={item.step}
-                    placeholder={item.placeholder}
-                    isSaving={isFieldSaving?.({ assetId: row.assetId, field: item.field }) ?? false}
-                    onChange={(next) =>
-                      setDraftValues((current) => ({
-                        ...current,
-                        [item.field]: next,
-                      }))
-                    }
-                    onBlur={() => void commitField(item.field)}
-                    onKeyDown={(event) => handleFieldKeyDown(event, item.field)}
-                  />
-                )
-            })}
-          </dl>
-        )}
 
         <div
           className="shrink-0 w-[4.75rem] flex flex-col items-center gap-1"
@@ -316,6 +364,7 @@ function InlineDetailItem({
   inputMode,
   step,
   placeholder,
+  isEditable,
   isSaving,
   onChange,
   onBlur,
@@ -327,6 +376,7 @@ function InlineDetailItem({
   inputMode?: 'decimal'
   step?: string
   placeholder?: string
+  isEditable: boolean
   isSaving: boolean
   onChange: (value: string) => void
   onBlur: () => void
@@ -346,10 +396,11 @@ function InlineDetailItem({
           step={step}
           placeholder={placeholder}
           value={value}
+          disabled={!isEditable || isSaving}
           onChange={(event) => onChange(event.target.value)}
           onBlur={onBlur}
           onKeyDown={onKeyDown}
-          className="h-8 w-full rounded-sm border border-gray-200 bg-white px-2 text-sm font-semibold text-gray-800 outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+          className="h-8 w-full rounded-sm border border-gray-200 bg-white px-2 text-sm font-semibold text-gray-800 outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
         />
       </dd>
     </div>

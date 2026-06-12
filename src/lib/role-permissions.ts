@@ -52,7 +52,7 @@ export const ROLE_CAPABILITIES: Record<
     Partial<Record<PermissionResource, PermissionAction[]>>
 > = {
     admin: {
-        dashboard: ['read'],
+        dashboard: ['read', 'update'],
         requests: ['read', 'create', 'update', 'delete', 'assign'],
         workOrders: ['read', 'create', 'update', 'delete', 'assign'],
         pmInstances: ['read', 'create', 'update', 'delete', 'assign'],
@@ -61,7 +61,7 @@ export const ROLE_CAPABILITIES: Record<
         spareParts: ['read', 'create', 'update', 'delete'],
     },
     engineer: {
-        dashboard: ['read'],
+        dashboard: ['read', 'update'],
         requests: ['read', 'create', 'update', 'delete', 'assign'],
         workOrders: ['read', 'create', 'update', 'delete', 'assign'],
         pmInstances: ['read', 'create', 'update', 'delete', 'assign'],
