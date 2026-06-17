@@ -22,6 +22,7 @@ export function AssetStatusDashboard({
   canEditDetails,
   onDetailCommit,
   isDetailSaving,
+  filterText,
 }: {
   rows: AssetStatusDashboardRow[]
   isLoading: boolean
@@ -33,6 +34,7 @@ export function AssetStatusDashboard({
     value: string | null
   }) => Promise<void>
   isDetailSaving?: (assetId: number, field: AssetStatusDashboardEditableField) => boolean
+  filterText?: string
 }) {
   const [pageIndex, setPageIndex] = useState(0)
   const [expandedAssetId, setExpandedAssetId] = useState<number | null>(null)
@@ -79,8 +81,23 @@ export function AssetStatusDashboard({
     })
   }, [rows])
 
+  const filteredRows = useMemo(() => {
+    if (!filterText) return sortedRows
+
+    const query = filterText.toLowerCase()
+    return sortedRows.filter(
+      (row) =>
+        (row.siteName ?? '').toLowerCase().includes(query) ||
+        row.serialNumber.toLowerCase().includes(query),
+    )
+  }, [sortedRows, filterText])
+
+  useEffect(() => {
+    setPageIndex(0)
+  }, [filterText])
+
   const pageSize = columnCount * GRID_ROWS
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize))
 
   useEffect(() => {
     if (pageIndex <= totalPages - 1) return
@@ -89,14 +106,14 @@ export function AssetStatusDashboard({
 
   useEffect(() => {
     if (expandedAssetId == null) return
-    if (sortedRows.some((row) => row.assetId === expandedAssetId)) return
+    if (filteredRows.some((row) => row.assetId === expandedAssetId)) return
     setExpandedAssetId(null)
-  }, [expandedAssetId, sortedRows])
+  }, [expandedAssetId, filteredRows])
 
   const pageRows = useMemo(() => {
     const start = pageIndex * pageSize
-    return sortedRows.slice(start, start + pageSize)
-  }, [sortedRows, pageIndex, pageSize])
+    return filteredRows.slice(start, start + pageSize)
+  }, [filteredRows, pageIndex, pageSize])
 
   const slots = useMemo(() => {
     if (isLoading) return Array.from({ length: pageSize }, () => null)
@@ -158,9 +175,11 @@ export function AssetStatusDashboard({
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {errorMessage}
           </div>
-        ) : sortedRows.length === 0 && !isLoading ? (
+        ) : filteredRows.length === 0 && !isLoading ? (
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
-            No assets available for dashboard view.
+            {filterText
+              ? 'No assets match your search.'
+              : 'No assets available for dashboard view.'}
           </div>
         ) : (
           <div className="flex-1 min-h-0">

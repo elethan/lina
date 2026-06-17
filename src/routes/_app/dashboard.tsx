@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
+import { Search } from 'lucide-react'
 import { useSetToolbar } from '../../components/ToolbarContext'
 import {
   ASSET_STATUS_DASHBOARD_QUERY_KEY,
@@ -21,6 +22,9 @@ function toSavingFieldKey(assetId: number, field: AssetStatusDashboardEditableFi
 }
 
 export const Route = createFileRoute('/_app/dashboard')({
+  validateSearch: (search: Record<string, unknown>): { search?: string } => ({
+    search: typeof search.search === 'string' ? search.search : undefined,
+  }),
   beforeLoad: async ({ context, location }) => {
     const role = String((context as any).user?.role ?? '').toLowerCase()
 
@@ -54,15 +58,35 @@ export const Route = createFileRoute('/_app/dashboard')({
 
 function DashboardPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate({ from: '/dashboard' })
+  const { search: globalFilter = '' } = Route.useSearch()
   const [savingFieldKeys, setSavingFieldKeys] = useState<Set<string>>(new Set())
+
+  const setGlobalFilter = (value: string) =>
+    navigate({ search: (prev) => ({ ...prev, search: value || undefined }) })
 
   const toolbarConfig = useMemo(
     () => ({
       title: 'Dashboard',
-      leftContent: null,
+      leftContent: (
+        <div className="relative flex-1 min-w-64 max-w-sm">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <input
+            id="dashboard-search"
+            type="text"
+            placeholder="Search serial number or site…"
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
+          />
+        </div>
+      ),
       rightContent: null,
     }),
-    [],
+    [globalFilter],
   )
 
   useSetToolbar(toolbarConfig)
@@ -132,6 +156,7 @@ function DashboardPage() {
       canEditDetails={canUpdateDashboard}
       onDetailCommit={canUpdateDashboard ? handleDetailCommit : undefined}
       isDetailSaving={isDetailSaving}
+      filterText={globalFilter || undefined}
     />
   )
 }
