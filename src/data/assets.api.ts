@@ -25,6 +25,7 @@ export type SystemAdminRow = {
   id: number
   name: string
   status: string
+  assetType: string | null
 }
 
 export type AssetSystemLinkRow = {
@@ -51,6 +52,7 @@ export type AssetAdminRow = {
   systemIds: number[]
   systemNames: string[]
   systemLinks: AssetSystemLinkRow[]
+  assetType: string
 }
 
 export type AssetsAdminPayload = {
@@ -225,6 +227,7 @@ export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
       .select({
         id: systems.id,
         name: systems.name,
+        assetType: systems.assetType,
       })
       .from(systems)
       .orderBy(asc(systems.name))
@@ -238,6 +241,7 @@ export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
         catDate: assets.catDate,
         installationDate: assets.installationDate,
         status: assets.status,
+        assetType: assets.assetType,
         siteId: assets.siteId,
         siteName: sites.name,
       })
@@ -290,6 +294,7 @@ export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
         id: system.id,
         name: system.name,
         status: systemStatusBySystemId.get(system.id) ?? 'Operational',
+        assetType: system.assetType ?? null,
       })),
       assets: assetRows.map((row) => {
         const linked = systemsByAsset.get(row.id) ?? []
@@ -306,6 +311,7 @@ export const fetchAssetsAdminData = authServerFn({ method: 'GET' }).handler(
           systemIds: linked.map((entry) => entry.systemId),
           systemNames: linked.map((entry) => entry.systemName),
           systemLinks: linked,
+          assetType: row.assetType,
         }
       }),
     }
@@ -956,6 +962,7 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
     status?: AssetStatus
     siteId: number
     systemIds: number[]
+    assetType: string
   }) => {
     const serialNumber = data.serialNumber?.trim()
     if (!serialNumber) throw new Error('Serial number is required')
@@ -973,6 +980,11 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
       throw new Error('At least one valid system is required')
     }
 
+    const assetType = data.assetType?.trim()
+    if (!assetType || !['Linac', 'MR Linac'].includes(assetType)) {
+      throw new Error('Asset type is required (Linac or MR Linac)')
+    }
+
     return {
       serialNumber,
       modelName: data.modelName?.trim() || null,
@@ -982,6 +994,7 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
       status,
       siteId: data.siteId,
       systemIds: uniqueSystemIds,
+      assetType,
     }
   })
   .handler(async ({ data }) => {
@@ -998,6 +1011,7 @@ export const createAssetAdmin = authServerFn({ method: 'POST' })
         installationDate: data.installationDate,
         status: data.status,
         siteId: data.siteId,
+        assetType: data.assetType as 'Linac' | 'MR Linac',
       })
       .returning({ id: assets.id })
 
@@ -1034,6 +1048,7 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
     siteId: number
     status: AssetStatus
     systemIds: number[]
+    assetType: string
   }) => {
     const serialNumber = data.serialNumber?.trim()
     if (!data.assetId) throw new Error('Asset ID is required')
@@ -1048,6 +1063,11 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
       throw new Error('At least one system is required')
     }
 
+    const assetType = data.assetType?.trim()
+    if (!assetType || !['Linac', 'MR Linac'].includes(assetType)) {
+      throw new Error('Asset type is required (Linac or MR Linac)')
+    }
+
     return {
       assetId: data.assetId,
       serialNumber,
@@ -1058,6 +1078,7 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
       siteId: data.siteId,
       status: data.status,
       systemIds: uniqueSystemIds,
+      assetType,
     }
   })
   .handler(async ({ data }) => {
@@ -1074,6 +1095,7 @@ export const updateAssetAdmin = authServerFn({ method: 'POST' })
         installationDate: data.installationDate,
         siteId: data.siteId,
         status: data.status,
+        assetType: data.assetType as 'Linac' | 'MR Linac',
       })
       .where(eq(assets.id, data.assetId))
 

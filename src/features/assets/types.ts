@@ -10,6 +10,7 @@ export type AssetFormState = {
     status: AssetStatus
     siteId: string
     systemIds: number[]
+    assetType: string
 }
 
 export type SystemFormState = {
@@ -48,6 +49,7 @@ export const EMPTY_ASSET_FORM: AssetFormState = {
     status: 'Operational',
     siteId: '',
     systemIds: [],
+    assetType: '',
 }
 
 export const EMPTY_SYSTEM_FORM: SystemFormState = {

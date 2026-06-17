@@ -97,6 +97,7 @@ export const locations = sqliteTable('locations', {
 export const systems = sqliteTable('systems', {
   id: integer('system_id').primaryKey({ autoIncrement: true }),
   name: text('system_name').notNull().unique(), // [cite: 18]
+  assetType: text('asset_type', { enum: ['Linac', 'MR Linac'] }),
   ...commonCols,
 });
 
@@ -109,8 +110,24 @@ export const engineers = sqliteTable('engineers', {
 });
 
 // --- E. CORE DOMAIN: ASSETS ---
-export const assetInfo = sqliteTable('asset_info', {
-  id: integer('info_id').primaryKey({ autoIncrement: true }),
+export const assets = sqliteTable('assets', {
+  id: integer('asset_id').primaryKey({ autoIncrement: true }),
+  serialNumber: text('serial_number').notNull().unique(), // [cite: 20]
+  modelName: text('model_name'),
+  warrantyYears: integer('warranty_years'),
+  catDate: text('cat_date'),
+  installationDate: text('installation_date'),
+  status: text('status').notNull().default('Operational'),
+  assetType: text('asset_type', { enum: ['Linac', 'MR Linac'] }).notNull().default('Linac'),
+
+  siteId: integer('site_id').references(() => sites.id),
+  ...commonCols,
+});
+
+// Per-type asset info tables (table-per-type polymorphism)
+export const linacInfo = sqliteTable('linac_info', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  assetId: integer('asset_id').references(() => assets.id).notNull().unique(),
   gunDate: text('gun_date'),
   mirrorDate: text('mirror_date'),
   ionDate: text('ion_date'),
@@ -120,17 +137,14 @@ export const assetInfo = sqliteTable('asset_info', {
   ...commonCols,
 });
 
-export const assets = sqliteTable('assets', {
-  id: integer('asset_id').primaryKey({ autoIncrement: true }),
-  serialNumber: text('serial_number').notNull().unique(), // [cite: 20]
-  modelName: text('model_name'),
-  warrantyYears: integer('warranty_years'),
-  catDate: text('cat_date'),
-  installationDate: text('installation_date'),
-  status: text('status').notNull().default('Operational'),
-
-  siteId: integer('site_id').references(() => sites.id),
-  infoId: integer('info_id').references(() => assetInfo.id),
+export const mrlInfo = sqliteTable('mrl_info', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  assetId: integer('asset_id').references(() => assets.id).notNull().unique(),
+  magnetFieldStrength: real('magnet_field_strength'), // Tesla
+  cryogenDate: text('cryogen_date'),                   // last helium refill
+  gradientCoilDate: text('gradient_coil_date'),
+  rfAmplifierDate: text('rf_amplifier_date'),
+  htHours: real('ht_hours'),
   ...commonCols,
 });
 

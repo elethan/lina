@@ -11,10 +11,10 @@ export const DASHBOARD_DETAIL_GRID_CONFIG = {
   rows: 2,
 } as const
 
-type DashboardDetailDraft = Record<AssetStatusDashboardEditableField, string>
+type DashboardDetailDraft = Record<string, string>
 
 type DashboardDetailFieldConfig = {
-  field: AssetStatusDashboardEditableField
+  field: string
   label: string
   inputType: 'date' | 'text'
   inputMode?: 'decimal'
@@ -22,7 +22,7 @@ type DashboardDetailFieldConfig = {
   placeholder?: string
 }
 
-const DASHBOARD_DETAIL_FIELDS: DashboardDetailFieldConfig[] = [
+const LINAC_DETAIL_FIELD_CONFIGS: DashboardDetailFieldConfig[] = [
   { field: 'catDate', label: 'CAT Date', inputType: 'date' },
   { field: 'gunDate', label: 'Gun Date', inputType: 'date' },
   { field: 'mirrorDate', label: 'Mirror Date', inputType: 'date' },
@@ -37,6 +37,33 @@ const DASHBOARD_DETAIL_FIELDS: DashboardDetailFieldConfig[] = [
     placeholder: '0.0',
   },
 ]
+
+const MRL_DETAIL_FIELD_CONFIGS: DashboardDetailFieldConfig[] = [
+  { field: 'catDate', label: 'CAT Date', inputType: 'date' },
+  {
+    field: 'magnetFieldStrength',
+    label: 'Magnet (T)',
+    inputType: 'text',
+    inputMode: 'decimal',
+    placeholder: '0.0',
+  },
+  { field: 'cryogenDate', label: 'Cryogen Date', inputType: 'date' },
+  { field: 'gradientCoilDate', label: 'Gradient Coil Date', inputType: 'date' },
+  { field: 'rfAmplifierDate', label: 'RF Amp Date', inputType: 'date' },
+  {
+    field: 'htHours',
+    label: 'HT Hours',
+    inputType: 'text',
+    inputMode: 'decimal',
+    placeholder: '0.0',
+  },
+]
+
+function getFieldConfigsForType(
+  assetType: 'Linac' | 'MR Linac',
+): DashboardDetailFieldConfig[] {
+  return assetType === 'Linac' ? LINAC_DETAIL_FIELD_CONFIGS : MRL_DETAIL_FIELD_CONFIGS
+}
 
 const DASHBOARD_DETAIL_SLOT_COUNT =
   DASHBOARD_DETAIL_GRID_CONFIG.columns * DASHBOARD_DETAIL_GRID_CONFIG.rows
@@ -53,13 +80,24 @@ function toDateInputValue(value: string | null): string {
 }
 
 function buildDetailDraft(row: AssetStatusDashboardRow): DashboardDetailDraft {
+  if (row.assetType === 'Linac') {
+    return {
+      catDate: toDateInputValue(row.catDate),
+      gunDate: toDateInputValue(row.gunDate),
+      mirrorDate: toDateInputValue(row.mirrorDate),
+      ionDate: toDateInputValue(row.ionDate),
+      magnetronDate: toDateInputValue(row.magnetronDate),
+      thyratronDate: toDateInputValue(row.thyratronDate),
+      htHours: row.htHours == null ? '' : String(row.htHours),
+    }
+  }
+
   return {
     catDate: toDateInputValue(row.catDate),
-    gunDate: toDateInputValue(row.gunDate),
-    mirrorDate: toDateInputValue(row.mirrorDate),
-    ionDate: toDateInputValue(row.ionDate),
-    magnetronDate: toDateInputValue(row.magnetronDate),
-    thyratronDate: toDateInputValue(row.thyratronDate),
+    magnetFieldStrength: row.magnetFieldStrength == null ? '' : String(row.magnetFieldStrength),
+    cryogenDate: toDateInputValue(row.cryogenDate),
+    gradientCoilDate: toDateInputValue(row.gradientCoilDate),
+    rfAmplifierDate: toDateInputValue(row.rfAmplifierDate),
     htHours: row.htHours == null ? '' : String(row.htHours),
   }
 }
@@ -74,16 +112,13 @@ function normalizeEditableInput(
     return { valid: true, value: null }
   }
 
-  if (field === 'htHours') {
+  if (field === 'htHours' || field === 'magnetFieldStrength') {
     const parsed = Number(trimmed)
     if (!Number.isFinite(parsed) || parsed < 0) {
       return { valid: false, value: null }
     }
 
-    return {
-      valid: true,
-      value: Number.isInteger(parsed) ? String(parsed) : String(parsed),
-    }
+    return { valid: true, value: String(parsed) }
   }
 
   return { valid: true, value: trimmed }
@@ -116,13 +151,17 @@ export function AssetStatusCard({
   const statusLight = getDashboardStatusLight(row.status)
   const isExpandedLayout = isExpanded
   const serverDraft = useMemo(() => buildDetailDraft(row), [
-    row.assetId,
+    row.assetType,
     row.catDate,
     row.gunDate,
     row.mirrorDate,
     row.ionDate,
     row.magnetronDate,
     row.thyratronDate,
+    row.magnetFieldStrength,
+    row.cryogenDate,
+    row.gradientCoilDate,
+    row.rfAmplifierDate,
     row.htHours,
   ])
   const [draftValues, setDraftValues] = useState<DashboardDetailDraft>(serverDraft)
@@ -132,12 +171,13 @@ export function AssetStatusCard({
   }, [serverDraft])
 
   const detailCells = useMemo(() => {
-    const padded = [...DASHBOARD_DETAIL_FIELDS] as Array<DashboardDetailFieldConfig | null>
+    const fields = getFieldConfigsForType(row.assetType)
+    const padded = [...fields] as Array<DashboardDetailFieldConfig | null>
     while (padded.length < DASHBOARD_DETAIL_SLOT_COUNT) {
       padded.push(null)
     }
     return padded
-  }, [])
+  }, [row.assetType])
 
   const dotSizeClass = isExpandedLayout
     ? 'h-14 w-14'

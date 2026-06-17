@@ -1,7 +1,8 @@
 import { authServerFn } from '../lib/server-utils'
 
 export const ASSET_STATUS_DASHBOARD_QUERY_KEY = ['asset-status-dashboard'] as const
-export const ASSET_STATUS_DASHBOARD_DETAIL_FIELDS = [
+
+export const LINAC_DETAIL_FIELDS = [
   'catDate',
   'gunDate',
   'mirrorDate',
@@ -11,22 +12,46 @@ export const ASSET_STATUS_DASHBOARD_DETAIL_FIELDS = [
   'htHours',
 ] as const
 
-export type AssetStatusDashboardEditableField =
-  (typeof ASSET_STATUS_DASHBOARD_DETAIL_FIELDS)[number]
+export const MRL_DETAIL_FIELDS = [
+  'catDate',
+  'magnetFieldStrength',
+  'cryogenDate',
+  'gradientCoilDate',
+  'rfAmplifierDate',
+  'htHours',
+] as const
+
+export type LinacEditableField = (typeof LINAC_DETAIL_FIELDS)[number]
+export type MrlEditableField = (typeof MRL_DETAIL_FIELDS)[number]
+export type AssetStatusDashboardEditableField = LinacEditableField | MrlEditableField
+
+export function getDetailFieldsForType(assetType: 'Linac' | 'MR Linac'): readonly string[] {
+  return assetType === 'Linac' ? LINAC_DETAIL_FIELDS : MRL_DETAIL_FIELDS
+}
 
 export type AssetStatusDashboardRow = {
   assetId: number
+  assetType: 'Linac' | 'MR Linac'
   siteName: string | null
   serialNumber: string
   modelName: string | null
   status: string
+  // Common field
   catDate: string | null
+  // Linac-specific fields
   gunDate: string | null
   mirrorDate: string | null
   ionDate: string | null
   magnetronDate: string | null
   thyratronDate: string | null
+  // MRL-specific fields
+  magnetFieldStrength: number | null
+  cryogenDate: string | null
+  gradientCoilDate: string | null
+  rfAmplifierDate: string | null
+  // Shared numeric
   htHours: number | null
+  // Audit
   infoUpdatedAt: string | null
   infoDeletedAt: string | null
 }
@@ -39,10 +64,10 @@ async function getDashboardDbDeps() {
   ])
 
   const { db } = dbMod
-  const { assets, assetInfo, sites } = schemaMod
+  const { assets, linacInfo, mrlInfo, sites } = schemaMod
   const { eq, ne, asc } = ormMod
 
-  return { db, assets, assetInfo, sites, eq, ne, asc }
+  return { db, assets, linacInfo, mrlInfo, sites, eq, ne, asc }
 }
 
 function withActor(user: {
@@ -67,10 +92,11 @@ function normalizeDashboardEditableValue(
     return null
   }
 
-  if (field === 'htHours') {
+  if (field === 'htHours' || field === 'magnetFieldStrength') {
     const parsed = Number(raw)
     if (!Number.isFinite(parsed) || parsed < 0) {
-      throw new Error('HT Hours must be a non-negative number')
+      const label = field === 'htHours' ? 'HT Hours' : 'Magnet Field Strength'
+      throw new Error(`${label} must be a non-negative number`)
     }
 
     return parsed
@@ -84,27 +110,38 @@ export const fetchAssetStatusDashboard = authServerFn({ method: 'GET' }).handler
     const { requirePermission } = await import('../lib/auth-guards.server')
     await requirePermission('dashboard', 'read')
 
-    const { db, assets, assetInfo, sites, eq, ne, asc } = await getDashboardDbDeps()
+    const { db, assets, linacInfo, mrlInfo, sites, eq, ne, asc } = await getDashboardDbDeps()
 
     const rows = await db
       .select({
         assetId: assets.id,
+        assetType: assets.assetType,
         siteName: sites.name,
         serialNumber: assets.serialNumber,
         modelName: assets.modelName,
         status: assets.status,
         catDate: assets.catDate,
-        gunDate: assetInfo.gunDate,
-        mirrorDate: assetInfo.mirrorDate,
-        ionDate: assetInfo.ionDate,
-        magnetronDate: assetInfo.magnetronDate,
-        thyratronDate: assetInfo.thyratronDate,
-        htHours: assetInfo.htHours,
-        infoUpdatedAt: assetInfo.updatedAt,
-        infoDeletedAt: assetInfo.deletedAt,
+        // Linac-specific
+        gunDate: linacInfo.gunDate,
+        mirrorDate: linacInfo.mirrorDate,
+        ionDate: linacInfo.ionDate,
+        magnetronDate: linacInfo.magnetronDate,
+        thyratronDate: linacInfo.thyratronDate,
+        linacHtHours: linacInfo.htHours,
+        linacUpdatedAt: linacInfo.updatedAt,
+        linacDeletedAt: linacInfo.deletedAt,
+        // MRL-specific
+        magnetFieldStrength: mrlInfo.magnetFieldStrength,
+        cryogenDate: mrlInfo.cryogenDate,
+        gradientCoilDate: mrlInfo.gradientCoilDate,
+        rfAmplifierDate: mrlInfo.rfAmplifierDate,
+        mrlHtHours: mrlInfo.htHours,
+        mrlUpdatedAt: mrlInfo.updatedAt,
+        mrlDeletedAt: mrlInfo.deletedAt,
       })
       .from(assets)
-      .leftJoin(assetInfo, eq(assets.infoId, assetInfo.id))
+      .leftJoin(linacInfo, eq(assets.id, linacInfo.assetId))
+      .leftJoin(mrlInfo, eq(assets.id, mrlInfo.assetId))
       .leftJoin(sites, eq(assets.siteId, sites.id))
       .where(ne(assets.status, 'De-commissioned'))
       .orderBy(
@@ -115,6 +152,7 @@ export const fetchAssetStatusDashboard = authServerFn({ method: 'GET' }).handler
 
     return rows.map((row) => ({
       assetId: row.assetId,
+      assetType: row.assetType,
       siteName: row.siteName ?? null,
       serialNumber: row.serialNumber,
       modelName: row.modelName ?? null,
@@ -125,9 +163,17 @@ export const fetchAssetStatusDashboard = authServerFn({ method: 'GET' }).handler
       ionDate: row.ionDate ?? null,
       magnetronDate: row.magnetronDate ?? null,
       thyratronDate: row.thyratronDate ?? null,
-      htHours: row.htHours ?? null,
-      infoUpdatedAt: row.infoUpdatedAt ?? null,
-      infoDeletedAt: row.infoDeletedAt ?? null,
+      magnetFieldStrength: row.magnetFieldStrength ?? null,
+      cryogenDate: row.cryogenDate ?? null,
+      gradientCoilDate: row.gradientCoilDate ?? null,
+      rfAmplifierDate: row.rfAmplifierDate ?? null,
+      htHours: row.assetType === 'Linac' ? (row.linacHtHours ?? null) : (row.mrlHtHours ?? null),
+      infoUpdatedAt: row.assetType === 'Linac'
+        ? (row.linacUpdatedAt ?? null)
+        : (row.mrlUpdatedAt ?? null),
+      infoDeletedAt: row.assetType === 'Linac'
+        ? (row.linacDeletedAt ?? null)
+        : (row.mrlDeletedAt ?? null),
     }))
   },
 )
@@ -140,10 +186,6 @@ export const updateAssetStatusDashboardField = authServerFn({ method: 'POST' })
   }) => {
     if (!data.assetId || !Number.isFinite(data.assetId)) {
       throw new Error('assetId is required')
-    }
-
-    if (!ASSET_STATUS_DASHBOARD_DETAIL_FIELDS.includes(data.field)) {
-      throw new Error('Invalid dashboard field')
     }
 
     return {
@@ -159,12 +201,13 @@ export const updateAssetStatusDashboardField = authServerFn({ method: 'POST' })
     ])
 
     const user = await requirePermission('dashboard', 'update')
-    const { db, assets, assetInfo, eq } = await getDashboardDbDeps()
+    const { db, assets, linacInfo, mrlInfo, eq } = await getDashboardDbDeps()
 
+    // 1. Fetch asset to determine type
     const [assetRow] = await db
       .select({
         assetId: assets.id,
-        infoId: assets.infoId,
+        assetType: assets.assetType,
       })
       .from(assets)
       .where(eq(assets.id, data.assetId))
@@ -174,63 +217,53 @@ export const updateAssetStatusDashboardField = authServerFn({ method: 'POST' })
       throw new Error('Asset not found')
     }
 
+    // 2. Validate field belongs to this asset type
+    const validFields = getDetailFieldsForType(assetRow.assetType)
+    if (!validFields.includes(data.field)) {
+      throw new Error(`Field "${data.field}" is not valid for asset type "${assetRow.assetType}"`)
+    }
+
+    // 3. Route the update
     if (data.field === 'catDate') {
       await db
         .update(assets)
         .set({ catDate: data.value as string | null })
         .where(eq(assets.id, data.assetId))
     } else {
-      let infoId = assetRow.infoId
+      // Determine which info table to use
+      const infoTable = assetRow.assetType === 'Linac' ? linacInfo : mrlInfo
 
-      if (!infoId) {
-        const [createdInfo] = await db
-          .insert(assetInfo)
-          .values({})
-          .returning({ id: assetInfo.id })
+      // Look up existing info row by assetId
+      const [existingInfo] = await db
+        .select({ id: infoTable.id })
+        .from(infoTable)
+        .where(eq(infoTable.assetId, data.assetId))
+        .limit(1)
 
-        infoId = createdInfo.id
+      let infoId: number
+      if (!existingInfo) {
+        // Lazy-create the info row
+        const [created] = await db
+          .insert(infoTable)
+          .values({ assetId: data.assetId } as never)
+          .returning({ id: infoTable.id })
 
-        await db
-          .update(assets)
-          .set({ infoId })
-          .where(eq(assets.id, data.assetId))
+        infoId = created.id
+      } else {
+        infoId = existingInfo.id
       }
 
-      if (data.field === 'gunDate') {
-        await db
-          .update(assetInfo)
-          .set({ gunDate: data.value as string | null })
-          .where(eq(assetInfo.id, infoId))
-      } else if (data.field === 'mirrorDate') {
-        await db
-          .update(assetInfo)
-          .set({ mirrorDate: data.value as string | null })
-          .where(eq(assetInfo.id, infoId))
-      } else if (data.field === 'ionDate') {
-        await db
-          .update(assetInfo)
-          .set({ ionDate: data.value as string | null })
-          .where(eq(assetInfo.id, infoId))
-      } else if (data.field === 'magnetronDate') {
-        await db
-          .update(assetInfo)
-          .set({ magnetronDate: data.value as string | null })
-          .where(eq(assetInfo.id, infoId))
-      } else if (data.field === 'thyratronDate') {
-        await db
-          .update(assetInfo)
-          .set({ thyratronDate: data.value as string | null })
-          .where(eq(assetInfo.id, infoId))
-      } else if (data.field === 'htHours') {
-        await db
-          .update(assetInfo)
-          .set({ htHours: data.value as number | null })
-          .where(eq(assetInfo.id, infoId))
-      }
+      // Update the specific field in the info table
+      // We know the field is valid for this table, so cast accordingly
+      await db
+        .update(infoTable)
+        .set({ [data.field]: data.value } as never)
+        .where(eq(infoTable.id, infoId))
     }
 
     logger.info('ASSET_DASHBOARD_FIELD_UPDATED', {
       assetId: data.assetId,
+      assetType: assetRow.assetType,
       field: data.field,
       value: data.value,
       ...withActor(user),

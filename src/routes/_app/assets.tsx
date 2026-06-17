@@ -169,6 +169,7 @@ function AssetsPage() {
       status: AssetStatus
       siteId: number
       systemIds: number[]
+      assetType: string
     }) => createAssetAdmin({ data: payload }),
     onSuccess: refresh,
     onError: (e: Error) => alert(e.message || 'Failed to create asset'),
@@ -185,6 +186,7 @@ function AssetsPage() {
       status: AssetStatus
       siteId: number
       systemIds: number[]
+      assetType: string
     }) => updateAssetAdmin({ data: payload }),
     onSuccess: refresh,
     onError: (e: Error) => alert(e.message || 'Failed to update asset'),
@@ -296,6 +298,7 @@ function AssetsPage() {
       status: asset.status === 'De-commissioned' ? 'De-commissioned' : 'Operational',
       siteId: asset.siteId === null ? '' : String(asset.siteId),
       systemIds: [...asset.systemIds],
+      assetType: asset.assetType ?? '',
     })
     setAssetDialogOpen(true)
   }
@@ -410,6 +413,12 @@ function AssetsPage() {
       return
     }
 
+    const assetType = assetForm.assetType.trim()
+    if (!assetType) {
+      alert('Asset type is required')
+      return
+    }
+
     const warrantyRaw = assetForm.warrantyYears.trim()
     let warrantyYears: number | null = null
     if (warrantyRaw !== '') {
@@ -430,6 +439,7 @@ function AssetsPage() {
       status: assetForm.status,
       siteId,
       systemIds: assetForm.systemIds,
+      assetType,
     }
 
     try {
@@ -1270,21 +1280,32 @@ function AssetsPage() {
       </Dialog>
 
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{assetDialogMode === 'create' ? 'Add Asset' : 'Edit Asset'}</DialogTitle>
             <DialogDescription>Provide all asset fields except IDs.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleAssetSubmit} className="space-y-4">
+          <form onSubmit={handleAssetSubmit} className="space-y-4 flex-1 min-h-0 flex flex-col">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label htmlFor="asset-serial" className="text-sm font-medium text-gray-700">Serial Number</label>
-                <Input
-                  id="asset-serial"
-                  value={assetForm.serialNumber}
-                  onChange={(e) => setAssetForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
+                <label htmlFor="asset-type" className="text-sm font-medium text-gray-700">Asset Type</label>
+                <select
+                  id="asset-type"
+                  value={assetForm.assetType}
+                  onChange={(e) =>
+                    setAssetForm((prev) => ({
+                      ...prev,
+                      assetType: e.target.value,
+                      systemIds: [],
+                    }))
+                  }
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   required
-                />
+                >
+                  <option value="">Select type</option>
+                  <option value="Linac">Linac</option>
+                  <option value="MR Linac">MR Linac</option>
+                </select>
               </div>
 
               <div className="space-y-1.5">
@@ -1297,14 +1318,12 @@ function AssetsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="asset-warranty" className="text-sm font-medium text-gray-700">Warranty Years</label>
+                <label htmlFor="asset-serial" className="text-sm font-medium text-gray-700">Serial Number</label>
                 <Input
-                  id="asset-warranty"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={assetForm.warrantyYears}
-                  onChange={(e) => setAssetForm((prev) => ({ ...prev, warrantyYears: e.target.value }))}
+                  id="asset-serial"
+                  value={assetForm.serialNumber}
+                  onChange={(e) => setAssetForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
+                  required
                 />
               </div>
 
@@ -1319,6 +1338,18 @@ function AssetsPage() {
                   <option value="Operational">Operational</option>
                   <option value="De-commissioned">De-commissioned</option>
                 </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="asset-warranty" className="text-sm font-medium text-gray-700">Warranty Years</label>
+                <Input
+                  id="asset-warranty"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={assetForm.warrantyYears}
+                  onChange={(e) => setAssetForm((prev) => ({ ...prev, warrantyYears: e.target.value }))}
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -1358,13 +1389,15 @@ function AssetsPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-700">Systems</p>
-              <div className="max-h-44 overflow-auto rounded-md border border-gray-200 p-2 space-y-1.5">
+            <div className="space-y-2 flex-1 min-h-0 flex flex-col">
+              <p className="text-sm font-medium text-gray-700 shrink-0">Systems</p>
+              <div className="flex-1 min-h-0 overflow-auto rounded-md border border-gray-200 p-2 space-y-1.5">
                 {systems.length === 0 ? (
                   <p className="text-sm text-gray-500 px-1 py-2">No systems available.</p>
                 ) : (
-                  systems.map((system) => {
+                  systems
+                    .filter((s) => !assetForm.assetType || s.assetType === assetForm.assetType || s.assetType == null)
+                    .map((system) => {
                     const checked = assetForm.systemIds.includes(system.id)
                     return (
                       <label key={system.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-gray-50 cursor-pointer">
