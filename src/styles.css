@@ -150,3 +150,46 @@ code {
     @apply bg-background text-foreground;
   }
 }
+
+/* Scoreboard aesthetic for Dialog and Toolbar inputs */
+[data-slot="dialog-content"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="image"]),
+[data-slot="dialog-content"] select,
+[data-slot="dialog-content"] textarea,
+[data-slot="toolbar"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="image"]),
+[data-slot="toolbar"] select,
+[data-slot="toolbar"] textarea {
+  background-color: #1a1a1a !important;
+  border: 2px solid #1f2937 !important;
+  border-radius: 1rem !important;
+  font-weight: 700 !important;
+  color: #22c55e !important;
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06) !important;
+  color-scheme: dark !important;
+}
+
+/* Specific height for inputs and selects to preserve layout */
+[data-slot="dialog-content"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="image"]),
+[data-slot="dialog-content"] select,
+[data-slot="toolbar"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="image"]),
+[data-slot="toolbar"] select {
+  height: 2.5rem !important;
+}
+
+/* Ensure focus states use the correct theme */
+[data-slot="dialog-content"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="image"]):focus,
+[data-slot="dialog-content"] select:focus,
+[data-slot="dialog-content"] textarea:focus,
+[data-slot="toolbar"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="image"]):focus,
+[data-slot="toolbar"] select:focus,
+[data-slot="toolbar"] textarea:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.5) !important;
+  border-color: #22c55e !important;
+}
+
+/* Standardize options styling inside selects */
+[data-slot="dialog-content"] select option,
+[data-slot="toolbar"] select option {
+  background-color: #1a1a1a !important;
+  color: #22c55e !important;
+}

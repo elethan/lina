@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────
 export type ToolbarState = {
@@ -14,7 +14,6 @@ type ToolbarContextValue = ToolbarState & {
 }
 
 const EMPTY_TOOLBAR: ToolbarState = { title: '', leftContent: null, rightContent: null }
-const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 // ── Context ───────────────────────────────────────────────────
 const ToolbarContext = createContext<ToolbarContextValue | null>(null)
@@ -47,10 +46,9 @@ export function useToolbar() {
 export function useSetToolbar(config: ToolbarState) {
     const { setToolbar } = useToolbar()
 
-    // Sync config into context whenever the memoised reference changes.
-    // Avoid unmount cleanup resets here because route transitions can briefly
-    // unmount/mount in an order that clears a freshly mounted page toolbar.
-    useIsomorphicLayoutEffect(() => {
+    // Use useEffect so the toolbar skeleton can paint first,
+    // then content fills in without blocking the initial render.
+    useEffect(() => {
         setToolbar(config)
     }, [config, setToolbar])
 }

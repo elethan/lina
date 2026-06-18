@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter, useNavigate, Await } from '@tanstack/react-router'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, Calendar, PlusCircle, Merge, XCircle, ClipboardPlus, AlertCircle } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 
@@ -11,7 +11,7 @@ import {
     DialogDescription,
     DialogFooter,
 } from '../../components/ui/dialog'
-import { useSetToolbar } from '../../components/ToolbarContext'
+import { useSetToolbar, type ToolbarState } from '../../components/ToolbarContext'
 import TableSkeleton from '../../components/TableSkeleton'
 
 import {
@@ -191,7 +191,7 @@ function RequestsPage() {
         })
     }
 
-    const toolbarConfig = useMemo(() => ({
+    const toolbarConfig: ToolbarState = {
         title: 'Requests',
         leftContent: (
             <>
@@ -271,22 +271,7 @@ function RequestsPage() {
                 </button>
             </div>
         ),
-    }), [
-        globalFilter,
-        dateFrom,
-        dateTo,
-        selectedCount,
-        canCreateWoFromAssetSelection,
-        siteId,
-        canCreateRequests,
-        hasSelectedAsset,
-        hasSelectedAssetMachineStatus,
-        isLoadingSelectedAssetMachineStatus,
-        isSelectedAssetNonClinical,
-        canCloseRequests,
-        canCreateWorkOrders,
-        canMergeToWorkOrders,
-    ])
+    }
 
     useSetToolbar(toolbarConfig)
 

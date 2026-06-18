@@ -323,15 +323,15 @@ export function AssetStatusCard({
                   step={item.step}
                   placeholder={item.placeholder}
                   isEditable={canEditFields}
-                  isSaving={isFieldSaving?.({ assetId: row.assetId, field: item.field }) ?? false}
+                  isSaving={isFieldSaving?.({ assetId: row.assetId, field: item.field as AssetStatusDashboardEditableField }) ?? false}
                   onChange={(next) =>
                     setDraftValues((current) => ({
                       ...current,
                       [item.field]: next,
                     }))
                   }
-                  onBlur={() => void commitField(item.field)}
-                  onKeyDown={(event) => handleFieldKeyDown(event, item.field)}
+                  onBlur={() => void commitField(item.field as AssetStatusDashboardEditableField)}
+                  onKeyDown={(event) => handleFieldKeyDown(event, item.field as AssetStatusDashboardEditableField)}
                 />
               )
             })}
